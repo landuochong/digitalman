@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no" />
+  <title>DH_live 数字人</title>
+  <style>
+    * { box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; background: #bca5a0; }
+    video, canvas { border: 0; box-shadow: none; }
+    #background_video, #canvas_video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+    #background_video { z-index: 0; }
+    #canvas_video { z-index: 1; }
+    #canvas_gl, #canvasEl, #screen { position: absolute; left: -9999px; top: -9999px; }
+    #canvas_gl { width: 184px; height: 184px; }
+    #loadingSpinner { position: absolute; inset: 0; z-index: 3; display: grid; place-items: center; margin: 0; color: rgba(255,255,255,.9); font: 13px system-ui; background: linear-gradient(145deg,#cdb5ae,#a98f91); }
+    #startMessage { display: none; }
+  </style>
+</head>
+<body>
+  <figure id="loadingSpinner"><strong>真人数字人加载中…</strong></figure>
+  <canvas id="canvasEl"></canvas>
+  <video id="background_video" src="background/bg.mp4" autoplay loop muted playsinline></video>
+  <canvas id="canvas_video" aria-label="DH_live 真人数字人"></canvas>
+  <canvas id="canvas_gl" width="184" height="184"></canvas>
+  <div id="screen"></div>
+  <div id="startMessage">加载中</div>
+  <script src="js/pako.min.js"></script>
+  <script src="js/DHLiveMini.js"></script>
+  <script src="js/MiniMateLoader.js"></script>
+  <script src="js/MiniLive2.js"></script>
+  <script src="bridge.js"></script>
+</body>
+</html>

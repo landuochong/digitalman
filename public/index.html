@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#f5efe7" />
+  <title>露米 · 你的虚拟好友</title>
+  <link rel="stylesheet" href="/style.css" />
+  <link rel="stylesheet" href="/mobile.css" />
+  <link rel="stylesheet" href="/voice.css" />
+  <link rel="stylesheet" href="/realistic.css" />
+</head>
+<body>
+  <main class="shell">
+    <section class="avatar-panel" aria-label="数字人露米">
+      <div class="brand"><span class="brand-mark">L</span><span>露米</span></div>
+      <div class="status"><i></i><span id="statusText">正在醒来…</span></div>
+      <div class="ambient ambient-one"></div><div class="ambient ambient-two"></div>
+      <div class="portrait" id="portrait" data-emotion="happy">
+        <iframe class="dh-live-frame" id="digitalHumanFrame" src="/dh-live/avatar.html" title="DH_live 真人数字人" allow="autoplay" aria-label="实时真人数字人"></iframe>
+        <div class="realistic-avatar" role="img" aria-label="露米的写实数字人形象">
+          <img src="/assets/lumi-realistic-v2.png" alt="" draggable="false" />
+          <div class="realistic-blink left" aria-hidden="true"></div>
+          <div class="realistic-blink right" aria-hidden="true"></div>
+          <div class="realistic-blush left" aria-hidden="true"></div>
+          <div class="realistic-blush right" aria-hidden="true"></div>
+          <div class="realistic-mouth" aria-hidden="true"><i></i></div>
+        </div>
+        <svg class="illustrated-avatar" viewBox="0 0 520 660" role="img" aria-label="露米的动画形象">
+          <defs>
+            <linearGradient id="hair" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#393044"/><stop offset="1" stop-color="#181522"/></linearGradient>
+            <linearGradient id="shirt" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#df826d"/><stop offset="1" stop-color="#bd5f60"/></linearGradient>
+            <radialGradient id="skin"><stop stop-color="#ffe0ce"/><stop offset="1" stop-color="#efbba5"/></radialGradient>
+            <filter id="shadow"><feDropShadow dx="0" dy="18" stdDeviation="20" flood-opacity=".18"/></filter>
+          </defs>
+          <ellipse cx="260" cy="625" rx="154" ry="25" fill="#7e6a86" opacity=".15"/>
+          <g id="body" filter="url(#shadow)">
+            <path d="M101 660c13-137 76-186 159-186s148 49 159 186" fill="url(#shirt)"/>
+            <path d="M218 441h84l10 69c-31 29-74 29-104 0z" fill="#efbba5"/>
+            <path d="M118 235C128 81 215 44 283 56c101 18 133 101 112 238l-25 148H144z" fill="url(#hair)"/>
+            <ellipse cx="260" cy="287" rx="127" ry="154" fill="url(#skin)"/>
+            <path d="M137 253c-2-111 58-188 151-188 75 0 117 49 120 119-44-38-79-65-164-56-29 45-59 75-107 89z" fill="url(#hair)"/>
+            <path d="M143 209c-19 46-14 174 22 230-46-44-62-133-46-210zM385 184c33 57 20 190-19 257 50-45 65-166 39-244z" fill="#201a28"/>
+            <g class="brows" stroke="#59404b" stroke-width="9" stroke-linecap="round" fill="none"><path class="brow left" d="M183 247q34-18 62 0"/><path class="brow right" d="M278 247q33-18 61 0"/></g>
+            <g class="eyes">
+              <path class="eye-white left" d="M174 282q35-34 72 0-36 31-72 0" fill="#fffaf5"/>
+              <path class="eye-white right" d="M276 282q35-34 72 0-36 31-72 0" fill="#fffaf5"/>
+              <g class="pupils" fill="#49344c"><circle cx="214" cy="280" r="14"/><circle cx="316" cy="280" r="14"/><g fill="#fff"><circle cx="219" cy="275" r="4"/><circle cx="321" cy="275" r="4"/></g></g>
+              <path class="lid left" d="M174 282q35-34 72 0"/><path class="lid right" d="M276 282q35-34 72 0"/>
+            </g>
+            <ellipse class="blush left" cx="179" cy="334" rx="29" ry="13"/><ellipse class="blush right" cx="342" cy="334" rx="29" ry="13"/>
+            <path d="M257 291q-5 30-13 43 14 9 29 0" fill="none" stroke="#d6927f" stroke-width="4" stroke-linecap="round"/>
+            <g class="mouth" transform="translate(260 382)">
+              <ellipse class="mouth-outer" cx="0" cy="0" rx="var(--mouth-w, 28)" ry="var(--mouth-h, 6)" fill="#9e4f5a"/>
+              <ellipse class="mouth-inner" cx="0" cy="1" rx="calc(var(--mouth-w, 28) - 5px)" ry="calc(var(--mouth-h, 6) - 2px)" fill="#401f2b"/>
+              <path class="smile" d="M-29-2q29 19 58 0" fill="none" stroke="#9e4f5a" stroke-width="5" stroke-linecap="round"/>
+            </g>
+            <circle cx="371" cy="307" r="9" fill="#f4aa78"/><path d="M371 316v24" stroke="#d88962" stroke-width="4"/><circle cx="371" cy="345" r="7" fill="#f5c36d"/>
+          </g>
+        </svg>
+        <div class="emotion-label" id="emotionLabel">很高兴见到你</div>
+      </div>
+      <div class="sound-wave" id="soundWave" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+      <p class="avatar-note">LivePortrait 微表情 + DH_live 口型 · MiniMax 语音</p>
+    </section>
+
+    <section class="chat-panel voice-panel">
+      <header><div><p class="eyebrow">VOICE COMPANION</p><h1>点一下，和我说话</h1></div><div class="header-actions"><button class="caption-button" id="captionButton" type="button" aria-pressed="false" title="显示字幕">字幕</button><button class="icon-button" id="clearButton" title="清空对话" aria-label="清空对话">↻</button></div></header>
+      <div class="mode-banner" id="modeBanner">正在连接…</div>
+      <div class="voice-stage">
+        <button class="voice-button" id="voiceButton" type="button" aria-label="开始语音对话">
+          <span class="voice-ring ring-one"></span><span class="voice-ring ring-two"></span>
+          <span class="voice-mic"><i></i></span>
+        </button>
+        <p class="voice-prompt" id="voicePrompt">点击麦克风开始说话</p>
+        <p class="live-transcript" id="liveTranscript" aria-live="polite">我会在你说完后自动回答</p>
+      </div>
+      <div class="messages captions" id="messages" aria-live="polite">
+        <article class="message assistant"><div class="mini-avatar">L</div><div><span>露米</span><p>嗨，我是露米。很高兴见到你！无论是想分享一件小事，还是只想找个人说说话，我都在。</p></div></article>
+      </div>
+      <form class="composer text-fallback" id="chatForm" hidden>
+        <button type="button" class="mic" id="micButton" aria-label="语音输入" title="语音输入"><span></span></button>
+        <textarea id="messageInput" rows="1" maxlength="2000" placeholder="和露米说点什么…" aria-label="聊天内容"></textarea>
+        <button type="submit" class="send" id="sendButton" aria-label="发送">↑</button>
+      </form>
+    </section>
+  </main>
+  <script type="module" src="/app.js"></script>
+</body>
+</html>

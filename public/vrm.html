@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>露米 · VRM 动漫数字人实验</title>
+  <link rel="stylesheet" href="/vrm.css" />
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "/vrm/vendor/three/three.module.js",
+        "three/addons/": "/vrm/vendor/three/addons/",
+        "@pixiv/three-vrm": "/vrm/vendor/three-vrm.module.min.js",
+        "@pixiv/three-vrm-animation": "/vrm/vendor/three-vrm-animation.module.min.js"
+      }
+    }
+  </script>
+</head>
+<body>
+  <main class="shell">
+    <section class="stage" aria-label="VRM 动漫数字人露米">
+      <canvas id="avatarCanvas"></canvas>
+      <div class="brand"><span>L</span><strong>露米 · VRM</strong></div>
+      <div class="stage-status"><i></i><span id="avatarStatus">正在加载动漫人物…</span></div>
+      <div class="view-controls" role="group" aria-label="调整人物观看角度">
+        <button type="button" data-view-angle="-35" aria-label="人物向左转">左转</button>
+        <button type="button" data-view-angle="0" aria-label="人物恢复正面">正面</button>
+        <button type="button" data-view-angle="35" aria-label="人物向右转">右转</button>
+      </div>
+      <div class="expression-label" id="expressionLabel">安静陪伴中</div>
+    </section>
+    <section class="conversation">
+      <header>
+        <div><p>ANIME COMPANION LAB</p><h1>自然一点，少动一点</h1></div>
+        <a href="/" title="返回真人实验">真人版</a>
+      </header>
+      <div class="principles">
+        <span>稳定注视</span><span>低幅表情</span><span>每轮最多一个动作</span>
+      </div>
+      <div class="looks" role="group" aria-label="选择服饰与发型">
+        <button type="button" data-look="classic" class="active"><b>简约</b><small>短发 · 黑白装</small></button>
+        <button type="button" data-look="soft"><b>学院日常</b><small>齐肩短发 · 针织开衫</small></button>
+        <button type="button" data-look="vivid"><b>暗色潮流</b><small>紫色长发 · 黑粉街头装</small></button>
+      </div>
+      <details class="action-test">
+        <summary>动作测试</summary>
+        <div role="group" aria-label="直接测试人物动作">
+          <button type="button" data-action-preview="wave_approval">挥手</button>
+          <button type="button" data-action-preview="clap">鼓掌</button>
+          <button type="button" data-action-preview="thinking">思考</button>
+          <button type="button" data-action-preview="caring">关心</button>
+          <button type="button" data-action-preview="surprise">惊讶</button>
+        </div>
+      </details>
+      <div class="caption" id="caption" aria-live="polite">点击麦克风开始说话</div>
+      <button class="mic" id="micButton" type="button" aria-label="开始语音对话">
+        <span class="mic-icon"></span><span class="pulse"></span>
+      </button>
+      <h2 id="voicePrompt">点击麦克风开始说话</h2>
+      <p class="detail" id="detailText">MiniMax 流式回答 · VRMA 自然动作与表情</p>
+      <div class="wave" id="wave" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></div>
+    </section>
+  </main>
+  <script type="module" src="/vrm-app.js"></script>
+</body>
+</html>

@@ -1,0 +1,20 @@
+{
+  "name": "lumina-virtual-friend",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node server.mjs",
+    "dev": "node --watch server.mjs",
+    "test": "node --test test/*.test.mjs",
+    "test:live": "node scripts/live_smoke.mjs"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "@pixiv/three-vrm": "^3.5.3",
+    "@pixiv/three-vrm-animation": "^3.5.5",
+    "three": "^0.180.0"
+  }
+}

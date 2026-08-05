@@ -1,0 +1,21 @@
+@media (max-width: 800px) {
+  .status span { display: none; }
+  .chat-panel { padding-top: 20px; }
+  .chat-panel header { padding-bottom: 10px; }
+  .mode-banner {
+    position: static;
+    transform: none;
+    margin: 7px auto 0;
+    z-index: auto;
+  }
+  .messages { padding-top: 12px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
+}
