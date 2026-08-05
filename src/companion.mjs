@@ -1,3 +1,5 @@
+import { formatCompanionState, formatMemoryContext } from "./memory.mjs";
+
 const emotions = ["neutral", "happy", "caring", "curious", "excited", "calm"];
 const actions = ["idle", "happy", "caring", "thinking", "surprise", "shy", "smile", "wave_approval", "clap", "shrug", "confident_arms_crossed"];
 
@@ -118,12 +120,12 @@ const miniMaxCompanionRules = `
 - 不主动讨论技术身份；被直接询问时不声称自己是真人。遇到危险或危机表达时，鼓励用户立即联系当地紧急服务和可信赖的人。
 `.trim();
 
-export function buildCompanionInstructions(persona) { return `${personaHeader(persona)}\n${companionRules}`; }
-export function buildMiniMaxCompanionInstructions(persona) { return `${personaHeader(persona)}\n${miniMaxCompanionRules}`; }
+export function buildCompanionInstructions(persona,memories=[],companionState=null) { return [personaHeader(persona),formatMemoryContext(memories),formatCompanionState(companionState),companionRules].filter(Boolean).join("\n"); }
+export function buildMiniMaxCompanionInstructions(persona,memories=[],companionState=null) { return [personaHeader(persona),formatMemoryContext(memories),formatCompanionState(companionState),miniMaxCompanionRules].filter(Boolean).join("\n"); }
 export const companionInstructions=buildCompanionInstructions();
 export const miniMaxCompanionInstructions=buildMiniMaxCompanionInstructions();
 
-export function inferCompanionState(message, reply = "") {
+export function inferCompanionState(message, reply = "", companionState=null) {
   const text = `${message} ${reply}`;
   if (/自杀|不想活|活不下去|伤害自己|结束生命|难过|伤心|焦虑|崩溃|害怕|担心|累|饿|困|不舒服|生病|疼|压力|烦|委屈|孤独|失落/.test(text)) {
     return { emotion:"caring", action:"caring" };
@@ -136,16 +138,20 @@ export function inferCompanionState(message, reply = "") {
   if (/不确定|不知道|也许|可能吧/.test(text)) return { emotion:"curious", action:"shrug" };
   if (/[?？]|为什么|怎么|如何|觉得|认为|怎么办|能不能|可以吗|要不要|推荐|帮我想|分析|选择|哪个好/.test(String(message))) return { emotion:"curious", action:"thinking" };
   if (/你好|嗨|哈喽|嘿|早上好|中午好|下午好|晚上好|在吗|hello|hi/i.test(String(message))) return { emotion:"happy", action:"wave_approval" };
+  if(companionState?.moodIntensity>=.32){
+    const emotion=["happy","caring","curious","excited"].includes(companionState.mood)?companionState.mood:"calm";
+    return { emotion, action:"idle" };
+  }
   return { emotion:"calm", action:"idle" };
 }
 
-export function buildMiniMaxReply(text, message) {
+export function buildMiniMaxReply(text, message, companionState=null) {
   const parsed = parseCompanionReply(text);
   const reply = sanitizeReplyText(parsed.reply);
-  return { reply:reply || "我在听。", ...inferCompanionState(message, reply) };
+  return { reply:reply || "我在听。", ...inferCompanionState(message, reply, companionState) };
 }
 
-export function buildChatPayload({ model, message, history = [], userId = "anonymous", persona }) {
+export function buildChatPayload({ model, message, history = [], userId = "anonymous", persona, memories=[], companionState=null }) {
   const conversation = [...history.slice(-10), { role: "user", content: message }]
     .map(({ role, content }) => ({
       role: role === "assistant" ? "assistant" : "user",
@@ -153,7 +159,7 @@ export function buildChatPayload({ model, message, history = [], userId = "anony
     }));
   return {
     model,
-    instructions: buildCompanionInstructions(persona),
+    instructions: buildCompanionInstructions(persona,memories,companionState),
     input: conversation,
     reasoning: { effort: "low" },
     text: { verbosity: "low" },
@@ -166,7 +172,7 @@ export function buildSpeechPayload({ model, voice, text }) {
   return { model, voice, input: String(text).trim().slice(0, 1800), response_format: "mp3", speed: 1 };
 }
 
-export function buildMiniMaxChatPayload({ model, message, history = [], stream = false, persona }) {
+export function buildMiniMaxChatPayload({ model, message, history = [], stream = false, persona, memories=[], companionState=null }) {
   const conversation = [...history.slice(-10), { role: "user", content:message }]
     .map(({ role, content }) => ({
       role:role === "assistant" ? "assistant" : "user",
@@ -174,7 +180,7 @@ export function buildMiniMaxChatPayload({ model, message, history = [], stream =
     }));
   const payload = {
     model,
-    messages:[{ role:"system", content:buildMiniMaxCompanionInstructions(persona) }, ...conversation],
+    messages:[{ role:"system", content:buildMiniMaxCompanionInstructions(persona,memories,companionState) }, ...conversation],
     reasoning_split:true,
     max_completion_tokens:800,
     temperature:0.7

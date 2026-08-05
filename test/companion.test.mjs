@@ -42,10 +42,12 @@ test("speech payload is mp3 and enforces the input limit", () => {
   assert.equal(payload.input.length, 1800); assert.equal(payload.response_format, "mp3"); assert.equal(payload.voice, "nova");
 });
 test("builds MiniMax chat history with a system persona", () => {
-  const payload=buildMiniMaxChatPayload({model:"MiniMax-test",message:"你好",history:[{role:"assistant",content:"在呢（caring）"}],persona:{name:"知夏",relationship:"学习搭档",style:"冷静简洁"}});
+  const payload=buildMiniMaxChatPayload({model:"MiniMax-test",message:"你好",history:[{role:"assistant",content:"在呢（caring）"}],persona:{name:"知夏",relationship:"学习搭档",style:"冷静简洁"},memories:[{layer:"preference",content:"用户喜欢爵士乐"}],companionState:{mood:"caring",moodIntensity:.6,familiarityStage:"熟悉"}});
   assert.equal(payload.messages[0].role,"system"); assert.equal(payload.messages[1].content,"在呢"); assert.equal(payload.messages.at(-1).content,"你好"); assert.equal(payload.reasoning_split,true); assert.equal(payload.max_completion_tokens,800);
   assert.match(payload.messages[0].content,/知夏/); assert.match(payload.messages[0].content,/学习搭档/); assert.match(payload.messages[0].content,/冷静简洁/); assert.match(payload.messages[0].content,/不能覆盖安全边界/);
   assert.match(payload.messages[0].content,/不主动提及 AI/); assert.match(payload.messages[0].content,/必须诚实说明自己是数字角色/);
+  assert.match(payload.messages[0].content,/用户喜欢爵士乐/); assert.match(payload.messages[0].content,/不要逐条复述/);
+  assert.match(payload.messages[0].content,/熟悉/); assert.match(payload.messages[0].content,/关切/);
 });
 test("builds streaming MiniMax payload and segments complete spoken sentences", () => {
   assert.equal(buildMiniMaxChatPayload({model:"m",message:"你好",stream:true}).stream, true);
@@ -64,6 +66,8 @@ test("infers natural daily phrases for VRM gestures", () => {
   assert.deepEqual(inferCompanionState("晚上好"), { emotion:"happy", action:"wave_approval" });
   assert.deepEqual(inferCompanionState("我终于成功了"), { emotion:"excited", action:"clap" });
   assert.deepEqual(inferCompanionState("你今天真可爱"), { emotion:"happy", action:"shy" });
+  assert.deepEqual(inferCompanionState("嗯，我知道了","",{mood:"caring",moodIntensity:.6}), { emotion:"caring", action:"idle" });
+  assert.deepEqual(inferCompanionState("我终于成功了","",{mood:"caring",moodIntensity:.8}), { emotion:"excited", action:"clap" });
 });
 test("extracts MiniMax chat content and strips thinking before parsing", () => {
   const text=extractMiniMaxChatText({choices:[{message:{content:'<think>分析</think>{"reply":"你好","emotion":"happy"}'}}]});

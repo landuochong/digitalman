@@ -2,6 +2,7 @@ import { VrmCompanion } from "./vrm-avatar.js";
 
 const $=selector=>document.querySelector(selector);
 const mic=$("#micButton"),caption=$("#caption"),prompt=$("#voicePrompt"),detail=$("#detailText"),wave=$("#wave");
+const userId=localStorage.lumiUserId||globalThis.crypto?.randomUUID?.()||`local-${Date.now()}-${Math.random().toString(36).slice(2)}`;localStorage.lumiUserId=userId;
 const personaPresets={
   warm:{name:"露米",relationship:"可信赖的朋友",style:"自然、温暖、有边界感"},
   lively:{name:"小晴",relationship:"元气聊天伙伴",style:"活泼、简短、有幽默感，但不过度夸张"},
@@ -101,7 +102,7 @@ function queueSpeech(text,emotion,batch,behavior){
 async function reply(message){
   setState("thinking",`${persona.name}正在想…`);caption.textContent="正在理解你刚才说的话";const controller=new AbortController();replyController=controller;const batch=speechBatch;let finalText="",emotion="calm",behavior=null,behaviorQueued=false;
   try{
-    const response=await fetch("/api/chat/stream",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({message,history:history.slice(-10),persona}),signal:controller.signal});if(!response.ok||!response.body)throw new Error("连接失败");
+    const response=await fetch("/api/chat/stream",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({message,history:history.slice(-10),persona,userId}),signal:controller.signal});if(!response.ok||!response.body)throw new Error("连接失败");
     await consumeEvents(response,async(event,data)=>{if(event==="meta"){mode=data.mode;emotion=data.emotion||"calm";behavior={emotion,action:data.action||"idle"};avatar.setBehavior(emotion,"idle");$("#expressionLabel").textContent=labels[emotion]||labels.calm;}if(event==="sentence"){finalText+=data.text;caption.textContent=finalText;const firstBehavior=behaviorQueued?null:behavior;behaviorQueued=true;queueSpeech(data.text,emotion,batch,firstBehavior);}if(event==="done"){finalText=data.reply||finalText;caption.textContent=finalText;emotion=data.emotion||emotion;}if(event==="error")throw new Error(data.error||"回答中断");});
     const completedQueue=speechQueue;
     completedQueue.then(()=>{if(batch===speechBatch&&speechQueue===completedQueue)setState("idle","点击麦克风继续说话");});

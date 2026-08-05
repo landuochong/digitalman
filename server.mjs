@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import { extname, join, normalize } from "node:path";
 import { fileURLToPath } from "node:url";
 import { buildChatPayload, buildMiniMaxChatPayload, buildMiniMaxReply, buildMiniMaxSpeechPayload, buildSpeechPayload, decodeMiniMaxAudio, demoReply, extractMiniMaxChatText, extractResponseText, inferCompanionState, normalizePersona, parseCompanionReply, sanitizeReplyText, takeCompleteSentences } from "./src/companion.mjs";
+import { CompanionMemoryStore } from "./src/memory.mjs";
 
 function loadLocalEnv() {
   try {
@@ -20,6 +21,8 @@ function loadLocalEnv() {
 loadLocalEnv();
 
 const root = fileURLToPath(new URL("./public", import.meta.url));
+const memoryFile = process.env.MEMORY_FILE || fileURLToPath(new URL("./data/companion-memory.json", import.meta.url));
+const memoryStore = new CompanionMemoryStore(memoryFile);
 const port = Number(process.env.PORT || 3000);
 const provider = process.env.AI_PROVIDER || (process.env.OPENAI_API_KEY ? "openai" : process.env.MINIMAX_API_KEY ? "minimax" : "demo");
 const apiKey = provider === "minimax" ? process.env.MINIMAX_API_KEY : process.env.OPENAI_API_KEY;
@@ -49,36 +52,36 @@ async function body(req, limit = 64_000) {
   catch { throw Object.assign(new Error("JSON 格式无效"), { status: 400 }); }
 }
 
-async function openAIChat(message, history, userId, persona) {
+async function openAIChat(message, history, userId, persona, memories, companionState) {
   const response = await fetch("https://api.openai.com/v1/responses", {
     method: "POST",
     headers: { authorization: `Bearer ${apiKey}`, "content-type": "application/json" },
-    body: JSON.stringify(buildChatPayload({ model:textModel, message, history, userId:userId || "anonymous", persona }))
+    body: JSON.stringify(buildChatPayload({ model:textModel, message, history, userId:userId || "anonymous", persona, memories, companionState }))
   });
   if (!response.ok) throw new Error(`OpenAI 文案接口失败 (${response.status})`);
   return parseCompanionReply(extractResponseText(await response.json()));
 }
 
-async function miniMaxChat(message, history, persona) {
+async function miniMaxChat(message, history, persona, memories, companionState) {
   const response = await fetch(`${miniMaxBaseUrl}/chat/completions`, {
     method:"POST",
     headers:{ authorization:`Bearer ${apiKey}`, "content-type":"application/json" },
-    body:JSON.stringify(buildMiniMaxChatPayload({ model:miniMaxTextModel, message, history, persona }))
+    body:JSON.stringify(buildMiniMaxChatPayload({ model:miniMaxTextModel, message, history, persona, memories, companionState }))
   });
   const payload = await response.json().catch(() => ({}));
   if (!response.ok || payload?.base_resp?.status_code > 0) throw new Error(payload?.base_resp?.status_msg || `MiniMax 文案接口失败 (${response.status})`);
-  return buildMiniMaxReply(extractMiniMaxChatText(payload), message);
+  return buildMiniMaxReply(extractMiniMaxChatText(payload), message, companionState);
 }
 
 function sendEvent(res, event, data) {
   res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
 }
 
-async function miniMaxChatStream(message, history, persona, res) {
+async function miniMaxChatStream(message, history, persona, memories, companionState, userId, res) {
   const response = await fetch(`${miniMaxBaseUrl}/chat/completions`, {
     method:"POST",
     headers:{ authorization:`Bearer ${apiKey}`, "content-type":"application/json" },
-    body:JSON.stringify(buildMiniMaxChatPayload({ model:miniMaxTextModel, message, history, stream:true, persona }))
+    body:JSON.stringify(buildMiniMaxChatPayload({ model:miniMaxTextModel, message, history, stream:true, persona, memories, companionState }))
   });
   if (!response.ok || !response.body) throw new Error(`MiniMax 流式文案接口失败 (${response.status})`);
 
@@ -87,7 +90,7 @@ async function miniMaxChatStream(message, history, persona, res) {
     "cache-control":"no-cache, no-transform",
     connection:"keep-alive"
   });
-  sendEvent(res, "meta", { ...inferCompanionState(message), mode:"minimax" });
+  sendEvent(res, "meta", { ...inferCompanionState(message,"",companionState), mode:"minimax" });
 
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
@@ -126,9 +129,11 @@ async function miniMaxChatStream(message, history, persona, res) {
   }
 
   emitAvailable(true);
-  const result = buildMiniMaxReply(rawText, message);
+  const result = buildMiniMaxReply(rawText, message, companionState);
   sendEvent(res, "done", { ...result, mode:"minimax" });
   res.end();
+  void memoryStore.remember(userId,message);
+  void memoryStore.updateCompanionState(userId,result.emotion);
 }
 
 async function chat(req, res) {
@@ -138,10 +143,14 @@ async function chat(req, res) {
   if (message.length > 2000) return json(res, 400, { error: "单条消息不能超过 2000 字" });
   const history = Array.isArray(data.history) ? data.history : [];
   const persona = normalizePersona(data.persona);
-  const result = provider === "minimax" && apiKey ? await miniMaxChat(message,history,persona)
-    : provider === "openai" && apiKey ? await openAIChat(message,history,data.userId,persona)
+  const memories = await memoryStore.recall(data.userId,message);
+  const companionState = await memoryStore.getCompanionState(data.userId);
+  const result = provider === "minimax" && apiKey ? await miniMaxChat(message,history,persona,memories,companionState)
+    : provider === "openai" && apiKey ? await openAIChat(message,history,data.userId,persona,memories,companionState)
     : demoReply(message,persona);
   json(res, 200, { ...result, mode:apiKey ? provider : "demo" });
+  void memoryStore.remember(data.userId,message);
+  void memoryStore.updateCompanionState(data.userId,result.emotion);
 }
 
 async function chatStream(req, res) {
@@ -151,15 +160,19 @@ async function chatStream(req, res) {
   if (message.length > 2000) return json(res, 400, { error:"单条消息不能超过 2000 字" });
   const history = Array.isArray(data.history) ? data.history : [];
   const persona = normalizePersona(data.persona);
-  if (provider === "minimax" && apiKey) return miniMaxChatStream(message, history, persona, res);
+  const memories = await memoryStore.recall(data.userId,message);
+  const companionState = await memoryStore.getCompanionState(data.userId);
+  if (provider === "minimax" && apiKey) return miniMaxChatStream(message, history, persona, memories, companionState, data.userId, res);
   const result = provider === "openai" && apiKey
-    ? await openAIChat(message, history, data.userId, persona)
+    ? await openAIChat(message, history, data.userId, persona, memories,companionState)
     : demoReply(message, persona);
   res.writeHead(200, { "content-type":"text/event-stream; charset=utf-8", "cache-control":"no-cache, no-transform" });
   sendEvent(res, "meta", { emotion:result.emotion, action:result.action, mode:apiKey ? provider : "demo" });
   for (const sentence of takeCompleteSentences(result.reply, true).sentences) sendEvent(res, "sentence", { text:sentence });
   sendEvent(res, "done", { ...result, mode:apiKey ? provider : "demo" });
   res.end();
+  void memoryStore.remember(data.userId,message);
+  void memoryStore.updateCompanionState(data.userId,result.emotion);
 }
 
 async function speech(req, res) {
@@ -203,7 +216,7 @@ async function staticFile(req, res) {
 
 export const server = http.createServer(async (req, res) => {
   try {
-    if (req.method === "GET" && req.url === "/api/health") return json(res, 200, { ok:true, mode:apiKey ? provider : "demo", textModel:provider === "minimax" ? miniMaxTextModel : textModel, ttsModel:provider === "minimax" ? miniMaxTtsModel : ttsModel });
+    if (req.method === "GET" && req.url === "/api/health") return json(res, 200, { ok:true, mode:apiKey ? provider : "demo", memory:true, continuity:true, textModel:provider === "minimax" ? miniMaxTextModel : textModel, ttsModel:provider === "minimax" ? miniMaxTtsModel : ttsModel });
     if (req.method === "POST" && req.url === "/api/chat") return await chat(req, res);
     if (req.method === "POST" && req.url === "/api/chat/stream") return await chatStream(req, res);
     if (req.method === "POST" && req.url === "/api/speech") return await speech(req, res);
