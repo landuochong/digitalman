@@ -2,7 +2,7 @@ import * as THREE from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { VRMLoaderPlugin, VRMUtils } from "@pixiv/three-vrm";
-import { VrmMotionController } from "./vrm-motion.js";
+import { VrmMotionController } from "./vrm-motion.js?v=20260805-33";
 
 const clamp=(value,min=0,max=1)=>Math.min(max,Math.max(min,value));
 const damp=(current,target,speed,dt)=>THREE.MathUtils.damp(current,target,speed,dt);
@@ -40,9 +40,10 @@ export class VrmCompanion{
       VRMUtils.rotateVRM0(next);
       if(this.vrm){this.modelPivot.remove(this.vrm.scene);VRMUtils.deepDispose(this.vrm.scene);}
       this.vrm=next;this.modelUrl=url;this.expression=0;this.blink=0;this.action="idle";
-      this.modelPivot.rotation.y=0;this.modelPivot.add(next.scene);this.fitModel();this.prepareFallbackPose();this.prepareHands();
+      this.modelPivot.rotation.y=0;this.modelPivot.add(next.scene);this.tuneModelMaterials(url,next.scene);this.fitModel();this.prepareFallbackPose();this.prepareHands();
       if(next.lookAt)next.lookAt.target=this.lookTarget;
       this.motion.modelProfile=url.includes("avatar-sample-b.vrm")?"default":"mouth";
+      this.motion.clapProfile=url.includes("avatar-sample-a.vrm")?"soft":url.includes("avatar-sample-b.vrm")?"vivid":url.includes("nikechan_v1.vrm")?"nike1":url.includes("nikechan_v2.vrm")?"nike2":"classic";
       await this.motion.attach(next);
       if(token!==this.loadingToken)return false;
       this.motion.update(0);next.update(0);this.fitModel();
@@ -50,6 +51,16 @@ export class VrmCompanion{
     }catch(error){console.error(error);if(token===this.loadingToken)this.onError?.(error,url);return false;}
   }
   switchModel(url){if(url===this.modelUrl&&this.vrm)return Promise.resolve(true);return this.load(url);}
+  tuneModelMaterials(url,scene){
+    if(!url.includes("nikechan_v2.vrm"))return;
+    scene.traverse(object=>{
+      if(!object.isMesh)return;
+      for(const material of Array.isArray(object.material)?object.material:[object.material]){
+        if(!material||!(material.name==="NikeChanBody"||material.name==="NikeChanBodyShade"))continue;
+        material.color?.set("#f6ddd6");material.needsUpdate=true;
+      }
+    });
+  }
   fitModel(){
     this.modelPivot.position.set(0,0,0);
     const box=new THREE.Box3().setFromObject(this.vrm.scene),center=box.getCenter(new THREE.Vector3()),size=box.getSize(new THREE.Vector3());
@@ -77,6 +88,11 @@ export class VrmCompanion{
   setSpeaking(active){this.speaking=active;if(!active)this.audioLevel=0;}
   setAudioLevel(level){this.audioLevel=clamp(level);}
   setRestPose(name){return this.motion.setRestPose(name);}
+  startPoseCalibration(frameIndex=0){return this.motion.startCalibration("clap",frameIndex);}
+  setPoseCalibrationOffset(boneName,offset){return this.motion.setCalibrationOffset(boneName,offset);}
+  resetPoseCalibration(){return this.motion.resetCalibrationOffsets();}
+  exportPoseCalibration(){return this.motion.exportCalibrationPose();}
+  stopPoseCalibration(){return this.motion.stopCalibration();}
   setViewAngle(degrees){
     const angle=THREE.MathUtils.degToRad(degrees),offset=this.defaultViewOffset||this.camera.position.clone().sub(this.controls.target);
     const target=this.defaultViewTarget||this.controls.target;this.controls.target.copy(target);
@@ -94,9 +110,11 @@ export class VrmCompanion{
     const now=this.clock.elapsedTime;
     if(GESTURES.has(action)&&(force||now-this.lastGesture>=3)){
       this.lastGesture=now;void this.motion.play(action,{hold:holdGesture});
+      return true;
     }
+    return false;
   }
-  finishGesture(){this.motion.stopPose(true);}
+  finishGesture(){if(this.motion.hasGesture)this.motion.stopPose(true);}
   resize(){const rect=this.canvas.getBoundingClientRect();if(!rect.width||!rect.height)return;this.renderer.setSize(rect.width,rect.height,false);this.camera.aspect=rect.width/rect.height;this.camera.updateProjectionMatrix();}
   setExpression(name,value){this.vrm?.expressionManager?.setValue(name,clamp(value));}
   updateBlink(t,dt){

@@ -1,4 +1,4 @@
-import { VrmCompanion } from "./vrm-avatar.js";
+import { VrmCompanion } from "./vrm-avatar.js?v=20260805-35";
 
 const $=selector=>document.querySelector(selector);
 const mic=$("#micButton"),caption=$("#caption"),prompt=$("#voicePrompt"),detail=$("#detailText"),wave=$("#wave");
@@ -79,6 +79,36 @@ document.querySelectorAll("[data-action-preview]").forEach(button=>button.addEve
   const action=button.dataset.actionPreview,preview=actionPreviews[action];avatar.setBehavior(preview.emotion,action,true);$("#expressionLabel").textContent=`动作测试：${preview.label}`;
 }));
 
+const calibrationBones={
+  leftShoulder:"左肩",leftUpperArm:"左上臂",leftLowerArm:"左前臂",leftHand:"左手腕",
+  rightShoulder:"右肩",rightUpperArm:"右上臂",rightLowerArm:"右前臂",rightHand:"右手腕",
+};
+const calibrationFrame=$("#calibrationFrame"),calibrationBone=$("#calibrationBone"),calibrationOutput=$("#calibrationOutput");
+const calibrationInputs=[...document.querySelectorAll("[data-calibration-axis]")];
+const calibrationValues=Object.fromEntries(Object.keys(calibrationBones).map(name=>[name,{x:0,y:0,z:0}]));
+for(const [value,label] of Object.entries(calibrationBones))calibrationBone.add(new Option(label,value));
+function showCalibrationBone(){const values=calibrationValues[calibrationBone.value];calibrationInputs.forEach(input=>input.value=values[input.dataset.calibrationAxis]);}
+function applyCalibrationBone(){
+  const values=calibrationValues[calibrationBone.value];
+  calibrationInputs.forEach(input=>values[input.dataset.calibrationAxis]=Number(input.value)||0);
+  avatar.setPoseCalibrationOffset(calibrationBone.value,values);
+}
+calibrationBone.addEventListener("change",showCalibrationBone);
+calibrationInputs.forEach(input=>input.addEventListener("input",applyCalibrationBone));
+$("#calibrationStart").addEventListener("click",async()=>{
+  stopAll();for(const values of Object.values(calibrationValues))values.x=values.y=values.z=0;showCalibrationBone();
+  const ok=await avatar.startPoseCalibration(Number(calibrationFrame.value));
+  calibrationOutput.value=ok?"正在标定：调整骨骼角度后导出 JSON":"标定启动失败";
+});
+$("#calibrationReset").addEventListener("click",()=>{for(const values of Object.values(calibrationValues))values.x=values.y=values.z=0;showCalibrationBone();avatar.resetPoseCalibration();});
+$("#calibrationStop").addEventListener("click",()=>{avatar.stopPoseCalibration();calibrationOutput.value="";});
+$("#calibrationExport").addEventListener("click",async()=>{
+  const pose=avatar.exportPoseCalibration();if(!pose){calibrationOutput.value="请先开始标定";return;}
+  const text=JSON.stringify(pose,null,2);calibrationOutput.value=text;
+  try{await navigator.clipboard.writeText(text);}catch{}
+});
+showCalibrationBone();
+
 function setState(state,text){mic.classList.remove("listening","thinking","speaking");if(state!=="idle")mic.classList.add(state);mic.disabled=state==="thinking";if(text)prompt.textContent=text;wave.classList.toggle("active",state==="speaking");avatar.setSpeaking(state==="speaking");}
 function stopAll(){speechBatch++;speechQueue=Promise.resolve();replyController?.abort();replyController=null;if(activeAudio){activeAudio.pause();activeAudio.removeAttribute("src");activeAudio=null;}activeResolve?.();activeResolve=null;window.speechSynthesis?.cancel();avatar.setSpeaking(false);avatar.setAudioLevel(0);avatar.finishGesture();setState("idle","点击麦克风继续说话");}
 async function consumeEvents(response,onEvent){const reader=response.body.getReader(),decoder=new TextDecoder();let buffer="";while(true){const{value,done}=await reader.read();buffer+=decoder.decode(value||new Uint8Array(),{stream:!done});const blocks=buffer.split(/\r?\n\r?\n/);buffer=blocks.pop()||"";for(const block of blocks){const event=block.match(/^event:\s*(.+)$/m)?.[1],raw=block.match(/^data:\s*(.+)$/m)?.[1];if(raw)await onEvent(event,JSON.parse(raw));}if(done)break;}}
@@ -96,7 +126,7 @@ async function cloudSpeech(text,emotion,batch,onStart){
   await new Promise((resolve,reject)=>{activeResolve=()=>{finish();resolve();};audio.onplay=()=>{onStart?.();frame();};audio.onended=()=>{finish();resolve();};audio.onerror=()=>{finish();resolve();};audio.play().catch(error=>{finish();reject(error);});});
 }
 function queueSpeech(text,emotion,batch,behavior){
-  let started=false,gestureStarted=false;const onStart=()=>{if(started||batch!==speechBatch)return;started=true;if(behavior){gestureStarted=true;avatar.setBehavior(behavior.emotion,behavior.action,false,true);}};
+  let started=false,gestureStarted=false;const onStart=()=>{if(started||batch!==speechBatch)return;started=true;if(behavior)gestureStarted=avatar.setBehavior(behavior.emotion,behavior.action,false,true);};
   speechQueue=speechQueue.then(async()=>{if(batch!==speechBatch)return;try{await cloudSpeech(text,emotion,batch,onStart);}catch{await browserSpeech(text,onStart);}finally{if(gestureStarted&&batch===speechBatch)avatar.finishGesture();}});return speechQueue;
 }
 async function reply(message){

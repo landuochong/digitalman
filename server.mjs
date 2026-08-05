@@ -209,7 +209,9 @@ async function staticFile(req, res) {
   if (!path.startsWith(root)) return json(res, 403, { error: "禁止访问" });
   try {
     const file = await readFile(path);
-    res.writeHead(200, { "content-type": mime[extname(path)] || "application/octet-stream", "cache-control": "no-cache" });
+    const extension=extname(path);
+    const cacheControl=[".html",".js",".json"].includes(extension)?"no-store":"no-cache";
+    res.writeHead(200, { "content-type": mime[extension] || "application/octet-stream", "cache-control": cacheControl });
     res.end(file);
   } catch { json(res, 404, { error: "页面不存在" }); }
 }

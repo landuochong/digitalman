@@ -80,6 +80,24 @@
           <button type="button" data-action-preview="surprise">惊讶</button>
         </div>
       </details>
+      <details class="pose-calibration" id="poseCalibration">
+        <summary>姿势标定</summary>
+        <div class="pose-calibration-panel">
+          <div class="calibration-toolbar">
+            <label>帧<select id="calibrationFrame"><option value="0">合拢</option><option value="1">张开</option></select></label>
+            <button type="button" id="calibrationStart">开始</button>
+            <button type="button" id="calibrationStop">停止</button>
+          </div>
+          <label>骨骼<select id="calibrationBone"></select></label>
+          <div class="calibration-axes">
+            <label>X°<input type="number" data-calibration-axis="x" min="-180" max="180" step="1" value="0" /></label>
+            <label>Y°<input type="number" data-calibration-axis="y" min="-180" max="180" step="1" value="0" /></label>
+            <label>Z°<input type="number" data-calibration-axis="z" min="-180" max="180" step="1" value="0" /></label>
+          </div>
+          <div class="calibration-toolbar"><button type="button" id="calibrationReset">全部归零</button><button type="button" id="calibrationExport">导出 JSON</button></div>
+          <textarea id="calibrationOutput" rows="6" readonly placeholder="导出的姿势 JSON 会显示在这里"></textarea>
+        </div>
+      </details>
       <div class="caption" id="caption" aria-live="polite">点击麦克风开始说话</div>
       <button class="mic" id="micButton" type="button" aria-label="开始语音对话">
         <span class="mic-icon"></span><span class="pulse"></span>
@@ -89,6 +107,6 @@
       <div class="wave" id="wave" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></div>
     </section>
   </main>
-  <script type="module" src="/vrm-app.js"></script>
+  <script type="module" src="/vrm-app.js?v=20260805-35"></script>
 </body>
 </html>

@@ -83,7 +83,7 @@ export function demoReply(message, persona) {
   if (/难过|伤心|累|烦|焦虑|不开心|崩溃/.test(input)) {
     return { reply: "听起来你现在真的不太轻松。我会陪着你。要不要先告诉我，最让你难受的是哪一部分？", emotion: "caring", action: "caring" };
   }
-  if (/开心|高兴|成功|搞定|太好了|哈哈|好消息/.test(input)) {
+  if (/鼓掌|拍手|庆祝一下|帮我庆祝|为我庆祝|开心|高兴|成功|搞定|太好了|哈哈|好消息/.test(input)) {
     return { reply: "这份开心我收到啦！你一说，我也忍不住跟着高兴。快讲讲发生了什么？", emotion: "excited", action: "clap" };
   }
   if (/害羞|脸红|不好意思|真可爱|好可爱|你.{0,4}可爱|你.{0,4}漂亮|喜欢你/.test(input)) {
@@ -130,7 +130,7 @@ export function inferCompanionState(message, reply = "", companionState=null) {
   if (/自杀|不想活|活不下去|伤害自己|结束生命|难过|伤心|焦虑|崩溃|害怕|担心|累|饿|困|不舒服|生病|疼|压力|烦|委屈|孤独|失落/.test(text)) {
     return { emotion:"caring", action:"caring" };
   }
-  if (/开心|高兴|成功|搞定|太好了|哈哈|好消息|恭喜|完成|做到了|通过了|赢了|录取|升职|顺利|终于/.test(text)) {
+  if (/鼓掌|拍手|庆祝一下|帮我庆祝|为我庆祝|开心|高兴|成功|搞定|太好了|哈哈|好消息|恭喜|完成|做到了|通过了|赢了|录取|升职|顺利|终于/.test(text)) {
     return { emotion:"excited", action:"clap" };
   }
   if (/惊讶|没想到|居然|竟然|真的假的|真的吗|不会吧|天啊|我的天|怎么可能|太夸张|吓我一跳|突然|意外|震惊|哇/.test(text)) return { emotion:"excited", action:"surprise" };

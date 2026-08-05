@@ -1,0 +1,29 @@
+{
+  "version": "1.0",
+  "pose": {
+    "leftIndexProximal": { "rotation": [0, 0, -0.09, 0.9959] },
+    "leftIndexIntermediate": { "rotation": [0, 0, -0.065, 0.9979] },
+    "leftIndexDistal": { "rotation": [0, 0, -0.03, 0.9995] },
+    "leftMiddleProximal": { "rotation": [0, 0, -0.11, 0.9939] },
+    "leftMiddleIntermediate": { "rotation": [0, 0, -0.075, 0.9972] },
+    "leftMiddleDistal": { "rotation": [0, 0, -0.035, 0.9994] },
+    "leftRingProximal": { "rotation": [0, 0, -0.125, 0.9922] },
+    "leftRingIntermediate": { "rotation": [0, 0, -0.085, 0.9964] },
+    "leftRingDistal": { "rotation": [0, 0, -0.04, 0.9992] },
+    "leftLittleProximal": { "rotation": [0, 0, -0.14, 0.9902] },
+    "leftLittleIntermediate": { "rotation": [0, 0, -0.095, 0.9955] },
+    "leftLittleDistal": { "rotation": [0, 0, -0.045, 0.999] },
+    "rightIndexProximal": { "rotation": [0, 0, 0.09, 0.9959] },
+    "rightIndexIntermediate": { "rotation": [0, 0, 0.065, 0.9979] },
+    "rightIndexDistal": { "rotation": [0, 0, 0.03, 0.9995] },
+    "rightMiddleProximal": { "rotation": [0, 0, 0.11, 0.9939] },
+    "rightMiddleIntermediate": { "rotation": [0, 0, 0.075, 0.9972] },
+    "rightMiddleDistal": { "rotation": [0, 0, 0.035, 0.9994] },
+    "rightRingProximal": { "rotation": [0, 0, 0.125, 0.9922] },
+    "rightRingIntermediate": { "rotation": [0, 0, 0.085, 0.9964] },
+    "rightRingDistal": { "rotation": [0, 0, 0.04, 0.9992] },
+    "rightLittleProximal": { "rotation": [0, 0, 0.14, 0.9902] },
+    "rightLittleIntermediate": { "rotation": [0, 0, 0.095, 0.9955] },
+    "rightLittleDistal": { "rotation": [0, 0, 0.045, 0.999] }
+  }
+}
