@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { VRMLoaderPlugin, VRMUtils } from "@pixiv/three-vrm";
 import { VrmMotionController } from "./vrm-motion.js";
 
@@ -8,18 +9,19 @@ const damp=(current,target,speed,dt)=>THREE.MathUtils.damp(current,target,speed,
 const GESTURES=new Set(["wave_approval","clap","thinking","caring","surprise"]);
 
 export class VrmCompanion{
-  constructor(canvas,{modelUrl="/vrm/models/lumi-cc0.vrm",onReady,onError}={}){
+  constructor(canvas,{modelUrl="/vrm/models/lumi-cc0.vrm",restPose="natural",onReady,onError}={}){
     this.canvas=canvas;this.onReady=onReady;this.onError=onError;
     this.clock=new THREE.Clock();this.vrm=null;this.audioLevel=0;this.speaking=false;
     this.emotion="calm";this.action="idle";this.expression=0;this.blink=0;
     this.nextBlink=2.2+Math.random()*2;this.blinkTime=-1;this.lastGesture=-Infinity;
-    this.modelUrl=modelUrl;this.loadingToken=0;this.motion=new VrmMotionController();
-    this.viewYaw=0;this.targetViewYaw=0;
+    this.modelUrl=modelUrl;this.loadingToken=0;this.motion=new VrmMotionController();this.motion.restPose=restPose;
     this.scene=new THREE.Scene();
     this.modelPivot=new THREE.Group();this.scene.add(this.modelPivot);
     this.camera=new THREE.PerspectiveCamera(28,1,.1,20);this.camera.position.set(0,1.38,2.45);
     this.renderer=new THREE.WebGLRenderer({canvas,alpha:true,antialias:true,powerPreference:"high-performance"});
     this.renderer.setPixelRatio(Math.min(devicePixelRatio,2));this.renderer.outputColorSpace=THREE.SRGBColorSpace;
+    this.controls=new OrbitControls(this.camera,canvas);this.controls.enableDamping=true;this.controls.dampingFactor=.08;
+    this.controls.screenSpacePanning=true;this.controls.minPolarAngle=.12;this.controls.maxPolarAngle=Math.PI-.12;
     this.scene.add(new THREE.HemisphereLight(0xfffaf5,0x8d8290,2.25));
     const key=new THREE.DirectionalLight(0xfff1e7,2.6);key.position.set(1.8,3,2.8);this.scene.add(key);
     const fill=new THREE.DirectionalLight(0xb9c8ff,1.25);fill.position.set(-2,1.8,1);this.scene.add(fill);
@@ -53,7 +55,9 @@ export class VrmCompanion{
     const hips=this.vrm.humanoid.getRawBoneNode("hips"),bodyCenter=hips?.getWorldPosition(new THREE.Vector3())||center;
     this.modelPivot.position.x=-bodyCenter.x;this.modelPivot.position.y=-box.min.y;
     const height=Math.max(size.y,1);this.camera.position.set(0,height*.69,height*1.4);this.camera.lookAt(0,height*.68,0);
-    this.lookTarget.position.set(0,height*.72,height*2);
+    this.controls.target.set(0,height*.68,0);this.controls.minDistance=height*.55;this.controls.maxDistance=height*3.4;this.controls.update();
+    this.defaultViewTarget=this.controls.target.clone();this.defaultViewOffset=this.camera.position.clone().sub(this.controls.target);
+    this.lookTarget.position.copy(this.camera.position);
   }
   bone(name){return this.vrm?.humanoid?.getNormalizedBoneNode(name)||null;}
   prepareFallbackPose(){
@@ -71,13 +75,19 @@ export class VrmCompanion{
   }
   setSpeaking(active){this.speaking=active;if(!active)this.audioLevel=0;}
   setAudioLevel(level){this.audioLevel=clamp(level);}
-  setViewAngle(degrees,immediate=false){
-    this.targetViewYaw=THREE.MathUtils.clamp(THREE.MathUtils.degToRad(degrees),THREE.MathUtils.degToRad(-65),THREE.MathUtils.degToRad(65));
-    if(immediate)this.viewYaw=this.targetViewYaw;
-    return this.getViewAngle();
+  setRestPose(name){return this.motion.setRestPose(name);}
+  setViewAngle(degrees){
+    const angle=THREE.MathUtils.degToRad(degrees),offset=this.defaultViewOffset||this.camera.position.clone().sub(this.controls.target);
+    const target=this.defaultViewTarget||this.controls.target;this.controls.target.copy(target);
+    const radius=Math.max(Math.hypot(offset.x,offset.z),.01);
+    this.camera.position.x=this.controls.target.x+Math.sin(angle)*radius;
+    this.camera.position.y=this.controls.target.y+offset.y;
+    this.camera.position.z=this.controls.target.z+Math.cos(angle)*radius;
+    this.controls.update();return this.getViewAngle();
   }
   nudgeViewAngle(degrees){return this.setViewAngle(this.getViewAngle()+degrees);}
-  getViewAngle(){return THREE.MathUtils.radToDeg(this.targetViewYaw);}
+  getViewAngle(){const offset=this.camera.position.clone().sub(this.controls.target);return THREE.MathUtils.radToDeg(Math.atan2(offset.x,offset.z));}
+  resetView(){this.fitModel();return 0;}
   setBehavior(emotion="calm",action="idle",force=false){
     this.emotion=emotion;this.action=action;
     const now=this.clock.elapsedTime;
@@ -107,7 +117,8 @@ export class VrmCompanion{
   animate(){
     requestAnimationFrame(()=>this.animate());
     const dt=Math.min(this.clock.getDelta(),.05),t=this.clock.elapsedTime;
-    if(this.vrm){this.viewYaw=damp(this.viewYaw,this.targetViewYaw,8,dt);this.modelPivot.rotation.y=this.viewYaw;this.motion.update(dt);this.updateBlink(t,dt);this.updateExpressions(dt,t);this.vrm.update(dt);}
+    this.controls.update();
+    if(this.vrm){this.lookTarget.position.copy(this.camera.position);this.motion.update(dt);this.updateBlink(t,dt);this.updateExpressions(dt,t);this.vrm.update(dt);}
     this.renderer.render(this.scene,this.camera);
   }
 }

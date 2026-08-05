@@ -18,21 +18,40 @@
 </head>
 <body>
   <main class="shell">
-    <section class="stage" aria-label="VRM 动漫数字人露米">
+    <section class="stage" aria-label="VRM 动漫数字人；拖动旋转，滚轮缩放，右键拖动平移，双击复位">
       <canvas id="avatarCanvas"></canvas>
-      <div class="brand"><span>L</span><strong>露米 · VRM</strong></div>
+      <div class="brand"><span id="brandInitial">L</span><strong id="brandName">露米 · VRM</strong></div>
       <div class="stage-status"><i></i><span id="avatarStatus">正在加载动漫人物…</span></div>
       <div class="view-controls" role="group" aria-label="调整人物观看角度">
-        <button type="button" data-view-angle="-35" aria-label="人物向左转">左转</button>
+        <button type="button" data-view-angle="-45" aria-label="人物向左转">左转</button>
         <button type="button" data-view-angle="0" aria-label="人物恢复正面">正面</button>
-        <button type="button" data-view-angle="35" aria-label="人物向右转">右转</button>
+        <button type="button" data-view-angle="45" aria-label="人物向右转">右转</button>
       </div>
       <div class="expression-label" id="expressionLabel">安静陪伴中</div>
     </section>
     <section class="conversation">
       <header>
         <div><p>ANIME COMPANION LAB</p><h1>自然一点，少动一点</h1></div>
-        <a href="/" title="返回真人实验">真人版</a>
+        <div class="header-actions">
+          <details class="persona-settings" id="personaSettings">
+            <summary>角色设定</summary>
+            <form id="personaForm">
+              <label>角色预设
+                <select id="personaPreset">
+                  <option value="warm">温暖好友</option>
+                  <option value="lively">元气伙伴</option>
+                  <option value="calm">冷静知己</option>
+                  <option value="custom">自定义</option>
+                </select>
+              </label>
+              <label>名字<input id="personaName" maxlength="20" required /></label>
+              <label>与我的关系<input id="personaRelationship" maxlength="40" required /></label>
+              <label>说话风格<textarea id="personaStyle" maxlength="160" rows="3" required></textarea></label>
+              <button type="submit">保存角色</button>
+            </form>
+          </details>
+          <a href="/" title="返回真人实验">真人版</a>
+        </div>
       </header>
       <div class="principles">
         <span>稳定注视</span><span>低幅表情</span><span>每轮最多一个动作</span>
@@ -41,6 +60,14 @@
         <button type="button" data-look="classic" class="active"><b>简约</b><small>短发 · 黑白装</small></button>
         <button type="button" data-look="soft"><b>学院日常</b><small>齐肩短发 · 针织开衫</small></button>
         <button type="button" data-look="vivid"><b>暗色潮流</b><small>紫色长发 · 黑粉街头装</small></button>
+        <button type="button" data-look="nike1"><b>Nike-chan v1</b><small>AITuber Kit · 经典造型</small></button>
+        <button type="button" data-look="nike2"><b>Nike-chan v2</b><small>AITuber Kit · 新版造型</small></button>
+      </div>
+      <div class="rest-poses" role="group" aria-label="选择默认手部姿势">
+        <span>待机手势</span>
+        <button type="button" data-rest-pose="natural">自然下垂</button>
+        <button type="button" data-rest-pose="touch">指尖轻触</button>
+        <button type="button" data-rest-pose="crossed">双臂抱胸</button>
       </div>
       <details class="action-test">
         <summary>动作测试</summary>

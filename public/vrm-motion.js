@@ -11,6 +11,11 @@ const ACTIONS={
   caring:{files:["finger_touch.json"],duration:1.7},
   surprise:{files:["mouth_cover.json"],duration:1.7},
 };
+const REST_POSES={
+  natural:null,
+  touch:{files:["finger_touch.json"]},
+  crossed:{files:["crossed_arms.json"]},
+};
 
 const poseCache=new Map();
 
@@ -81,6 +86,7 @@ function createSequenceClip(poses,vrm,step,name){
 export class VrmMotionController{
   constructor(){
     this.vrm=null;this.mixer=null;this.idleAction=null;this.poseAction=null;this.additiveAction=null;
+    this.restPose="natural";this.restAction=null;this.restAdditiveAction=null;
     this.activeAction="idle";this.activeUntil=0;this.requestId=0;this.idleAnimationPromise=null;this.retiring=[];
   }
   async loadIdleAnimation(){
@@ -97,13 +103,14 @@ export class VrmMotionController{
     const requestId=++this.requestId;
     if(this.mixer){this.mixer.stopAllAction();this.mixer.uncacheRoot(this.vrm.scene);}
     this.vrm=vrm;this.mixer=new THREE.AnimationMixer(vrm.scene);
-    this.poseAction=null;this.additiveAction=null;this.activeAction="idle";this.activeUntil=0;this.retiring=[];
+    this.poseAction=null;this.additiveAction=null;this.restAction=null;this.restAdditiveAction=null;this.activeAction="idle";this.activeUntil=0;this.retiring=[];
     try{
       const animation=await this.loadIdleAnimation();
       if(requestId!==this.requestId||vrm!==this.vrm||!animation)return;
       const clip=createVRMAnimationClip(animation,vrm);clip.name="companion_idle";
       this.idleAction=this.mixer.clipAction(clip);
       this.idleAction.setLoop(THREE.LoopRepeat,Infinity).play();
+      if(this.restPose!=="natural")await this.setRestPose(this.restPose);
     }catch(error){
       console.warn("待机动作加载失败，继续使用静态站姿。",error);
     }
@@ -114,34 +121,66 @@ export class VrmMotionController{
     try{
       const poses=await Promise.all(config.files.map(loadPose));
       if(requestId!==this.requestId||vrm!==this.vrm)return false;
-      this.stopPose(false);
+      this.stopGesture(0.05);this.fadeRestOut(FADE_SECONDS);
       const clip=config.step
         ?createSequenceClip(poses,vrm,config.step,`pose_${actionName}`)
         :createPoseClip(poses[0],vrm,`pose_${actionName}`);
       this.poseAction=this.mixer.clipAction(clip);
       this.poseAction.setLoop(THREE.LoopRepeat,Infinity).reset().setEffectiveWeight(1).fadeIn(FADE_SECONDS).play();
       if(this.idleAction){
-        const additiveClip=this.idleAction.getClip().clone();
-        additiveClip.name=`idle_overlay_${actionName}`;
-        additiveClip.tracks=additiveClip.tracks.filter(track=>!track.name.endsWith("hips.position"));
-        THREE.AnimationUtils.makeClipAdditive(additiveClip);
-        this.additiveAction=this.mixer.clipAction(additiveClip);
-        this.additiveAction.blendMode=THREE.AdditiveAnimationBlendMode;
-        this.additiveAction.setLoop(THREE.LoopRepeat,Infinity).reset().setEffectiveWeight(0.75).fadeIn(FADE_SECONDS).play();
-        this.idleAction.fadeOut(FADE_SECONDS);
+        this.additiveAction=this.createIdleOverlay(`idle_overlay_${actionName}`);
+        this.additiveAction.fadeIn(FADE_SECONDS);
       }
       this.activeAction=actionName;
       this.activeUntil=performance.now()/1000+config.duration;
       return true;
     }catch(error){console.warn(`动作 ${actionName} 加载失败。`,error);return false;}
   }
+  createIdleOverlay(name){
+    const clip=this.idleAction.getClip().clone();clip.name=name;
+    clip.tracks=clip.tracks.filter(track=>!track.name.endsWith("hips.position"));
+    THREE.AnimationUtils.makeClipAdditive(clip);
+    const action=this.mixer.clipAction(clip);action.blendMode=THREE.AdditiveAnimationBlendMode;
+    action.setLoop(THREE.LoopRepeat,Infinity).reset().setEffectiveWeight(0.75).play();return action;
+  }
+  retire(action,duration){
+    if(!action)return;action.fadeOut(duration);this.retiring.push({action,stopAt:performance.now()/1000+duration+.05});
+  }
+  stopGesture(duration){
+    this.retire(this.poseAction,duration);this.retire(this.additiveAction,duration);
+    this.poseAction=null;this.additiveAction=null;this.activeAction="idle";this.activeUntil=0;
+  }
+  fadeRestOut(duration){
+    if(this.restPose==="natural")this.idleAction?.fadeOut(duration);
+    else{this.restAction?.fadeOut(duration);this.restAdditiveAction?.fadeOut(duration);}
+  }
+  restoreRest(duration){
+    if(this.restPose==="natural")this.idleAction?.reset().fadeIn(duration).play();
+    else{
+      this.restAction?.reset().setEffectiveWeight(1).fadeIn(duration).play();
+      this.restAdditiveAction?.reset().setEffectiveWeight(0.75).fadeIn(duration).play();
+    }
+  }
+  async setRestPose(name="natural"){
+    if(!(name in REST_POSES))name="natural";
+    const requestId=++this.requestId,vrm=this.vrm;this.restPose=name;
+    this.stopGesture(FADE_SECONDS);
+    this.retire(this.restAction,FADE_SECONDS);this.retire(this.restAdditiveAction,FADE_SECONDS);
+    this.restAction=null;this.restAdditiveAction=null;
+    if(name==="natural"){this.idleAction?.reset().fadeIn(FADE_SECONDS).play();return true;}
+    try{
+      const config=REST_POSES[name],poses=await Promise.all(config.files.map(loadPose));
+      if(requestId!==this.requestId||vrm!==this.vrm)return false;
+      const clip=createPoseClip(poses[0],vrm,`rest_${name}`);
+      this.restAction=this.mixer.clipAction(clip);
+      this.restAction.setLoop(THREE.LoopRepeat,Infinity).reset().setEffectiveWeight(1).fadeIn(FADE_SECONDS).play();
+      if(this.idleAction){this.restAdditiveAction=this.createIdleOverlay(`rest_idle_${name}`);this.restAdditiveAction.fadeIn(FADE_SECONDS);this.idleAction.fadeOut(FADE_SECONDS);}
+      return true;
+    }catch(error){console.warn(`待机姿势 ${name} 加载失败。`,error);this.restPose="natural";this.idleAction?.reset().fadeIn(FADE_SECONDS).play();return false;}
+  }
   stopPose(fade=true){
     const duration=fade?FADE_SECONDS:0.05;
-    const stopAt=performance.now()/1000+duration+.05;
-    if(this.poseAction){this.poseAction.fadeOut(duration);this.retiring.push({action:this.poseAction,stopAt});this.poseAction=null;}
-    if(this.additiveAction){this.additiveAction.fadeOut(duration);this.retiring.push({action:this.additiveAction,stopAt});this.additiveAction=null;}
-    if(this.idleAction)this.idleAction.reset().fadeIn(duration).play();
-    this.activeAction="idle";this.activeUntil=0;
+    this.stopGesture(duration);this.restoreRest(duration);
   }
   update(delta){
     if(!this.mixer)return;

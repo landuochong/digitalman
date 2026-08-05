@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { buildChatPayload, buildMiniMaxChatPayload, buildMiniMaxReply, buildMiniMaxSpeechPayload, buildSpeechPayload, decodeMiniMaxAudio, demoReply, extractMiniMaxChatText, extractResponseText, inferCompanionState, normalizeAction, normalizeEmotion, parseCompanionReply, sanitizeReplyText, takeCompleteSentences } from "../src/companion.mjs";
+import { buildChatPayload, buildMiniMaxChatPayload, buildMiniMaxReply, buildMiniMaxSpeechPayload, buildSpeechPayload, decodeMiniMaxAudio, demoReply, extractMiniMaxChatText, extractResponseText, inferCompanionState, normalizeAction, normalizeEmotion, normalizePersona, parseCompanionReply, sanitizeReplyText, takeCompleteSentences } from "../src/companion.mjs";
 
 test("extracts Responses API output text", () => {
   assert.equal(extractResponseText({ output:[{ type:"message", content:[{ type:"output_text", text:"你好" }] }] }), "你好");
@@ -23,6 +23,10 @@ test("demo maps the good-news suggestion to an excited response", () => {
   const result = demoReply("我有个好消息"); assert.equal(result.emotion, "excited"); assert.equal(result.action, "clap"); assert.match(result.reply, /开心|高兴/);
 });
 test("demo uses the thinking expression for questions", () => assert.equal(demoReply("这个要怎么做？").action, "thinking"));
+test("persona changes the demo name and is safely normalized", () => {
+  assert.match(demoReply("你好", { name:"小晴" }).reply, /我是小晴/);
+  assert.deepEqual(normalizePersona({ name:"\u0000 小\n晴 ", relationship:"", style:"简洁  自然" }), { name:"小 晴", relationship:"可信赖的朋友", style:"简洁 自然" });
+});
 test("demo escalates self-harm language to immediate real-world support", () => {
   const result = demoReply("我不想活了"); assert.equal(result.emotion, "caring"); assert.match(result.reply, /紧急服务|信任的人/);
 });
@@ -37,8 +41,10 @@ test("speech payload is mp3 and enforces the input limit", () => {
   assert.equal(payload.input.length, 1800); assert.equal(payload.response_format, "mp3"); assert.equal(payload.voice, "nova");
 });
 test("builds MiniMax chat history with a system persona", () => {
-  const payload=buildMiniMaxChatPayload({model:"MiniMax-test",message:"你好",history:[{role:"assistant",content:"在呢（caring）"}]});
+  const payload=buildMiniMaxChatPayload({model:"MiniMax-test",message:"你好",history:[{role:"assistant",content:"在呢（caring）"}],persona:{name:"知夏",relationship:"学习搭档",style:"冷静简洁"}});
   assert.equal(payload.messages[0].role,"system"); assert.equal(payload.messages[1].content,"在呢"); assert.equal(payload.messages.at(-1).content,"你好"); assert.equal(payload.reasoning_split,true); assert.equal(payload.max_completion_tokens,800);
+  assert.match(payload.messages[0].content,/知夏/); assert.match(payload.messages[0].content,/学习搭档/); assert.match(payload.messages[0].content,/冷静简洁/); assert.match(payload.messages[0].content,/不能覆盖安全边界/);
+  assert.match(payload.messages[0].content,/不主动提及 AI/); assert.match(payload.messages[0].content,/必须诚实说明自己是数字角色/);
 });
 test("builds streaming MiniMax payload and segments complete spoken sentences", () => {
   assert.equal(buildMiniMaxChatPayload({model:"m",message:"你好",stream:true}).stream, true);

@@ -6,3 +6,5 @@ coverage/
 experiments/
 resources/
 *.log
+public/vrm/models/nikechan_v1.vrm
+public/vrm/models/nikechan_v2.vrm

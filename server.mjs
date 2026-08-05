@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 import { readFileSync } from "node:fs";
 import { extname, join, normalize } from "node:path";
 import { fileURLToPath } from "node:url";
-import { buildChatPayload, buildMiniMaxChatPayload, buildMiniMaxReply, buildMiniMaxSpeechPayload, buildSpeechPayload, decodeMiniMaxAudio, demoReply, extractMiniMaxChatText, extractResponseText, inferCompanionState, parseCompanionReply, sanitizeReplyText, takeCompleteSentences } from "./src/companion.mjs";
+import { buildChatPayload, buildMiniMaxChatPayload, buildMiniMaxReply, buildMiniMaxSpeechPayload, buildSpeechPayload, decodeMiniMaxAudio, demoReply, extractMiniMaxChatText, extractResponseText, inferCompanionState, normalizePersona, parseCompanionReply, sanitizeReplyText, takeCompleteSentences } from "./src/companion.mjs";
 
 function loadLocalEnv() {
   try {
@@ -49,21 +49,21 @@ async function body(req, limit = 64_000) {
   catch { throw Object.assign(new Error("JSON 格式无效"), { status: 400 }); }
 }
 
-async function openAIChat(message, history, userId) {
+async function openAIChat(message, history, userId, persona) {
   const response = await fetch("https://api.openai.com/v1/responses", {
     method: "POST",
     headers: { authorization: `Bearer ${apiKey}`, "content-type": "application/json" },
-    body: JSON.stringify(buildChatPayload({ model:textModel, message, history, userId:userId || "anonymous" }))
+    body: JSON.stringify(buildChatPayload({ model:textModel, message, history, userId:userId || "anonymous", persona }))
   });
   if (!response.ok) throw new Error(`OpenAI 文案接口失败 (${response.status})`);
   return parseCompanionReply(extractResponseText(await response.json()));
 }
 
-async function miniMaxChat(message, history) {
+async function miniMaxChat(message, history, persona) {
   const response = await fetch(`${miniMaxBaseUrl}/chat/completions`, {
     method:"POST",
     headers:{ authorization:`Bearer ${apiKey}`, "content-type":"application/json" },
-    body:JSON.stringify(buildMiniMaxChatPayload({ model:miniMaxTextModel, message, history }))
+    body:JSON.stringify(buildMiniMaxChatPayload({ model:miniMaxTextModel, message, history, persona }))
   });
   const payload = await response.json().catch(() => ({}));
   if (!response.ok || payload?.base_resp?.status_code > 0) throw new Error(payload?.base_resp?.status_msg || `MiniMax 文案接口失败 (${response.status})`);
@@ -74,11 +74,11 @@ function sendEvent(res, event, data) {
   res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
 }
 
-async function miniMaxChatStream(message, history, res) {
+async function miniMaxChatStream(message, history, persona, res) {
   const response = await fetch(`${miniMaxBaseUrl}/chat/completions`, {
     method:"POST",
     headers:{ authorization:`Bearer ${apiKey}`, "content-type":"application/json" },
-    body:JSON.stringify(buildMiniMaxChatPayload({ model:miniMaxTextModel, message, history, stream:true }))
+    body:JSON.stringify(buildMiniMaxChatPayload({ model:miniMaxTextModel, message, history, stream:true, persona }))
   });
   if (!response.ok || !response.body) throw new Error(`MiniMax 流式文案接口失败 (${response.status})`);
 
@@ -137,9 +137,10 @@ async function chat(req, res) {
   if (!message) return json(res, 400, { error: "请输入聊天内容" });
   if (message.length > 2000) return json(res, 400, { error: "单条消息不能超过 2000 字" });
   const history = Array.isArray(data.history) ? data.history : [];
-  const result = provider === "minimax" && apiKey ? await miniMaxChat(message,history)
-    : provider === "openai" && apiKey ? await openAIChat(message,history,data.userId)
-    : demoReply(message);
+  const persona = normalizePersona(data.persona);
+  const result = provider === "minimax" && apiKey ? await miniMaxChat(message,history,persona)
+    : provider === "openai" && apiKey ? await openAIChat(message,history,data.userId,persona)
+    : demoReply(message,persona);
   json(res, 200, { ...result, mode:apiKey ? provider : "demo" });
 }
 
@@ -149,10 +150,11 @@ async function chatStream(req, res) {
   if (!message) return json(res, 400, { error:"请输入聊天内容" });
   if (message.length > 2000) return json(res, 400, { error:"单条消息不能超过 2000 字" });
   const history = Array.isArray(data.history) ? data.history : [];
-  if (provider === "minimax" && apiKey) return miniMaxChatStream(message, history, res);
+  const persona = normalizePersona(data.persona);
+  if (provider === "minimax" && apiKey) return miniMaxChatStream(message, history, persona, res);
   const result = provider === "openai" && apiKey
-    ? await openAIChat(message, history, data.userId)
-    : demoReply(message);
+    ? await openAIChat(message, history, data.userId, persona)
+    : demoReply(message, persona);
   res.writeHead(200, { "content-type":"text/event-stream; charset=utf-8", "cache-control":"no-cache, no-transform" });
   sendEvent(res, "meta", { emotion:result.emotion, action:result.action, mode:apiKey ? provider : "demo" });
   for (const sentence of takeCompleteSentences(result.reply, true).sentences) sendEvent(res, "sentence", { text:sentence });
