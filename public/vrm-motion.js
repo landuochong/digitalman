@@ -7,6 +7,7 @@ const POSE_ROOT="/vrm/motions/poses";
 const ACTIONS={
   wave_approval:{files:["wave1.json","wave2.json"],step:0.5,duration:1.8},
   clap:{files:["clap1.json","clap2.json"],step:0.2,duration:1.8},
+  shy:{files:["shy.json"],duration:1.7},
   thinking:{files:["think.json"],duration:1.6},
   caring:{files:["finger_touch.json"],duration:1.7},
   surprise:{files:["mouth_cover.json"],duration:1.7},
@@ -87,7 +88,7 @@ export class VrmMotionController{
   constructor(){
     this.vrm=null;this.mixer=null;this.idleAction=null;this.poseAction=null;this.additiveAction=null;
     this.restPose="natural";this.restAction=null;this.restAdditiveAction=null;
-    this.activeAction="idle";this.activeUntil=0;this.requestId=0;this.idleAnimationPromise=null;this.retiring=[];
+    this.activeAction="idle";this.activeUntil=0;this.requestId=0;this.idleAnimationPromise=null;this.retiring=[];this.modelProfile="default";
   }
   async loadIdleAnimation(){
     if(!this.idleAnimationPromise){
@@ -115,11 +116,12 @@ export class VrmMotionController{
       console.warn("待机动作加载失败，继续使用静态站姿。",error);
     }
   }
-  async play(actionName){
+  async play(actionName,{hold=false}={}){
     const config=ACTIONS[actionName];if(!config||!this.vrm||!this.mixer)return false;
     const requestId=++this.requestId,vrm=this.vrm;
     try{
-      const poses=await Promise.all(config.files.map(loadPose));
+      const files=actionName==="shy"&&this.modelProfile==="mouth"?["mouth_cover.json"]:config.files;
+      const poses=await Promise.all(files.map(loadPose));
       if(requestId!==this.requestId||vrm!==this.vrm)return false;
       this.stopGesture(0.05);this.fadeRestOut(FADE_SECONDS);
       const clip=config.step
@@ -132,7 +134,7 @@ export class VrmMotionController{
         this.additiveAction.fadeIn(FADE_SECONDS);
       }
       this.activeAction=actionName;
-      this.activeUntil=performance.now()/1000+config.duration;
+      this.activeUntil=hold?Number.POSITIVE_INFINITY:performance.now()/1000+config.duration;
       return true;
     }catch(error){console.warn(`动作 ${actionName} 加载失败。`,error);return false;}
   }
@@ -179,6 +181,7 @@ export class VrmMotionController{
     }catch(error){console.warn(`待机姿势 ${name} 加载失败。`,error);this.restPose="natural";this.idleAction?.reset().fadeIn(FADE_SECONDS).play();return false;}
   }
   stopPose(fade=true){
+    this.requestId++;
     const duration=fade?FADE_SECONDS:0.05;
     this.stopGesture(duration);this.restoreRest(duration);
   }

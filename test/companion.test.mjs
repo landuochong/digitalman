@@ -16,6 +16,7 @@ test("removes leaked internal state words from spoken replies", () => {
 });
 test("normalizes unsafe emotion values", () => assert.equal(normalizeEmotion("angry"), "neutral"));
 test("normalizes unsupported actions", () => assert.equal(normalizeAction("dance"), "idle"));
+test("supports the shy gesture", () => assert.equal(normalizeAction("shy"), "shy"));
 test("demo responds empathetically to negative emotion", () => {
   const result = demoReply("我今天很焦虑也很累"); assert.equal(result.emotion, "caring"); assert.equal(result.action, "caring"); assert.match(result.reply, /陪|难受|轻松/);
 });
@@ -62,6 +63,7 @@ test("infers natural daily phrases for VRM gestures", () => {
   assert.deepEqual(inferCompanionState("哇，真的吗"), { emotion:"excited", action:"surprise" });
   assert.deepEqual(inferCompanionState("晚上好"), { emotion:"happy", action:"wave_approval" });
   assert.deepEqual(inferCompanionState("我终于成功了"), { emotion:"excited", action:"clap" });
+  assert.deepEqual(inferCompanionState("你今天真可爱"), { emotion:"happy", action:"shy" });
 });
 test("extracts MiniMax chat content and strips thinking before parsing", () => {
   const text=extractMiniMaxChatText({choices:[{message:{content:'<think>分析</think>{"reply":"你好","emotion":"happy"}'}}]});

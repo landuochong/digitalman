@@ -6,7 +6,7 @@ import { VrmMotionController } from "./vrm-motion.js";
 
 const clamp=(value,min=0,max=1)=>Math.min(max,Math.max(min,value));
 const damp=(current,target,speed,dt)=>THREE.MathUtils.damp(current,target,speed,dt);
-const GESTURES=new Set(["wave_approval","clap","thinking","caring","surprise"]);
+const GESTURES=new Set(["wave_approval","clap","shy","thinking","caring","surprise"]);
 
 export class VrmCompanion{
   constructor(canvas,{modelUrl="/vrm/models/lumi-cc0.vrm",restPose="natural",onReady,onError}={}){
@@ -42,6 +42,7 @@ export class VrmCompanion{
       this.vrm=next;this.modelUrl=url;this.expression=0;this.blink=0;this.action="idle";
       this.modelPivot.rotation.y=0;this.modelPivot.add(next.scene);this.fitModel();this.prepareFallbackPose();this.prepareHands();
       if(next.lookAt)next.lookAt.target=this.lookTarget;
+      this.motion.modelProfile=url.includes("avatar-sample-b.vrm")?"default":"mouth";
       await this.motion.attach(next);
       if(token!==this.loadingToken)return false;
       this.motion.update(0);next.update(0);this.fitModel();
@@ -88,13 +89,14 @@ export class VrmCompanion{
   nudgeViewAngle(degrees){return this.setViewAngle(this.getViewAngle()+degrees);}
   getViewAngle(){const offset=this.camera.position.clone().sub(this.controls.target);return THREE.MathUtils.radToDeg(Math.atan2(offset.x,offset.z));}
   resetView(){this.fitModel();return 0;}
-  setBehavior(emotion="calm",action="idle",force=false){
+  setBehavior(emotion="calm",action="idle",force=false,holdGesture=false){
     this.emotion=emotion;this.action=action;
     const now=this.clock.elapsedTime;
     if(GESTURES.has(action)&&(force||now-this.lastGesture>=3)){
-      this.lastGesture=now;void this.motion.play(action);
+      this.lastGesture=now;void this.motion.play(action,{hold:holdGesture});
     }
   }
+  finishGesture(){this.motion.stopPose(true);}
   resize(){const rect=this.canvas.getBoundingClientRect();if(!rect.width||!rect.height)return;this.renderer.setSize(rect.width,rect.height,false);this.camera.aspect=rect.width/rect.height;this.camera.updateProjectionMatrix();}
   setExpression(name,value){this.vrm?.expressionManager?.setValue(name,clamp(value));}
   updateBlink(t,dt){

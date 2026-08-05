@@ -73,13 +73,13 @@ document.querySelectorAll(".looks button").forEach(button=>{
   });
 });
 
-const actionPreviews={wave_approval:{emotion:"happy",label:"挥手"},clap:{emotion:"excited",label:"鼓掌"},thinking:{emotion:"curious",label:"思考"},caring:{emotion:"caring",label:"关心"},surprise:{emotion:"excited",label:"惊讶"}};
+const actionPreviews={wave_approval:{emotion:"happy",label:"挥手"},clap:{emotion:"excited",label:"鼓掌"},shy:{emotion:"happy",label:"害羞"},thinking:{emotion:"curious",label:"思考"},caring:{emotion:"caring",label:"关心"},surprise:{emotion:"excited",label:"惊讶"}};
 document.querySelectorAll("[data-action-preview]").forEach(button=>button.addEventListener("click",()=>{
   const action=button.dataset.actionPreview,preview=actionPreviews[action];avatar.setBehavior(preview.emotion,action,true);$("#expressionLabel").textContent=`动作测试：${preview.label}`;
 }));
 
 function setState(state,text){mic.classList.remove("listening","thinking","speaking");if(state!=="idle")mic.classList.add(state);mic.disabled=state==="thinking";if(text)prompt.textContent=text;wave.classList.toggle("active",state==="speaking");avatar.setSpeaking(state==="speaking");}
-function stopAll(){speechBatch++;speechQueue=Promise.resolve();replyController?.abort();replyController=null;if(activeAudio){activeAudio.pause();activeAudio.removeAttribute("src");activeAudio=null;}activeResolve?.();activeResolve=null;window.speechSynthesis?.cancel();avatar.setSpeaking(false);avatar.setAudioLevel(0);setState("idle","点击麦克风继续说话");}
+function stopAll(){speechBatch++;speechQueue=Promise.resolve();replyController?.abort();replyController=null;if(activeAudio){activeAudio.pause();activeAudio.removeAttribute("src");activeAudio=null;}activeResolve?.();activeResolve=null;window.speechSynthesis?.cancel();avatar.setSpeaking(false);avatar.setAudioLevel(0);avatar.finishGesture();setState("idle","点击麦克风继续说话");}
 async function consumeEvents(response,onEvent){const reader=response.body.getReader(),decoder=new TextDecoder();let buffer="";while(true){const{value,done}=await reader.read();buffer+=decoder.decode(value||new Uint8Array(),{stream:!done});const blocks=buffer.split(/\r?\n\r?\n/);buffer=blocks.pop()||"";for(const block of blocks){const event=block.match(/^event:\s*(.+)$/m)?.[1],raw=block.match(/^data:\s*(.+)$/m)?.[1];if(raw)await onEvent(event,JSON.parse(raw));}if(done)break;}}
 async function browserSpeech(text,onStart){if(!("speechSynthesis" in window))return;await new Promise(resolve=>{const u=new SpeechSynthesisUtterance(text);u.lang="zh-CN";u.rate=.97;u.pitch=1.08;u.onstart=()=>{onStart?.();setState("speaking",`${persona.name}正在回答`);};u.onend=u.onerror=()=>{avatar.setAudioLevel(0);resolve();};window.speechSynthesis.speak(u);});}
 async function cloudSpeech(text,emotion,batch,onStart){
@@ -95,8 +95,8 @@ async function cloudSpeech(text,emotion,batch,onStart){
   await new Promise((resolve,reject)=>{activeResolve=()=>{finish();resolve();};audio.onplay=()=>{onStart?.();frame();};audio.onended=()=>{finish();resolve();};audio.onerror=()=>{finish();resolve();};audio.play().catch(error=>{finish();reject(error);});});
 }
 function queueSpeech(text,emotion,batch,behavior){
-  let started=false;const onStart=()=>{if(started||batch!==speechBatch)return;started=true;if(behavior)avatar.setBehavior(behavior.emotion,behavior.action);};
-  speechQueue=speechQueue.then(async()=>{if(batch!==speechBatch)return;try{await cloudSpeech(text,emotion,batch,onStart);}catch{await browserSpeech(text,onStart);}});return speechQueue;
+  let started=false,gestureStarted=false;const onStart=()=>{if(started||batch!==speechBatch)return;started=true;if(behavior){gestureStarted=true;avatar.setBehavior(behavior.emotion,behavior.action,false,true);}};
+  speechQueue=speechQueue.then(async()=>{if(batch!==speechBatch)return;try{await cloudSpeech(text,emotion,batch,onStart);}catch{await browserSpeech(text,onStart);}finally{if(gestureStarted&&batch===speechBatch)avatar.finishGesture();}});return speechQueue;
 }
 async function reply(message){
   setState("thinking",`${persona.name}正在想…`);caption.textContent="正在理解你刚才说的话";const controller=new AbortController();replyController=controller;const batch=speechBatch;let finalText="",emotion="calm",behavior=null,behaviorQueued=false;
