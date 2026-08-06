@@ -1,4 +1,4 @@
-import { VrmCompanion } from "./vrm-avatar.js?v=20260806-55";
+import { VrmCompanion } from "./vrm-avatar.js?v=20260806-63";
 
 const $=selector=>document.querySelector(selector);
 const mic=$("#micButton"),caption=$("#caption"),prompt=$("#voicePrompt"),detail=$("#detailText"),wave=$("#wave");

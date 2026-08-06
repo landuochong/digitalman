@@ -22,9 +22,8 @@ export class VrmCompanion{
     this.renderer.setPixelRatio(Math.min(devicePixelRatio,2));this.renderer.outputColorSpace=THREE.SRGBColorSpace;
     this.controls=new OrbitControls(this.camera,canvas);this.controls.enableDamping=true;this.controls.dampingFactor=.08;
     this.controls.screenSpacePanning=true;this.controls.minPolarAngle=.12;this.controls.maxPolarAngle=Math.PI-.12;
-    this.scene.add(new THREE.HemisphereLight(0xfffaf5,0x8d8290,2.25));
-    const key=new THREE.DirectionalLight(0xfff1e7,2.6);key.position.set(1.8,3,2.8);this.scene.add(key);
-    const fill=new THREE.DirectionalLight(0xb9c8ff,1.25);fill.position.set(-2,1.8,1);this.scene.add(fill);
+    this.scene.add(new THREE.AmbientLight(0xffffff,1.2));
+    const key=new THREE.DirectionalLight(0xffffff,1.8);key.position.set(1,1,1).normalize();this.scene.add(key);
     this.lookTarget=new THREE.Object3D();this.lookTarget.position.set(0,1.42,2.6);this.scene.add(this.lookTarget);
     this.resizeObserver=new ResizeObserver(()=>this.resize());this.resizeObserver.observe(canvas);this.resize();
     this.load(modelUrl);this.animate();
@@ -38,34 +37,39 @@ export class VrmCompanion{
       const next=gltf.userData.vrm;
       VRMUtils.removeUnnecessaryVertices(gltf.scene);VRMUtils.combineSkeletons(gltf.scene);VRMUtils.combineMorphs(next);
       VRMUtils.rotateVRM0(next);
-      if(this.vrm){this.modelPivot.remove(this.vrm.scene);VRMUtils.deepDispose(this.vrm.scene);}
+      const previous=this.vrm;
       this.vrm=next;this.modelUrl=url;this.expression=0;this.blink=0;this.action="idle";
-      this.modelPivot.rotation.y=0;this.modelPivot.add(next.scene);this.tuneModelMaterials(url,next.scene);this.fitModel();this.prepareFallbackPose();this.prepareHands();this.prepareBlush();this.prepareForearmOverlays(url);
+      next.scene.visible=false;this.modelPivot.add(next.scene);this.tuneModelMaterials(url,next.scene);this.prepareFallbackPose();this.prepareHands();this.prepareBlush();this.prepareForearmOverlays(url);
       if(next.lookAt)next.lookAt.target=this.lookTarget;
       this.motion.modelProfile=url.includes("avatar-sample-b.vrm")?"default":"mouth";
       this.motion.clapProfile=url.includes("avatar-sample-a.vrm")?"soft":url.includes("avatar-sample-b.vrm")?"vivid":url.includes("nikechan_v1.vrm")?"nike1":url.includes("nikechan_v2.vrm")?"nike2":"classic";
       await this.motion.attach(next);
       if(token!==this.loadingToken)return false;
-      this.motion.update(0);next.update(0);this.fitModel();
+      this.motion.update(.42);next.update(0);
+      if(previous){this.modelPivot.remove(previous.scene);VRMUtils.deepDispose(previous.scene);}
+      this.modelPivot.rotation.y=0;this.fitModel();next.scene.visible=true;
       this.onReady?.(next.meta,url);return true;
     }catch(error){console.error(error);if(token===this.loadingToken)this.onError?.(error,url);return false;}
   }
   switchModel(url){if(url===this.modelUrl&&this.vrm)return Promise.resolve(true);return this.load(url);}
   tuneModelMaterials(url,scene){
-    if(!url.includes("nikechan_v2.vrm"))return;
     scene.traverse(object=>{
       if(!object.isMesh)return;
       for(const material of Array.isArray(object.material)?object.material:[object.material]){
-        if(!material||!(material.name==="NikeChanBody"||material.name==="NikeChanBodyShade"))continue;
-        material.color?.set("#f6ddd6");material.needsUpdate=true;
+        if(!material)continue;
+        if(url.includes("nikechan_v2.vrm")&&(material.name==="NikeChanBody"||material.name==="NikeChanBodyShade")){
+          material.color?.set("#f6ddd6");material.needsUpdate=true;
+        }
       }
     });
   }
   fitModel(){
     this.modelPivot.position.set(0,0,0);
+    this.modelPivot.updateMatrixWorld(true);this.vrm.scene.updateMatrixWorld(true);
     const box=new THREE.Box3().setFromObject(this.vrm.scene),center=box.getCenter(new THREE.Vector3()),size=box.getSize(new THREE.Vector3());
     const hips=this.vrm.humanoid.getRawBoneNode("hips"),bodyCenter=hips?.getWorldPosition(new THREE.Vector3())||center;
     this.modelPivot.position.x=-bodyCenter.x;this.modelPivot.position.y=-box.min.y;
+    this.modelPivot.updateMatrixWorld(true);
     const height=Math.max(size.y,1);this.camera.position.set(0,height*.69,height*1.4);this.camera.lookAt(0,height*.68,0);
     this.controls.target.set(0,height*.68,0);this.controls.minDistance=height*.55;this.controls.maxDistance=height*3.4;this.controls.update();
     this.defaultViewTarget=this.controls.target.clone();this.defaultViewOffset=this.camera.position.clone().sub(this.controls.target);
