@@ -17,6 +17,9 @@ test("removes leaked internal state words from spoken replies", () => {
 test("normalizes unsafe emotion values", () => assert.equal(normalizeEmotion("angry"), "neutral"));
 test("normalizes unsupported actions", () => assert.equal(normalizeAction("dance"), "idle"));
 test("supports the shy gesture", () => assert.equal(normalizeAction("shy"), "shy"));
+test("supports the migrated AITuber gestures", () => {
+  for(const action of ["cheer","bow","shrug","cross","confident_arms_crossed"]) assert.equal(normalizeAction(action),action);
+});
 test("demo responds empathetically to negative emotion", () => {
   const result = demoReply("我今天很焦虑也很累"); assert.equal(result.emotion, "caring"); assert.equal(result.action, "caring"); assert.match(result.reply, /陪|难受|轻松/);
 });
@@ -79,6 +82,11 @@ test("infers natural daily phrases for VRM gestures", () => {
   assert.deepEqual(inferCompanionState("我终于成功了"), { emotion:"excited", action:"clap" });
   assert.deepEqual(inferCompanionState("给我鼓鼓掌"), { emotion:"excited", action:"clap" });
   assert.deepEqual(inferCompanionState("拍手庆祝一下"), { emotion:"excited", action:"clap" });
+  assert.deepEqual(inferCompanionState("给我欢呼一下"), { emotion:"excited", action:"cheer" });
+  assert.deepEqual(inferCompanionState("给我鞠个躬"), { emotion:"happy", action:"bow" });
+  assert.deepEqual(inferCompanionState("做个交叉手势"), { emotion:"calm", action:"cross" });
+  assert.deepEqual(inferCompanionState("摆个抱胸姿势"), { emotion:"happy", action:"confident_arms_crossed" });
+  assert.deepEqual(inferCompanionState("我也不知道怎么办"), { emotion:"curious", action:"shrug" });
   assert.deepEqual(inferCompanionState("你今天真可爱"), { emotion:"happy", action:"shy" });
   assert.deepEqual(inferCompanionState("嗯，我知道了","",{mood:"caring",moodIntensity:.6}), { emotion:"caring", action:"idle" });
   assert.deepEqual(inferCompanionState("我终于成功了","",{mood:"caring",moodIntensity:.8}), { emotion:"excited", action:"clap" });

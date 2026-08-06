@@ -49,7 +49,7 @@ header a { padding:9px 13px; border:1px solid rgba(81,69,78,.14); border-radius:
 .action-test summary::-webkit-details-marker { display:none; }
 .action-test summary::before { content:"＋ "; color:#b76576; }
 .action-test[open] summary::before { content:"− "; }
-.action-test div { display:flex; gap:6px; margin-top:8px; }
+.action-test div { display:flex; flex-wrap:wrap; justify-content:center; gap:6px; margin:8px auto 0; max-width:520px; }
 .action-test button { padding:6px 10px; border:1px solid rgba(187,98,115,.2); border-radius:99px; color:#8e6470; background:#fff8f6; cursor:pointer; font-size:10px; }
 .pose-calibration { position:absolute; right:18px; bottom:18px; z-index:30; font-size:11px; }
 .pose-calibration>summary { padding:7px 10px; border:1px solid rgba(187,98,115,.25); border-radius:99px; color:#8e6470; background:rgba(255,248,246,.92); cursor:pointer; list-style:none; }

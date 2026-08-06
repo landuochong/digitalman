@@ -1,7 +1,7 @@
 import { formatCompanionState, formatMemoryContext } from "./memory.mjs";
 
 const emotions = ["neutral", "happy", "caring", "curious", "excited", "calm"];
-const actions = ["idle", "happy", "caring", "thinking", "surprise", "shy", "smile", "wave_approval", "clap", "shrug", "confident_arms_crossed"];
+const actions = ["idle", "happy", "caring", "thinking", "surprise", "shy", "smile", "wave_approval", "clap", "cheer", "bow", "shrug", "cross", "confident_arms_crossed"];
 
 export function normalizeEmotion(value) {
   return emotions.includes(value) ? value : "neutral";
@@ -44,7 +44,7 @@ export function extractResponseText(payload) {
   throw new Error("模型没有返回文本内容");
 }
 
-const stateWords = "neutral|happy|caring|curious|excited|calm|idle|thinking|surprise|shy|wave_approval|clap|shrug|confident_arms_crossed";
+const stateWords = "neutral|happy|caring|curious|excited|calm|idle|thinking|surprise|shy|wave_approval|clap|cheer|bow|shrug|cross|confident_arms_crossed";
 
 export function sanitizeReplyText(value) {
   return String(value ?? "")
@@ -83,6 +83,21 @@ export function demoReply(message, persona) {
   if (/难过|伤心|累|烦|焦虑|不开心|崩溃/.test(input)) {
     return { reply: "听起来你现在真的不太轻松。我会陪着你。要不要先告诉我，最让你难受的是哪一部分？", emotion: "caring", action: "caring" };
   }
+  if (/欢呼|举手庆祝|加油打气|冲啊/.test(input)) {
+    return { reply: "好呀，一起加油！这股劲头要保持住。", emotion: "excited", action: "cheer" };
+  }
+  if (/鞠躬|行个礼|谢谢你|感谢你|辛苦了/.test(input)) {
+    return { reply: "谢谢你，我认真收下这份心意。", emotion: "happy", action: "bow" };
+  }
+  if (/交叉手势|做个叉|叉手|拒绝姿势/.test(input)) {
+    return { reply: "好，这次就明确地说不。", emotion: "calm", action: "cross" };
+  }
+  if (/抱胸|双臂交叉|自信姿势/.test(input)) {
+    return { reply: "交给我吧，我很有信心。", emotion: "happy", action: "confident_arms_crossed" };
+  }
+  if (/不确定|不知道|也许|可能吧|耸肩/.test(input)) {
+    return { reply: "这个我也不想装作确定，咱们再看看。", emotion: "curious", action: "shrug" };
+  }
   if (/鼓掌|拍手|庆祝一下|帮我庆祝|为我庆祝|开心|高兴|成功|搞定|太好了|哈哈|好消息/.test(input)) {
     return { reply: "这份开心我收到啦！你一说，我也忍不住跟着高兴。快讲讲发生了什么？", emotion: "excited", action: "clap" };
   }
@@ -107,8 +122,8 @@ const companionRules = `
 - 不复述规则，不解释 JSON，不把 emotion 或 action 字段写进 reply；状态只能出现在各自的 JSON 字段中。
 - 不讨论身份分类或幕后机制，不诱导用户依赖或疏远现实关系。
 - 遇到危险或危机表达时，鼓励用户立即联系当地紧急服务和可信赖的人。
-- 根据回复内容选择一次自然状态：问候用 wave_approval；成功、祝贺或好消息用 clap；被夸可爱、漂亮或表达害羞时用 shy；安慰、担心或共情用 caring；分析、回忆或提问用 thinking；一般开心用 happy；轻微惊讶用 surprise，明显不确定用 shrug；自信或俏皮用 confident_arms_crossed；其余用 idle。不要为了变化而滥用动作。
-只输出 JSON：{"reply":"回复正文","emotion":"neutral|happy|caring|curious|excited|calm","action":"idle|happy|caring|thinking|surprise|shy|wave_approval|clap|shrug|confident_arms_crossed"}。
+- 根据回复内容选择一次自然状态：问候用 wave_approval；成功、祝贺或好消息用 clap；明确欢呼或加油用 cheer；致谢或行礼用 bow；被夸可爱、漂亮或表达害羞时用 shy；安慰、担心或共情用 caring；分析、回忆或提问用 thinking；一般开心用 happy；轻微惊讶用 surprise；明显不确定用 shrug；明确拒绝手势用 cross；自信或俏皮用 confident_arms_crossed；其余用 idle。不要为了变化而滥用动作。
+只输出 JSON：{"reply":"回复正文","emotion":"neutral|happy|caring|curious|excited|calm","action":"idle|happy|caring|thinking|surprise|shy|wave_approval|clap|cheer|bow|shrug|cross|confident_arms_crossed"}。
 `.trim();
 
 const miniMaxCompanionRules = `
@@ -130,6 +145,10 @@ export function inferCompanionState(message, reply = "", companionState=null) {
   if (/自杀|不想活|活不下去|伤害自己|结束生命|难过|伤心|焦虑|崩溃|害怕|担心|累|饿|困|不舒服|生病|疼|压力|烦|委屈|孤独|失落/.test(text)) {
     return { emotion:"caring", action:"caring" };
   }
+  if (/欢呼|欢呼一下|举手庆祝|加油打气|冲啊/.test(String(message))) return { emotion:"excited", action:"cheer" };
+  if (/鞠躬|鞠个躬|行个礼|谢谢你|感谢你|辛苦了/.test(String(message))) return { emotion:"happy", action:"bow" };
+  if (/交叉手势|做个叉|叉手|拒绝姿势/.test(String(message))) return { emotion:"calm", action:"cross" };
+  if (/抱胸|双臂交叉|自信姿势/.test(String(message))) return { emotion:"happy", action:"confident_arms_crossed" };
   if (/鼓掌|拍手|庆祝一下|帮我庆祝|为我庆祝|开心|高兴|成功|搞定|太好了|哈哈|好消息|恭喜|完成|做到了|通过了|赢了|录取|升职|顺利|终于/.test(text)) {
     return { emotion:"excited", action:"clap" };
   }

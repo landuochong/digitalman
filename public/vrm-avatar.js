@@ -2,11 +2,13 @@ import * as THREE from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { VRMLoaderPlugin, VRMUtils } from "@pixiv/three-vrm";
-import { VrmMotionController } from "./vrm-motion.js?v=20260806-44";
+import { VrmMotionController } from "./vrm-motion.js?v=20260806-55";
 
 const clamp=(value,min=0,max=1)=>Math.min(max,Math.max(min,value));
 const damp=(current,target,speed,dt)=>THREE.MathUtils.damp(current,target,speed,dt);
-const GESTURES=new Set(["wave_approval","clap","shy","thinking","caring","surprise"]);
+const NIKE2_SKIN_COLOR="#f6ddd6";
+const NIKE2_FOREARM_COLOR="#f2d2ca";
+const GESTURES=new Set(["wave_approval","clap","cheer","bow","shrug","cross","confident_arms_crossed","shy","thinking","caring","surprise"]);
 
 export class VrmCompanion{
   constructor(canvas,{modelUrl="/vrm/models/lumi-cc0.vrm",restPose="natural",onReady,onError}={}){
@@ -58,7 +60,7 @@ export class VrmCompanion{
       for(const material of Array.isArray(object.material)?object.material:[object.material]){
         if(!material)continue;
         if(url.includes("nikechan_v2.vrm")&&(material.name==="NikeChanBody"||material.name==="NikeChanBodyShade")){
-          material.color?.set("#f6ddd6");material.needsUpdate=true;
+          material.color?.set(NIKE2_SKIN_COLOR);material.needsUpdate=true;
         }
       }
     });
@@ -116,7 +118,7 @@ export class VrmCompanion{
         const index=mesh.skeleton?.bones.indexOf(bone);if(index<0)continue;
         const materials=sourceMaterials.map(source=>{
           const material=new THREE.MeshBasicMaterial({
-            color:0xfff4ec,side:source.side,
+            color:NIKE2_FOREARM_COLOR,side:source.side,
             depthTest:false,depthWrite:false,transparent:true,toneMapped:false,
           });
           material.onBeforeCompile=shader=>{
@@ -183,7 +185,7 @@ export class VrmCompanion{
     this.expression=damp(this.expression,target,4,dt);this.setExpression("happy",this.expression);
     this.setExpression("relaxed",this.emotion==="calm"?.1:0);
     this.setExpression("surprised",this.motion.activeAction==="surprise"?.34:0);
-    const showBothForearms=this.motion.activeAction==="caring"||this.motion.activeAction==="thinking"||
+    const showBothForearms=this.motion.activeAction==="caring"||this.motion.activeAction==="thinking"||this.motion.activeAction==="cheer"||
       (this.motion.activeAction==="idle"&&this.motion.restPose==="touch");
     this.forearmOverlays.forEach(overlay=>{
       overlay.visible=showBothForearms||(this.motion.activeAction==="wave_approval"&&overlay.userData.forearmSide==="right");

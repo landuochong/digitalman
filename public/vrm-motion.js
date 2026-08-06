@@ -4,10 +4,15 @@ import { VRMAnimationLoaderPlugin, createVRMAnimationClip } from "@pixiv/three-v
 
 const FADE_SECONDS=0.35;
 const POSE_ROOT="/vrm/motions/poses";
-const POSE_VERSION="20260806-distinct-single-hand-shy-1";
+const POSE_VERSION="20260806-aituber-actions-1";
 const ACTIONS={
   wave_approval:{files:["wave1.json","wave2.json"],step:0.5,duration:1.8},
   clap:{files:["clap1.json","clap2.json"],step:0.3,duration:1.8},
+  cheer:{files:["cheer.json"],duration:1.8},
+  bow:{files:["bow.json"],duration:1.8},
+  shrug:{files:["shrug.json"],duration:1.7},
+  cross:{files:["cross.json"],duration:1.7},
+  confident_arms_crossed:{files:["crossed_arms.json"],duration:1.8},
   shy:{files:["shy.json"],duration:1.7},
   thinking:{files:["think.json"],duration:1.6},
   caring:{files:["finger_touch.json"],duration:1.7},
@@ -91,6 +96,18 @@ function createSequenceClip(poses,vrm,step,name){
   return new THREE.AnimationClip(name,times.at(-1),tracks);
 }
 
+function stabilizeRootTranslation(clip,vrm){
+  const hips=vrm.humanoid.getNormalizedBoneNode("hips");if(!hips)return clip;
+  for(const track of clip.tracks){
+    if(track.ValueTypeName!=="vector"&&!track.name.endsWith(".position"))continue;
+    if(track.name!==`${hips.name}.position`&&!track.name.endsWith("hips.position"))continue;
+    for(let index=0;index<track.values.length;index+=3){
+      track.values[index]=hips.position.x;track.values[index+1]=hips.position.y;track.values[index+2]=hips.position.z;
+    }
+  }
+  return clip;
+}
+
 export class VrmMotionController{
   constructor(){
     this.vrm=null;this.mixer=null;this.idleAction=null;this.poseAction=null;this.additiveAction=null;
@@ -115,7 +132,7 @@ export class VrmMotionController{
     try{
       const animation=await this.loadIdleAnimation();
       if(requestId!==this.requestId||vrm!==this.vrm||!animation)return;
-      const clip=createVRMAnimationClip(animation,vrm);clip.name="companion_idle";
+      const clip=stabilizeRootTranslation(createVRMAnimationClip(animation,vrm),vrm);clip.name="companion_idle";
       this.idleAction=this.mixer.clipAction(clip);
       this.idleAction.setLoop(THREE.LoopRepeat,Infinity).play();
       await this.setRestPose(this.restPose);
@@ -296,10 +313,11 @@ export class VrmMotionController{
     const openness=THREE.MathUtils.clamp(1-Math.abs(cycleTime-ACTIONS.clap.step)/ACTIONS.clap.step,0,1);
     const directionalHands=this.clapProfile==="soft";
     const aimFingers=this.clapProfile!=="classic";
+    const clapForward=this.clapProfile==="nike1"?0.62:(directionalHands?0.38:0.42);
     const center=new THREE.Vector3(
       (leftShoulder.x+rightShoulder.x)/2,
       chestPosition.y-shoulderWidth*(directionalHands?0.2:-0.05),
-      chestPosition.z+shoulderWidth*(directionalHands?0.38:0.42)
+      chestPosition.z+shoulderWidth*clapForward
     );
     for(const side of ["left","right"]){
       const upper=humanoid.getNormalizedBoneNode(`${side}UpperArm`);
@@ -317,7 +335,9 @@ export class VrmMotionController{
       if(this.clapProfile==="nike1"||this.clapProfile==="nike2"){
         lower.updateWorldMatrix(true,true);
         const elbowTarget=lower.getWorldPosition(new THREE.Vector3());
-        elbowTarget.x+=sideSign*shoulderWidth*0.055;
+        const elbowSpread=this.clapProfile==="nike1"?0.13:0.055;
+        elbowTarget.x+=sideSign*shoulderWidth*elbowSpread;
+        if(this.clapProfile==="nike1")elbowTarget.z+=shoulderWidth*0.1;
         this.rotateJointToward(upper,lower,elbowTarget,0.4);
         this.rotateJointToward(lower,hand,target,0.9);
       }
@@ -336,6 +356,12 @@ export class VrmMotionController{
       }
     }
   }
+  applyNike2DanglingHandCorrection(){
+    if(this.clapProfile!=="nike2"||(this.activeAction!=="shy"&&this.activeAction!=="surprise"))return;
+    const side=this.activeAction==="shy"?"right":"left";
+    const humanoid=this.vrm?.humanoid,lower=humanoid?.getNormalizedBoneNode(`${side}LowerArm`),hand=humanoid?.getNormalizedBoneNode(`${side}Hand`);
+    lower?.quaternion.identity();hand?.quaternion.identity();
+  }
   update(delta){
     if(!this.mixer)return;
     const now=performance.now()/1000;
@@ -349,6 +375,7 @@ export class VrmMotionController{
       }
     }
     if(this.clapIk&&!this.calibration)this.applyClapIk();
+    this.applyNike2DanglingHandCorrection();
     this.retiring=this.retiring.filter(entry=>{if(now<entry.stopAt)return true;entry.action.stop();return false;});
   }
   get active(){return this.activeAction!=="idle";}

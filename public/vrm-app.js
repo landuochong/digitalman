@@ -1,4 +1,4 @@
-import { VrmCompanion } from "./vrm-avatar.js?v=20260806-63";
+import { VrmCompanion } from "./vrm-avatar.js?v=20260806-77";
 
 const $=selector=>document.querySelector(selector);
 const mic=$("#micButton"),caption=$("#caption"),prompt=$("#voicePrompt"),detail=$("#detailText"),wave=$("#wave");
@@ -45,7 +45,6 @@ const avatar=new VrmCompanion($("#avatarCanvas"),{
   onReady:()=>{$("#avatarStatus").textContent=`${looks[activeLook].label}已就绪`;document.querySelectorAll(".looks button").forEach(button=>button.disabled=false);},
   onError:error=>{$("#avatarStatus").textContent=`模型加载失败：${error.message}`;document.querySelectorAll(".looks button").forEach(button=>button.disabled=false);}
 });
-
 const canvas=$("#avatarCanvas"),viewButtons=[...document.querySelectorAll("[data-view-angle]")];
 function showViewAngle(angle){
   viewButtons.forEach(button=>button.classList.toggle("active",Math.abs(Number(button.dataset.viewAngle)-angle)<2));
@@ -79,7 +78,12 @@ document.querySelectorAll(".looks button").forEach(button=>{
   });
 });
 
-const actionPreviews={wave_approval:{emotion:"happy",label:"挥手"},clap:{emotion:"excited",label:"鼓掌"},shy:{emotion:"happy",label:"害羞"},thinking:{emotion:"curious",label:"思考"},caring:{emotion:"caring",label:"关心"},surprise:{emotion:"excited",label:"惊讶"}};
+const actionPreviews={
+  wave_approval:{emotion:"happy",label:"挥手"},clap:{emotion:"excited",label:"鼓掌"},cheer:{emotion:"excited",label:"欢呼"},
+  bow:{emotion:"happy",label:"鞠躬"},shrug:{emotion:"curious",label:"耸肩"},cross:{emotion:"calm",label:"交叉手势"},
+  confident_arms_crossed:{emotion:"happy",label:"抱胸"},shy:{emotion:"happy",label:"害羞"},thinking:{emotion:"curious",label:"思考"},
+  caring:{emotion:"caring",label:"关心"},surprise:{emotion:"excited",label:"惊讶"}
+};
 document.querySelectorAll("[data-action-preview]").forEach(button=>button.addEventListener("click",()=>{
   const action=button.dataset.actionPreview,preview=actionPreviews[action];avatar.setBehavior(preview.emotion,action,true);$("#expressionLabel").textContent=`动作测试：${preview.label}`;
 }));
