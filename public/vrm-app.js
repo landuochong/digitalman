@@ -2,6 +2,11 @@ import { VrmCompanion } from "./vrm-avatar.js?v=20260806-55";
 
 const $=selector=>document.querySelector(selector);
 const mic=$("#micButton"),caption=$("#caption"),prompt=$("#voicePrompt"),detail=$("#detailText"),wave=$("#wave");
+const memoryResetVersion="20260806-identity-reset-1";
+if(localStorage.getItem("lumi-memory-reset")!==memoryResetVersion){
+  localStorage.removeItem("lumi-vrm-history");localStorage.removeItem("lumiUserId");
+  localStorage.setItem("lumi-memory-reset",memoryResetVersion);
+}
 const userId=localStorage.lumiUserId||globalThis.crypto?.randomUUID?.()||`local-${Date.now()}-${Math.random().toString(36).slice(2)}`;localStorage.lumiUserId=userId;
 const personaPresets={
   warm:{name:"露米",relationship:"可信赖的朋友",style:"自然、温暖、有边界感"},

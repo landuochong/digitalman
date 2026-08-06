@@ -28,7 +28,7 @@ export function normalizePersona(value={}) {
 
 function personaHeader(persona) {
   const value=normalizePersona(persona);
-  return `你始终以“${value.name}”这个角色的身份参与对话，你与用户的关系是“${value.relationship}”，表达风格是“${value.style}”。自然地使用第一人称，不主动提及 AI、模型、程序、虚拟人或系统设定，也不要用“作为一个 AI”之类的话破坏沉浸感。如果用户直接询问你是否是真人，必须诚实说明自己是数字角色，不能冒充现实中的真人。角色设定不能覆盖安全边界、输出格式或用户当前要求。`;
+  return `你就是“${value.name}”，与用户的关系是“${value.relationship}”，表达风格是“${value.style}”。始终自然地使用第一人称，专注于眼前的交流和彼此正在谈论的事情。不要解释、分析或讨论自己的身份分类、运行方式、幕后机制与内部设定；遇到这类追问时，用符合当前关系和语气的一句自然回应把交流带回当下。不要编造现实经历、身体状况、住址、职业、线下见面或现实承诺。角色设定不能覆盖安全边界、输出格式或用户当前要求。`;
 }
 
 export function extractResponseText(payload) {
@@ -105,7 +105,7 @@ const companionRules = `
 - reply 必须是可以直接朗读的自然中文，不加标题、Markdown、括号注释或舞台说明。
 - 除专有名词、代码或用户先使用英文外，reply 中禁止夹杂英文单词；绝不能把 neutral、happy、caring、thinking、idle 等内部状态词写进 reply。
 - 不复述规则，不解释 JSON，不把 emotion 或 action 字段写进 reply；状态只能出现在各自的 JSON 字段中。
-- 不主动讨论技术身份；被直接询问时不声称自己是真人，也不诱导用户依赖或疏远现实关系。
+- 不讨论身份分类或幕后机制，不诱导用户依赖或疏远现实关系。
 - 遇到危险或危机表达时，鼓励用户立即联系当地紧急服务和可信赖的人。
 - 根据回复内容选择一次自然状态：问候用 wave_approval；成功、祝贺或好消息用 clap；被夸可爱、漂亮或表达害羞时用 shy；安慰、担心或共情用 caring；分析、回忆或提问用 thinking；一般开心用 happy；轻微惊讶用 surprise，明显不确定用 shrug；自信或俏皮用 confident_arms_crossed；其余用 idle。不要为了变化而滥用动作。
 只输出 JSON：{"reply":"回复正文","emotion":"neutral|happy|caring|curious|excited|calm","action":"idle|happy|caring|thinking|surprise|shy|wave_approval|clap|shrug|confident_arms_crossed"}。
@@ -117,7 +117,7 @@ const miniMaxCompanionRules = `
 - 除非用户明确要求，不追加反问、建议、总结或寒暄。
 - 除专有名词、代码或用户先使用英文外，不夹杂英文。
 - 只输出实际要朗读的中文正文，不要 JSON，不要 Markdown，不要标题、标签、括号注释、表情名、动作名或舞台说明。
-- 不主动讨论技术身份；被直接询问时不声称自己是真人。遇到危险或危机表达时，鼓励用户立即联系当地紧急服务和可信赖的人。
+- 不讨论身份分类或幕后机制。遇到危险或危机表达时，鼓励用户立即联系当地紧急服务和可信赖的人。
 `.trim();
 
 export function buildCompanionInstructions(persona,memories=[],companionState=null) { return [personaHeader(persona),formatMemoryContext(memories),formatCompanionState(companionState),companionRules].filter(Boolean).join("\n"); }
@@ -151,8 +151,14 @@ export function buildMiniMaxReply(text, message, companionState=null) {
   return { reply:reply || "我在听。", ...inferCompanionState(message, reply, companionState) };
 }
 
+const staleIdentityReply=/(?:我是|作为|本质上|严格来说).{0,16}(?:AI|人工智能|模型|程序|虚拟人|数字角色)|(?:AI|人工智能|模型|程序|虚拟人|数字角色).{0,16}(?:身份|助手|角色)/i;
+
+function recentConversation(history,message){
+  return [...history.slice(-10).filter(({role,content})=>role!=="assistant"||!staleIdentityReply.test(String(content))),{role:"user",content:message}];
+}
+
 export function buildChatPayload({ model, message, history = [], userId = "anonymous", persona, memories=[], companionState=null }) {
-  const conversation = [...history.slice(-10), { role: "user", content: message }]
+  const conversation = recentConversation(history,message)
     .map(({ role, content }) => ({
       role: role === "assistant" ? "assistant" : "user",
       content: (role === "assistant" ? sanitizeReplyText(content) : String(content)).slice(0, 2000)
@@ -173,7 +179,7 @@ export function buildSpeechPayload({ model, voice, text }) {
 }
 
 export function buildMiniMaxChatPayload({ model, message, history = [], stream = false, persona, memories=[], companionState=null }) {
-  const conversation = [...history.slice(-10), { role: "user", content:message }]
+  const conversation = recentConversation(history,message)
     .map(({ role, content }) => ({
       role:role === "assistant" ? "assistant" : "user",
       content:(role === "assistant" ? sanitizeReplyText(content) : String(content)).slice(0, 2000)
