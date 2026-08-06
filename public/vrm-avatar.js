@@ -2,7 +2,7 @@ import * as THREE from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { VRMLoaderPlugin, VRMUtils } from "@pixiv/three-vrm";
-import { VrmMotionController } from "./vrm-motion.js?v=20260805-33";
+import { VrmMotionController } from "./vrm-motion.js?v=20260806-44";
 
 const clamp=(value,min=0,max=1)=>Math.min(max,Math.max(min,value));
 const damp=(current,target,speed,dt)=>THREE.MathUtils.damp(current,target,speed,dt);
@@ -11,7 +11,7 @@ const GESTURES=new Set(["wave_approval","clap","shy","thinking","caring","surpri
 export class VrmCompanion{
   constructor(canvas,{modelUrl="/vrm/models/lumi-cc0.vrm",restPose="natural",onReady,onError}={}){
     this.canvas=canvas;this.onReady=onReady;this.onError=onError;
-    this.clock=new THREE.Clock();this.vrm=null;this.audioLevel=0;this.speaking=false;
+    this.clock=new THREE.Clock();this.vrm=null;this.audioLevel=0;this.speaking=false;this.blush=0;this.blushMeshes=[];this.forearmOverlays=[];
     this.emotion="calm";this.action="idle";this.expression=0;this.blink=0;
     this.nextBlink=2.2+Math.random()*2;this.blinkTime=-1;this.lastGesture=-Infinity;
     this.modelUrl=modelUrl;this.loadingToken=0;this.motion=new VrmMotionController();this.motion.restPose=restPose;
@@ -40,7 +40,7 @@ export class VrmCompanion{
       VRMUtils.rotateVRM0(next);
       if(this.vrm){this.modelPivot.remove(this.vrm.scene);VRMUtils.deepDispose(this.vrm.scene);}
       this.vrm=next;this.modelUrl=url;this.expression=0;this.blink=0;this.action="idle";
-      this.modelPivot.rotation.y=0;this.modelPivot.add(next.scene);this.tuneModelMaterials(url,next.scene);this.fitModel();this.prepareFallbackPose();this.prepareHands();
+      this.modelPivot.rotation.y=0;this.modelPivot.add(next.scene);this.tuneModelMaterials(url,next.scene);this.fitModel();this.prepareFallbackPose();this.prepareHands();this.prepareBlush();this.prepareForearmOverlays(url);
       if(next.lookAt)next.lookAt.target=this.lookTarget;
       this.motion.modelProfile=url.includes("avatar-sample-b.vrm")?"default":"mouth";
       this.motion.clapProfile=url.includes("avatar-sample-a.vrm")?"soft":url.includes("avatar-sample-b.vrm")?"vivid":url.includes("nikechan_v1.vrm")?"nike1":url.includes("nikechan_v2.vrm")?"nike2":"classic";
@@ -82,6 +82,54 @@ export class VrmCompanion{
       for(const finger of ["Index","Middle","Ring","Little"]){
         const proximal=this.bone(`${side}${finger}Proximal`),intermediate=this.bone(`${side}${finger}Intermediate`),distal=this.bone(`${side}${finger}Distal`);
         if(proximal)proximal.rotation.z=sign*.12;if(intermediate)intermediate.rotation.z=sign*.08;if(distal)distal.rotation.z=sign*.04;
+      }
+    }
+  }
+  prepareBlush(){
+    this.blush=0;this.blushMeshes=[];
+    const head=this.bone("head");if(!head)return;
+    const canvas=document.createElement("canvas");canvas.width=128;canvas.height=64;
+    const context=canvas.getContext("2d"),gradient=context.createRadialGradient(64,32,2,64,32,58);
+    gradient.addColorStop(0,"rgba(255,88,116,.9)");gradient.addColorStop(.46,"rgba(255,112,137,.55)");gradient.addColorStop(1,"rgba(255,145,160,0)");
+    context.fillStyle=gradient;context.fillRect(0,0,128,64);
+    context.strokeStyle="rgba(255,78,108,.72)";context.lineWidth=5;context.lineCap="round";
+    for(const x of [45,64,83]){context.beginPath();context.moveTo(x-7,39);context.lineTo(x+4,24);context.stroke();}
+    const texture=new THREE.CanvasTexture(canvas);texture.colorSpace=THREE.SRGBColorSpace;
+    for(const x of [-0.055,0.055]){
+      const material=new THREE.MeshBasicMaterial({map:texture,transparent:true,opacity:0,depthWrite:false,depthTest:true,toneMapped:false,side:THREE.DoubleSide});
+      const cheek=new THREE.Mesh(new THREE.PlaneGeometry(0.058,0.029),material);
+      cheek.position.set(x,0.03,-0.106);cheek.renderOrder=10;head.add(cheek);this.blushMeshes.push(cheek);
+    }
+  }
+  prepareForearmOverlays(url){
+    this.forearmOverlays=[];if(!url.includes("nikechan_v2.vrm"))return;
+    const rawBones=["left","right"].map(side=>({side,bone:this.vrm.humanoid.getRawBoneNode(`${side}LowerArm`)})).filter(item=>item.bone);
+    const meshes=[];this.vrm.scene.traverse(object=>{if(object.isSkinnedMesh)meshes.push(object);});
+    for(const mesh of meshes){
+      const sourceMaterials=Array.isArray(mesh.material)?mesh.material:[mesh.material];
+      if(!sourceMaterials.some(material=>material?.name==="NikeChanBody"||material?.name==="NikeChanBodyShade"))continue;
+      for(const {side,bone} of rawBones){
+        const index=mesh.skeleton?.bones.indexOf(bone);if(index<0)continue;
+        const materials=sourceMaterials.map(source=>{
+          const material=new THREE.MeshBasicMaterial({
+            color:0xfff4ec,side:source.side,
+            depthTest:false,depthWrite:false,transparent:true,toneMapped:false,
+          });
+          material.onBeforeCompile=shader=>{
+            const mask=`(1.0-step(0.5,abs(float(skinIndex.x)-${index}.0)))*skinWeight.x+(1.0-step(0.5,abs(float(skinIndex.y)-${index}.0)))*skinWeight.y+(1.0-step(0.5,abs(float(skinIndex.z)-${index}.0)))*skinWeight.z+(1.0-step(0.5,abs(float(skinIndex.w)-${index}.0)))*skinWeight.w`;
+            shader.vertexShader=shader.vertexShader
+              .replace("#include <common>","#include <common>\nvarying float vForearmMask;")
+              .replace("#include <skinning_vertex>",`#include <skinning_vertex>\nvForearmMask=${mask};`);
+            shader.fragmentShader=shader.fragmentShader
+              .replace("#include <common>","#include <common>\nvarying float vForearmMask;")
+              .replace("#include <clipping_planes_fragment>","#include <clipping_planes_fragment>\nif(vForearmMask<0.015)discard;");
+          };
+          material.customProgramCacheKey=()=>`v2-${side}-forearm-overlay-${index}`;return material;
+        });
+        const overlay=mesh.clone(false);overlay.material=Array.isArray(mesh.material)?materials:materials[0];overlay.skeleton=mesh.skeleton;
+        overlay.bindMatrix.copy(mesh.bindMatrix);overlay.bindMatrixInverse.copy(mesh.bindMatrixInverse);overlay.name=`${mesh.name}_${side}_forearm_overlay`;
+        overlay.userData.forearmSide=side;overlay.renderOrder=1000;overlay.frustumCulled=false;overlay.visible=false;
+        mesh.parent.add(overlay);this.forearmOverlays.push(overlay);
       }
     }
   }
@@ -131,6 +179,13 @@ export class VrmCompanion{
     this.expression=damp(this.expression,target,4,dt);this.setExpression("happy",this.expression);
     this.setExpression("relaxed",this.emotion==="calm"?.1:0);
     this.setExpression("surprised",this.motion.activeAction==="surprise"?.34:0);
+    const showBothForearms=this.motion.activeAction==="caring"||this.motion.activeAction==="thinking"||
+      (this.motion.activeAction==="idle"&&this.motion.restPose==="touch");
+    this.forearmOverlays.forEach(overlay=>{
+      overlay.visible=showBothForearms||(this.motion.activeAction==="wave_approval"&&overlay.userData.forearmSide==="right");
+    });
+    this.blush=damp(this.blush,this.motion.activeAction==="shy"?.68:0,7,dt);
+    this.blushMeshes.forEach(cheek=>{cheek.material.opacity=this.blush;});
     const open=this.speaking?clamp((this.audioLevel-.025)*2.1):0;
     this.setExpression("aa",open*.66);this.setExpression("oh",open*.22*(.5+.5*Math.sin(t*7.3)));this.setExpression("ih",open*.12*(.5+.5*Math.cos(t*6.1)));
   }

@@ -4,7 +4,7 @@ import { VRMAnimationLoaderPlugin, createVRMAnimationClip } from "@pixiv/three-v
 
 const FADE_SECONDS=0.35;
 const POSE_ROOT="/vrm/motions/poses";
-const POSE_VERSION="20260805-simple-clap-approved-2";
+const POSE_VERSION="20260806-distinct-single-hand-shy-1";
 const ACTIONS={
   wave_approval:{files:["wave1.json","wave2.json"],step:0.5,duration:1.8},
   clap:{files:["clap1.json","clap2.json"],step:0.3,duration:1.8},
@@ -129,7 +129,7 @@ export class VrmMotionController{
     const requestId=++this.requestId,vrm=this.vrm;
     try{
       let files=config.files;
-      if(actionName==="shy"&&this.modelProfile==="mouth")files=["mouth_cover.json"];
+      if(actionName==="shy"&&this.modelProfile==="mouth")files=["shy_cover_left.json"];
       const poses=await Promise.all(files.map(loadPose));
       if(requestId!==this.requestId||vrm!==this.vrm)return false;
       this.stopGesture(0.05);this.fadeRestOut(FADE_SECONDS);
