@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { createInterface } from "node:readline";
 import { inferAudioExtension } from "./wav2lip-render.mjs";
 
-const RENDER_PROFILE = "dinet-mini-25fps-retina-v1";
+const RENDER_PROFILE = "dinet-mini-25fps-source-lip-color-v6";
 
 export function buildDINetWorkerCommand(projectRoot) {
   return {

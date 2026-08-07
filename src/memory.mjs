@@ -33,12 +33,15 @@ export function extractMemoryCandidates(message){
   const result=[];
   const name=text.match(/(?:^|[，。！？,\s])(?:我叫|叫我|你可以叫我)\s*([^，。！？,\s]{1,20})/);
   if(name)result.push(candidate("user_fact",`用户希望被称为${name[1]}`,5));
-  for(const match of text.matchAll(/我(?:很|特别|比较|最)?\s*(喜欢|爱|讨厌|不喜欢)\s*([^，。！？,.]{1,40})/g)){
+  for(const match of text.matchAll(/(?:^|[，。！？,\s])我(?:很|特别|比较|最)?\s*(喜欢|爱|讨厌|不喜欢)\s*([^，。！？,.]{1,40})/g)){
     const negative=match[1].includes("讨厌")||match[1].includes("不喜欢");
     result.push(candidate("preference",`用户${negative?"不喜欢":"喜欢"}${cleanText(match[2],40)}`,4));
   }
-  const explicit=text.match(/(?:请)?(?:记住|记得)(?:我)?[：:，,\s]*(.{2,80}?)(?:[。！？]|$)/);
-  if(explicit)result.push(candidate("user_fact",`用户明确要求记住：${explicit[1]}`,5));
+  // 只接受明确的“保存记忆”命令。裸匹配“记得”会把
+  // “你还记得我刚才说什么吗？”这类回忆问题误存成用户事实。
+  const explicit=text.match(/(?:请|帮我|你要|一定要)\s*记住(?:我)?[：:，,\s]*(.{2,80}?)(?:[。！？]|$)|(?:请|你要|一定要)\s*记得(?:我)?[：:，,\s]*(.{2,80}?)(?:[。！？]|$)|(?:^|[，。！？,\s])记住我[：:，,\s]*(.{2,80}?)(?:[。！？]|$)/);
+  const explicitContent=explicit?.[1]||explicit?.[2]||explicit?.[3];
+  if(explicitContent)result.push(candidate("user_fact",`用户明确要求记住：${explicitContent}`,5));
   const openLoop=text.match(/((?:明天|后天|今晚|待会儿|下周|周[一二三四五六日天]|下个月|过几天)(?:要|会|准备|打算|有)?[^，。！？,.]{2,60})/);
   if(openLoop)result.push(candidate("open_loop",`用户提到待跟进事项：${openLoop[1]}`,4));
   return result.filter((item,index,items)=>item.content&&items.findIndex(other=>other.layer===item.layer&&other.content===item.content)===index);
@@ -91,6 +94,13 @@ export class CompanionMemoryStore{
     }
     if(rows.length>200)rows.splice(0,rows.length-200);
     await this.scheduleWrite();return stored;
+  }
+  async clearUser(userId){
+    await this.ready;const id=normalizeMemoryUserId(userId);if(!id)return false;
+    const existed=Boolean(this.state.users[id]||this.state.relationships[id]);
+    delete this.state.users[id];delete this.state.relationships[id];
+    if(existed)await this.scheduleWrite();
+    return existed;
   }
   async getCompanionState(userId,now=new Date()){
     await this.ready;const id=normalizeMemoryUserId(userId);if(!id)return null;

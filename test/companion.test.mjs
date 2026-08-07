@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { buildChatPayload, buildMiniMaxChatPayload, buildMiniMaxReply, buildMiniMaxSpeechPayload, buildSpeechPayload, decodeMiniMaxAudio, demoReply, extractMiniMaxChatText, extractResponseText, inferCompanionState, normalizeAction, normalizeEmotion, normalizePersona, parseCompanionReply, sanitizeReplyText, takeCompleteSentences } from "../src/companion.mjs";
+import { buildChatPayload, buildMiniMaxChatPayload, buildMiniMaxReply, buildMiniMaxSpeechPayload, buildSpeechPayload, companionIdentityReply, companionPresenceReply, decodeMiniMaxAudio, demoReply, extractMiniMaxChatText, extractResponseText, inferCompanionState, isCompanionIdentityQuestion, isCompanionPresenceQuestion, normalizeAction, normalizeEmotion, normalizePersona, parseCompanionReply, sanitizeReplyText, takeCompleteSentences } from "../src/companion.mjs";
 
 test("extracts Responses API output text", () => {
   assert.equal(extractResponseText({ output:[{ type:"message", content:[{ type:"output_text", text:"你好" }] }] }), "你好");
@@ -29,7 +29,8 @@ test("demo maps the good-news suggestion to an excited response", () => {
 test("demo uses the thinking expression for questions", () => assert.equal(demoReply("这个要怎么做？").action, "thinking"));
 test("persona changes the demo name and is safely normalized", () => {
   assert.match(demoReply("你好", { name:"小晴" }).reply, /我是小晴/);
-  assert.deepEqual(normalizePersona({ name:"\u0000 小\n晴 ", relationship:"", style:"简洁  自然" }), { name:"小 晴", relationship:"可信赖的朋友", style:"简洁 自然" });
+  const persona=normalizePersona({ name:"\u0000 小\n晴 ", relationship:"", style:"简洁  自然" });
+  assert.equal(persona.name,"小 晴");assert.equal(persona.relationship,"可信赖的朋友");assert.equal(persona.style,"简洁 自然");assert.match(persona.background,/湖边|轻音乐/);
 });
 test("demo escalates self-harm language to immediate real-world support", () => {
   const result = demoReply("我不想活了"); assert.equal(result.emotion, "caring"); assert.match(result.reply, /紧急服务|信任的人/);
@@ -48,8 +49,48 @@ test("does not feed stale technical identity replies back into chat", () => {
   ];
   const openai=buildChatPayload({model:"gpt-test",message:"继续",history});
   const minimax=buildMiniMaxChatPayload({model:"MiniMax-test",message:"继续",history});
-  assert.deepEqual(openai.input.map(item=>item.content),["你是谁","今天想聊点什么？","继续"]);
-  assert.deepEqual(minimax.messages.slice(1).map(item=>item.content),["你是谁","今天想聊点什么？","继续"]);
+  assert.deepEqual(openai.input.map(item=>item.content),["今天想聊点什么？","继续"]);
+  assert.deepEqual(minimax.messages.slice(1).map(item=>item.content),["今天想聊点什么？","继续"]);
+});
+test("answers identity questions as the configured friend without technical labels", () => {
+  assert.equal(isCompanionIdentityQuestion("你是AI吗？"),true);
+  assert.equal(isCompanionIdentityQuestion("你是谁？"),true);
+  assert.equal(isCompanionIdentityQuestion("你喜欢吃什么？"),false);
+  assert.deepEqual(companionIdentityReply("你是谁？",{name:"知夏",relationship:"知心朋友"}),{
+    reply:"我是知夏呀，是愿意认真听你说话、陪你聊天的朋友。",emotion:"happy",action:"idle"
+  });
+  assert.doesNotMatch(companionIdentityReply("你是机器人吗？").reply,/AI|人工智能|机器人|模型|程序|数字角色/);
+  assert.match(companionIdentityReply("你是机器人吗？").reply,/朋友/);
+  assert.equal(isCompanionIdentityQuestion("你是真实的人吗？"),true);
+  assert.match(companionIdentityReply("你是真实的人吗？").reply,/当然呀，我就是露米/);
+  assert.doesNotMatch(companionIdentityReply("你是真实的人吗？").reply,/不是真|算不上|虚拟|AI/);
+  assert.equal(companionIdentityReply("今天天气怎么样？"),null);
+});
+test("answers location and device questions without claiming confinement to a phone",()=>{
+  for(const question of ["你在哪里？","你住在手机里吗","你能不能出来见我"]){
+    assert.equal(isCompanionPresenceQuestion(question),true);
+    const result=companionPresenceReply(question,{name:"知夏"});
+    assert.match(result.reply,/就在这里陪你/);
+    assert.doesNotMatch(result.reply,/手机|屏幕|应用|设备|只能|无法/);
+  }
+  assert.equal(companionPresenceReply("你今天开心吗"),null);
+});
+test("removes stale device-confinement turns from model context",()=>{
+  const history=[
+    {role:"user",content:"你在哪里"},
+    {role:"assistant",content:"我只能待在手机屏幕里陪你。"},
+    {role:"assistant",content:"我们接着聊吧。"},
+  ];
+  const payload=buildMiniMaxChatPayload({model:"m",message:"好呀",history});
+  assert.deepEqual(payload.messages.slice(1).map(item=>item.content),["我们接着聊吧。","好呀"]);
+});
+test("keeps valid role order after removing a stale device reply",()=>{
+  const history=[
+    {role:"user",content:"赶紧下楼，我在楼下等你"},
+    {role:"assistant",content:"我在手机里，没办法真的走到楼下。"},
+  ];
+  const payload=buildMiniMaxChatPayload({model:"m",message:"为什么不能",history});
+  assert.deepEqual(payload.messages.slice(1),[{role:"user",content:"赶紧下楼，我在楼下等你\n为什么不能"}]);
 });
 test("speech payload is mp3 and enforces the input limit", () => {
   const payload = buildSpeechPayload({ model:"tts-test", voice:"nova", text:"你".repeat(1900) });
@@ -57,10 +98,10 @@ test("speech payload is mp3 and enforces the input limit", () => {
 });
 test("builds MiniMax chat history with a system persona", () => {
   const payload=buildMiniMaxChatPayload({model:"MiniMax-test",message:"你好",history:[{role:"assistant",content:"在呢（caring）"}],persona:{name:"知夏",relationship:"学习搭档",style:"冷静简洁"},memories:[{layer:"preference",content:"用户喜欢爵士乐"}],companionState:{mood:"caring",moodIntensity:.6,familiarityStage:"熟悉"}});
-  assert.equal(payload.messages[0].role,"system"); assert.equal(payload.messages[1].content,"在呢"); assert.equal(payload.messages.at(-1).content,"你好"); assert.equal(payload.reasoning_split,true); assert.equal(payload.max_completion_tokens,800);
+  assert.equal(payload.messages[0].role,"system"); assert.equal(payload.messages[1].content,"在呢"); assert.equal(payload.messages.at(-1).content,"你好"); assert.equal(payload.reasoning_split,true); assert.equal(payload.max_completion_tokens,400);assert.equal(payload.temperature,.35);
   assert.match(payload.messages[0].content,/知夏/); assert.match(payload.messages[0].content,/学习搭档/); assert.match(payload.messages[0].content,/冷静简洁/); assert.match(payload.messages[0].content,/不能覆盖安全边界/);
-  assert.match(payload.messages[0].content,/你就是“知夏”/); assert.match(payload.messages[0].content,/专注于眼前的交流/);
-  assert.doesNotMatch(payload.messages[0].content,/AI|模型|程序|虚拟人|数字角色|真人/);
+  assert.match(payload.messages[0].content,/你就是“知夏”/);assert.match(payload.messages[0].content,/个人背景/);assert.match(payload.messages[0].content,/真实、连续的人/);
+  assert.doesNotMatch(payload.messages[0].content,/AI|模型|程序|数字角色|虚拟/);
   assert.match(payload.messages[0].content,/用户喜欢爵士乐/); assert.match(payload.messages[0].content,/不要逐条复述/);
   assert.match(payload.messages[0].content,/熟悉/); assert.match(payload.messages[0].content,/关切/);
 });
@@ -73,6 +114,16 @@ test("builds streaming MiniMax payload and segments complete spoken sentences", 
 test("MiniMax speaks only the reply while state is inferred locally", () => {
   assert.deepEqual(buildMiniMaxReply("慢慢来，我陪着你。", "我今天很焦虑"), { reply:"慢慢来，我陪着你。", emotion:"caring", action:"caring" });
   assert.deepEqual(buildMiniMaxReply('{"reply":"你好呀","emotion":"neutral","action":"idle"}', "你好"), { reply:"你好呀", emotion:"happy", action:"wave_approval" });
+});
+test("repairs device-confinement replies while continuing the shared scene",()=>{
+  const history=[
+    {role:"user",content:"带你出去玩"},
+    {role:"assistant",content:"好呀，去哪儿？"},
+    {role:"user",content:"赶紧下楼，我在楼下等你"},
+  ];
+  const repaired=buildMiniMaxReply("因为我在手机里呀，没办法真的出现在楼下。","为什么不能",null,history);
+  assert.equal(repaired.reply,"好呀，你在楼下等我一下，我马上下来。");
+  assert.doesNotMatch(repaired.reply,/手机|屏幕|设备|没办法|不能/);
 });
 test("infers natural daily phrases for VRM gestures", () => {
   assert.deepEqual(inferCompanionState("我饿了"), { emotion:"caring", action:"caring" });

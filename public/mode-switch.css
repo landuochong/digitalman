@@ -1,0 +1,159 @@
+.avatar-mode-switch {
+  position: absolute;
+  z-index: 8;
+  top: auto;
+  right: 18px;
+  bottom: 18px;
+  left: auto;
+  transform: none;
+  display: flex;
+  gap: 3px;
+  padding: 4px;
+  border: 1px solid rgba(255,255,255,.7);
+  border-radius: 24px;
+  background: rgba(255,255,255,.5);
+  box-shadow: 0 8px 24px rgba(75,55,67,.08);
+  backdrop-filter: blur(12px);
+}
+.avatar-mode-switch button {
+  min-width: 58px;
+  height: 30px;
+  padding: 0 15px;
+  border: 0;
+  border-radius: 18px;
+  background: transparent;
+  color: #766b74;
+  font: 12px inherit;
+  cursor: pointer;
+  transition: .2s;
+}
+.avatar-mode-switch button[aria-pressed="true"] {
+  background: #fff;
+  color: var(--coral-dark);
+  box-shadow: 0 4px 14px rgba(75,55,67,.12);
+}
+.avatar-mode-switch[hidden] { display: none; }
+.avatar-panel { padding: 0; isolation: isolate; }
+.avatar-panel .brand,.avatar-panel .status { z-index: 12; text-shadow: 0 1px 8px rgba(255,255,255,.72); }
+.avatar-panel .ambient { display: none; }
+.avatar-panel .portrait {
+  position: absolute;
+  z-index: 1;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  animation: none !important;
+  transform: none !important;
+}
+.avatar-panel .dh-live-frame,.avatar-panel .realistic-avatar {
+  width: 100%;
+  height: 100%;
+  aspect-ratio: auto;
+  border-radius: 0;
+  box-shadow: none;
+}
+.avatar-panel .portrait[data-avatar-mode="anime"] .realistic-avatar { display: none !important; }
+.avatar-panel .emotion-label { z-index: 9; bottom: 70px; }
+.avatar-panel .sound-wave { position: absolute; z-index: 9; bottom: 62px; margin: 0; }
+.avatar-panel .avatar-note { display: none; }
+.anime-look-control {
+  position: absolute;
+  z-index: 8;
+  left: 18px;
+  bottom: 18px;
+  transform: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 7px 6px 13px;
+  border: 1px solid rgba(255,255,255,.72);
+  border-radius: 22px;
+  background: rgba(255,255,255,.62);
+  color: #766b74;
+  font-size: 11px;
+  backdrop-filter: blur(12px);
+  box-shadow: 0 8px 24px rgba(75,55,67,.08);
+}
+.anime-look-control[hidden] { display: none; }
+.anime-look-control select {
+  height: 28px;
+  max-width: 116px;
+  border: 0;
+  border-radius: 15px;
+  padding: 0 25px 0 10px;
+  background: #fff;
+  color: #5f555e;
+  font: 11px inherit;
+  outline: none;
+}
+.anime-view-controls {
+  position: absolute;
+  z-index: 9;
+  left: 50%;
+  bottom: 18px;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+  border: 1px solid rgba(255,255,255,.72);
+  border-radius: 22px;
+  background: rgba(57,43,55,.2);
+  backdrop-filter: blur(12px);
+}
+.anime-view-controls[hidden] { display: none; }
+.anime-view-controls button {
+  min-width: 43px;
+  height: 28px;
+  padding: 0 9px;
+  border: 0;
+  border-radius: 15px;
+  background: transparent;
+  color: #fff;
+  font: 11px inherit;
+  text-shadow: 0 1px 5px rgba(45,32,42,.45);
+  cursor: pointer;
+}
+.anime-view-controls button:hover,.anime-view-controls button.active { background: rgba(255,255,255,.3); }
+.persona-settings { position: relative; }
+.persona-settings summary {
+  list-style: none;
+  height: 38px;
+  display: grid;
+  place-items: center;
+  padding: 0 13px;
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  background: #fff;
+  color: #837987;
+  font-size: 11px;
+  cursor: pointer;
+}
+.persona-settings summary::-webkit-details-marker { display: none; }
+.persona-settings[open] summary { border-color: rgba(207,112,103,.5); color: var(--coral-dark); }
+.persona-settings form {
+  position: absolute;
+  z-index: 30;
+  top: 48px;
+  right: 0;
+  width: 292px;
+  padding: 18px;
+  border: 1px solid rgba(66,52,62,.12);
+  border-radius: 20px;
+  background: rgba(255,253,249,.98);
+  box-shadow: 0 24px 70px rgba(49,35,45,.2);
+}
+.persona-settings label { display: grid; gap: 6px; margin-bottom: 12px; color: #776d75; font-size: 11px; }
+.persona-settings input,.persona-settings select,.persona-settings textarea { width: 100%; border: 1px solid var(--line); border-radius: 10px; background: #fff; padding: 9px 10px; color: var(--ink); font: 12px/1.45 inherit; outline: none; resize: vertical; }
+.persona-settings input:focus,.persona-settings select:focus,.persona-settings textarea:focus { border-color: rgba(207,112,103,.55); box-shadow: 0 0 0 3px rgba(207,112,103,.08); }
+.persona-settings form button { width: 100%; height: 36px; border: 0; border-radius: 18px; background: var(--coral); color: #fff; font: 12px inherit; cursor: pointer; }
+@media (max-width:800px) {
+  .avatar-mode-switch { top: auto; right: 10px; bottom: 8px; }
+  .avatar-mode-switch button { height: 27px; min-width: 52px; padding: 0 12px; }
+  .anime-look-control { left: 10px; bottom: 8px; }
+  .anime-look-control select { max-width: 98px; }
+  .anime-view-controls { bottom: 50px; }
+  .avatar-panel .emotion-label,.avatar-panel .sound-wave { display: none; }
+  .persona-settings form { position: fixed; top: 68px; left: 18px; right: 18px; width: auto; }
+  .persona-settings summary { padding: 0 10px; }
+}

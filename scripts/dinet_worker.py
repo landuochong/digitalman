@@ -42,6 +42,24 @@ def parse_args() -> argparse.Namespace:
         type=Path,
         default=DH_LIVE_ROOT / "checkpoint" / "DINet_mini" / "epoch_40_new.pth",
     )
+    parser.add_argument(
+        "--mouth-motion-scale",
+        type=float,
+        default=0.82,
+        help="收紧音频驱动的嘴部形变，1.0 为 DINet 原始幅度",
+    )
+    parser.add_argument(
+        "--lip-color-strength",
+        type=float,
+        default=0.78,
+        help="让合成嘴唇继承原视频色相和饱和度，范围 0-1",
+    )
+    parser.add_argument(
+        "--mouth-width-scale",
+        type=float,
+        default=0.88,
+        help="局部合成时的嘴部横向比例，1.0 保持模型输出宽度",
+    )
     return parser.parse_args()
 
 
@@ -50,8 +68,19 @@ def send(payload: dict) -> None:
 
 
 class PersistentDINetRenderer:
-    def __init__(self, asset: Path, audio_checkpoint: Path, render_checkpoint: Path):
+    def __init__(
+        self,
+        asset: Path,
+        audio_checkpoint: Path,
+        render_checkpoint: Path,
+        mouth_motion_scale: float = 0.82,
+        lip_color_strength: float = 0.78,
+        mouth_width_scale: float = 0.88,
+    ):
         self.asset = asset.resolve()
+        self.mouth_motion_scale = max(0.0, float(mouth_motion_scale))
+        self.lip_color_strength = float(np.clip(lip_color_strength, 0.0, 1.0))
+        self.mouth_width_scale = float(np.clip(mouth_width_scale, 0.65, 1.0))
         self.audio_model = LoadAudioModel(str(audio_checkpoint))
         self.render_model = RenderModel_Mini()
         self.render_model.loadModel(str(render_checkpoint))
@@ -81,6 +110,112 @@ class PersistentDINetRenderer:
         texture = cv2.imread(str(DH_LIVE_ROOT / "mini_live" / "bs_texture_halfFace.png"))
         texture = cv2.cvtColor(texture, cv2.COLOR_BGR2RGB)
         self.blendshape = texture[:6, :209].astype(np.float32) / 255.0 * 2.0 - 1.0
+
+    def _restore_source_lip_color(self, face: np.ndarray, source: np.ndarray) -> np.ndarray:
+        """Keep DINet geometry but move lip chroma back toward the source video.
+
+        DINet tends to turn warm coral lips grey-purple.  Restrict the correction
+        to red/magenta pixels in a feathered mouth ellipse so teeth, mouth cavity,
+        skin and the rest of the face retain the neural renderer's luminance.
+        """
+        strength = self.lip_color_strength
+        if strength <= 0:
+            return face
+
+        height, width = face.shape[:2]
+        yy, xx = np.ogrid[:height, :width]
+        ellipse = (
+            ((xx - width * 0.50) / (width * 0.31)) ** 2
+            + ((yy - height * 0.49) / (height * 0.105)) ** 2
+        ) <= 1.0
+
+        source_hsv = cv2.cvtColor(source[:, :, :3], cv2.COLOR_RGB2HSV)
+        source_lab = cv2.cvtColor(source[:, :, :3], cv2.COLOR_RGB2LAB)
+        face_hsv = cv2.cvtColor(face[:, :, :3], cv2.COLOR_RGB2HSV)
+        face_lab = cv2.cvtColor(face[:, :, :3], cv2.COLOR_RGB2LAB)
+
+        source_hue = source_hsv[:, :, 0].astype(np.float32)
+        source_signed_hue = np.where(source_hue > 90, source_hue - 180, source_hue)
+        source_lips = (
+            ellipse
+            & (np.abs(source_signed_hue) <= 18)
+            & (source_hsv[:, :, 1] >= 70)
+            & (source_hsv[:, :, 2] <= 245)
+            & (source_lab[:, :, 1] >= 140)
+        )
+        if np.count_nonzero(source_lips) < 20:
+            return face
+
+        target_hue = float(np.median(source_signed_hue[source_lips]))
+        target_saturation = float(np.percentile(source_hsv[:, :, 1][source_lips], 65))
+
+        face_hue = face_hsv[:, :, 0].astype(np.float32)
+        face_signed_hue = np.where(face_hue > 90, face_hue - 180, face_hue)
+        generated_lips = (
+            ellipse
+            & (np.abs(face_signed_hue) <= 25)
+            & (face_hsv[:, :, 1] >= 50)
+            & (face_hsv[:, :, 2] <= 238)
+            & (face_lab[:, :, 0] >= 105)
+            & (face_lab[:, :, 1] >= 142)
+        )
+        if not np.any(generated_lips):
+            return face
+
+        corrected_hue = face_signed_hue[generated_lips]
+        corrected_hue += (target_hue - corrected_hue) * strength
+        face_hsv[:, :, 0][generated_lips] = np.mod(corrected_hue, 180).astype(np.uint8)
+
+        saturation = face_hsv[:, :, 1].astype(np.float32)
+        current = saturation[generated_lips]
+        # Preserve naturally stronger pixels and only restore saturation lost by DINet.
+        restored = current + np.maximum(target_saturation - current, 0) * strength
+        face_hsv[:, :, 1][generated_lips] = np.clip(restored, 0, 255).astype(np.uint8)
+
+        # DINet also darkens the visible lip surface. Match only the lost lightness;
+        # the lower threshold above keeps the mouth cavity out, while low saturation
+        # keeps teeth out.
+        source_value = float(np.median(source_hsv[:, :, 2][source_lips]))
+        generated_value = float(np.median(face_hsv[:, :, 2][generated_lips]))
+        value_delta = np.clip(source_value - generated_value, 0.0, 20.0)
+        value = face_hsv[:, :, 2].astype(np.float32)
+        value[generated_lips] += value_delta * strength * 0.55
+        face_hsv[:, :, 2] = np.clip(value, 0, 255).astype(np.uint8)
+        return cv2.cvtColor(face_hsv, cv2.COLOR_HSV2RGB)
+
+    def _composite_narrow_mouth(self, face: np.ndarray, source: np.ndarray) -> np.ndarray:
+        """Compress only the synthesized mouth and feather it into the source face."""
+        height, width = face.shape[:2]
+        center_x, center_y = width * 0.50, height * 0.39
+        radius_x, radius_y = width * 0.34, height * 0.19
+        x0 = max(0, int(round(center_x - radius_x)))
+        x1 = min(width, int(round(center_x + radius_x)))
+        y0 = max(0, int(round(center_y - radius_y)))
+        y1 = min(height, int(round(center_y + radius_y)))
+        patch = face[y0:y1, x0:x1]
+        if patch.size == 0:
+            return face
+
+        compressed_width = max(2, int(round(patch.shape[1] * self.mouth_width_scale)))
+        compressed = cv2.resize(
+            patch, (compressed_width, patch.shape[0]), interpolation=cv2.INTER_LINEAR
+        )
+        paste_x0 = int(round(center_x - compressed_width / 2))
+        paste_x1 = paste_x0 + compressed_width
+
+        local_y, local_x = np.ogrid[:patch.shape[0], :compressed_width]
+        normalized_x = (local_x - (compressed_width - 1) / 2) / max(compressed_width * 0.5, 1)
+        normalized_y = (local_y - (patch.shape[0] - 1) / 2) / max(patch.shape[0] * 0.5, 1)
+        distance = normalized_x**2 + normalized_y**2
+        alpha = np.clip((1.0 - distance) / 0.34, 0.0, 1.0)
+        alpha = cv2.GaussianBlur(alpha.astype(np.float32), (0, 0), sigmaX=1.4)
+        alpha = np.clip(alpha, 0.0, 1.0)[..., None]
+
+        output = source[:, :, :3].copy()
+        target = output[y0:y1, paste_x0:paste_x1].astype(np.float32)
+        blended = compressed.astype(np.float32) * alpha + target * (1.0 - alpha)
+        output[y0:y1, paste_x0:paste_x1] = np.clip(blended, 0, 255).astype(np.uint8)
+        return output
 
     def _read_video(self):
         cap = cv2.VideoCapture(str(self.asset / "01.mp4"))
@@ -150,7 +285,7 @@ class PersistentDINetRenderer:
                 for audio_index, values in enumerate(coefficients):
                     frame_index = audio_index % len(self.frames)
                     blendshape = np.zeros(12, dtype=np.float32)
-                    blendshape[:6] = values[:6]
+                    blendshape[:6] = values[:6] * self.mouth_motion_scale
                     deformation = (
                         self.blendshape * blendshape[:6].reshape(6, 1, 1)
                     ).sum(axis=0)
@@ -189,6 +324,8 @@ class PersistentDINetRenderer:
                     result = self.render_model.interface(source_tensor, gl_tensor)
                     face = result.squeeze(0).cpu().permute(1, 2, 0).numpy()
                     face = np.clip(face * 255.0, 0, 255).astype(np.uint8)
+                    face = self._restore_source_lip_color(face, source)
+                    face = self._composite_narrow_mouth(face, source)
                     x0, y0, x1, y1 = self.crop_rects[frame_index]
                     frame = self.frames[frame_index][:, :, :3].copy()
                     frame[y0:y1, x0:x1] = cv2.resize(face, (x1 - x0, y1 - y0))[:, :, :3]
@@ -223,7 +360,12 @@ def main() -> None:
     args = parse_args()
     with contextlib.redirect_stdout(sys.stderr):
         renderer = PersistentDINetRenderer(
-            args.asset, args.audio_checkpoint, args.render_checkpoint
+            args.asset,
+            args.audio_checkpoint,
+            args.render_checkpoint,
+            args.mouth_motion_scale,
+            args.lip_color_strength,
+            args.mouth_width_scale,
         )
     send({"type": "ready", "device": device})
 

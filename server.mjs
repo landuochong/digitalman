@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 import { readFileSync } from "node:fs";
 import { extname, join, normalize } from "node:path";
 import { fileURLToPath } from "node:url";
-import { buildChatPayload, buildMiniMaxChatPayload, buildMiniMaxReply, buildMiniMaxSpeechPayload, buildSpeechPayload, decodeMiniMaxAudio, demoReply, extractMiniMaxChatText, extractResponseText, inferCompanionState, normalizePersona, parseCompanionReply, sanitizeReplyText, takeCompleteSentences } from "./src/companion.mjs";
+import { buildChatPayload, buildMiniMaxChatPayload, buildMiniMaxReply, buildMiniMaxSpeechPayload, buildSpeechPayload, companionIdentityReply, companionPresenceReply, decodeMiniMaxAudio, demoReply, extractMiniMaxChatText, extractResponseText, inferCompanionState, normalizePersona, parseCompanionReply, sanitizeReplyText, takeCompleteSentences } from "./src/companion.mjs";
 import { CompanionMemoryStore } from "./src/memory.mjs";
 import { DhActionTaskStore, isLoopbackAddress, saveActionVideo } from "./src/dh-action-studio.mjs";
 import { Wav2LipRenderStore } from "./src/wav2lip-render.mjs";
@@ -42,6 +42,24 @@ const miniMaxTextModel = process.env.MINIMAX_TEXT_MODEL || "MiniMax-M2.7-highspe
 const miniMaxTtsModel = process.env.MINIMAX_TTS_MODEL || "speech-2.8-turbo";
 const miniMaxTtsVoice = process.env.MINIMAX_TTS_VOICE || "female-tianmei";
 const mime = { ".html": "text/html; charset=utf-8", ".css": "text/css; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".json": "application/json; charset=utf-8", ".svg": "image/svg+xml", ".png": "image/png", ".wasm": "application/wasm", ".mp4": "video/mp4", ".vrm": "model/gltf-binary", ".gz": "application/gzip" };
+const recentChatTraces=[];
+let chatTraceSequence=0;
+
+function startChatTrace(endpoint,{ message,history,userId,persona,fastSpeech }){
+  const trace={
+    id:`chat-${Date.now()}-${++chatTraceSequence}`,
+    startedAt:new Date().toISOString(),endpoint,provider:apiKey?provider:"demo",
+    input:{message,userId:String(userId||"").slice(0,24),history,persona,fastSpeech:Boolean(fastSpeech)},
+    memories:[],companionState:null,status:"started"
+  };
+  recentChatTraces.push(trace);
+  if(recentChatTraces.length>20)recentChatTraces.splice(0,recentChatTraces.length-20);
+  return trace;
+}
+
+function finishChatTrace(trace,result,source){
+  trace.finishedAt=new Date().toISOString();trace.status="done";trace.source=source;trace.final=result;
+}
 
 function json(res, status, body) {
   res.writeHead(status, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" });
@@ -81,26 +99,32 @@ async function openAIChat(message, history, userId, persona, memories, companion
   return parseCompanionReply(extractResponseText(await response.json()));
 }
 
-async function miniMaxChat(message, history, persona, memories, companionState) {
+async function miniMaxChat(message, history, persona, memories, companionState, trace) {
+  const requestPayload=buildMiniMaxChatPayload({ model:miniMaxTextModel, message, history, persona, memories, companionState });
+  trace.providerRequest={url:`${miniMaxBaseUrl}/chat/completions`,payload:requestPayload};
   const response = await fetch(`${miniMaxBaseUrl}/chat/completions`, {
     method:"POST",
     headers:{ authorization:`Bearer ${apiKey}`, "content-type":"application/json" },
-    body:JSON.stringify(buildMiniMaxChatPayload({ model:miniMaxTextModel, message, history, persona, memories, companionState }))
+    body:JSON.stringify(requestPayload)
   });
   const payload = await response.json().catch(() => ({}));
+  trace.providerResponse=payload;
   if (!response.ok || payload?.base_resp?.status_code > 0) throw new Error(payload?.base_resp?.status_msg || `MiniMax 文案接口失败 (${response.status})`);
-  return buildMiniMaxReply(extractMiniMaxChatText(payload), message, companionState);
+  trace.rawModelText=extractMiniMaxChatText(payload);
+  return buildMiniMaxReply(trace.rawModelText, message, companionState,history);
 }
 
 function sendEvent(res, event, data) {
   res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
 }
 
-async function miniMaxChatStream(message, history, persona, memories, companionState, userId, res, fastSpeech = false) {
+async function miniMaxChatStream(message, history, persona, memories, companionState, userId, res, fastSpeech = false, trace) {
+  const requestPayload=buildMiniMaxChatPayload({ model:miniMaxTextModel, message, history, stream:true, persona, memories, companionState });
+  trace.providerRequest={url:`${miniMaxBaseUrl}/chat/completions`,payload:requestPayload};
   const response = await fetch(`${miniMaxBaseUrl}/chat/completions`, {
     method:"POST",
     headers:{ authorization:`Bearer ${apiKey}`, "content-type":"application/json" },
-    body:JSON.stringify(buildMiniMaxChatPayload({ model:miniMaxTextModel, message, history, stream:true, persona, memories, companionState }))
+    body:JSON.stringify(requestPayload)
   });
   if (!response.ok || !response.body) throw new Error(`MiniMax 流式文案接口失败 (${response.status})`);
 
@@ -114,6 +138,7 @@ async function miniMaxChatStream(message, history, persona, memories, companionS
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
   let upstream = "", rawText = "", observedCleanLength = 0, sentenceBuffer = "";
+  trace.emittedSentences=[];
 
   const emitAvailable = (flush = false) => {
     const clean = sanitizeReplyText(rawText);
@@ -124,7 +149,11 @@ async function miniMaxChatStream(message, history, persona, memories, companionS
     sentenceBuffer += clean.slice(observedCleanLength);
     observedCleanLength = clean.length;
     const { sentences, remainder } = takeCompleteSentences(sentenceBuffer, flush, fastSpeech);
-    for (const sentence of sentences) sendEvent(res, "sentence", { text:sentence });
+    for (const sentence of sentences) {
+      const safeSentence=buildMiniMaxReply(sentence,message,companionState,history).reply;
+      if(trace.emittedSentences.at(-1)===safeSentence&&safeSentence!==sentence)continue;
+      trace.emittedSentences.push(safeSentence);sendEvent(res, "sentence", { text:safeSentence });
+    }
     sentenceBuffer = remainder;
   };
 
@@ -148,7 +177,9 @@ async function miniMaxChatStream(message, history, persona, memories, companionS
   }
 
   emitAvailable(true);
-  const result = buildMiniMaxReply(rawText, message, companionState);
+  trace.rawModelText=rawText;
+  const result = buildMiniMaxReply(rawText, message, companionState,history);
+  finishChatTrace(trace,result,"minimax-stream");
   sendEvent(res, "done", { ...result, mode:"minimax" });
   res.end();
   void memoryStore.remember(userId,message);
@@ -162,11 +193,16 @@ async function chat(req, res) {
   if (message.length > 2000) return json(res, 400, { error: "单条消息不能超过 2000 字" });
   const history = Array.isArray(data.history) ? data.history : [];
   const persona = normalizePersona(data.persona);
+  const trace=startChatTrace("/api/chat",{message,history,userId:data.userId,persona,fastSpeech:false});
   const memories = await memoryStore.recall(data.userId,message);
   const companionState = await memoryStore.getCompanionState(data.userId);
-  const result = provider === "minimax" && apiKey ? await miniMaxChat(message,history,persona,memories,companionState)
+  trace.memories=memories;trace.companionState=companionState;
+  const groundedResult=companionIdentityReply(message,persona) || companionPresenceReply(message,persona);
+  const result = groundedResult
+    || (provider === "minimax" && apiKey ? await miniMaxChat(message,history,persona,memories,companionState,trace)
     : provider === "openai" && apiKey ? await openAIChat(message,history,data.userId,persona,memories,companionState)
-    : demoReply(message,persona);
+    : demoReply(message,persona));
+  finishChatTrace(trace,result,groundedResult?"grounded":apiKey?provider:"demo");
   json(res, 200, { ...result, mode:apiKey ? provider : "demo" });
   void memoryStore.remember(data.userId,message);
   void memoryStore.updateCompanionState(data.userId,result.emotion);
@@ -179,9 +215,22 @@ async function chatStream(req, res) {
   if (message.length > 2000) return json(res, 400, { error:"单条消息不能超过 2000 字" });
   const history = Array.isArray(data.history) ? data.history : [];
   const persona = normalizePersona(data.persona);
+  const trace=startChatTrace("/api/chat/stream",{message,history,userId:data.userId,persona,fastSpeech:data.fastSpeech});
   const memories = await memoryStore.recall(data.userId,message);
   const companionState = await memoryStore.getCompanionState(data.userId);
-  if (provider === "minimax" && apiKey) return miniMaxChatStream(message, history, persona, memories, companionState, data.userId, res, Boolean(data.fastSpeech));
+  trace.memories=memories;trace.companionState=companionState;
+  const groundedResult = companionIdentityReply(message,persona) || companionPresenceReply(message,persona);
+  if(groundedResult){
+    res.writeHead(200, { "content-type":"text/event-stream; charset=utf-8", "cache-control":"no-cache, no-transform" });
+    sendEvent(res,"meta",{emotion:groundedResult.emotion,action:groundedResult.action,mode:apiKey?provider:"demo"});
+    sendEvent(res,"sentence",{text:groundedResult.reply});
+    sendEvent(res,"done",{...groundedResult,mode:apiKey?provider:"demo"});
+    res.end();
+    finishChatTrace(trace,groundedResult,"grounded");
+    void memoryStore.updateCompanionState(data.userId,groundedResult.emotion);
+    return;
+  }
+  if (provider === "minimax" && apiKey) return miniMaxChatStream(message, history, persona, memories, companionState, data.userId, res, Boolean(data.fastSpeech),trace);
   const result = provider === "openai" && apiKey
     ? await openAIChat(message, history, data.userId, persona, memories,companionState)
     : demoReply(message, persona);
@@ -190,6 +239,7 @@ async function chatStream(req, res) {
   for (const sentence of takeCompleteSentences(result.reply, true, Boolean(data.fastSpeech)).sentences) sendEvent(res, "sentence", { text:sentence });
   sendEvent(res, "done", { ...result, mode:apiKey ? provider : "demo" });
   res.end();
+  finishChatTrace(trace,result,apiKey?provider:"demo");
   void memoryStore.remember(data.userId,message);
   void memoryStore.updateCompanionState(data.userId,result.emotion);
 }
@@ -275,6 +325,15 @@ export const server = http.createServer(async (req, res) => {
       return json(res, 200, result);
     }
     if (req.method === "GET" && pathname === "/api/health") return json(res, 200, { ok:true, mode:apiKey ? provider : "demo", memory:true, continuity:true, textModel:provider === "minimax" ? miniMaxTextModel : textModel, ttsModel:provider === "minimax" ? miniMaxTtsModel : ttsModel });
+    if (req.method === "GET" && pathname === "/api/chat/debug/recent") {
+      if (!isLoopbackAddress(req.socket.remoteAddress)) return json(res,403,{error:"聊天诊断记录仅允许本机访问"});
+      return json(res,200,{persisted:false,limit:20,traces:recentChatTraces});
+    }
+    if (req.method === "POST" && pathname === "/api/chat/memory/clear") {
+      if (!isLoopbackAddress(req.socket.remoteAddress)) return json(res,403,{error:"聊天记忆清理仅允许本机访问"});
+      const data=await body(req);
+      return json(res,200,{ok:true,cleared:await memoryStore.clearUser(data.userId)});
+    }
     if (req.method === "POST" && pathname === "/api/chat") return await chat(req, res);
     if (req.method === "POST" && pathname === "/api/chat/stream") return await chatStream(req, res);
     if (req.method === "POST" && pathname === "/api/speech") return await speech(req, res);

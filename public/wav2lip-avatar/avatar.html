@@ -7,7 +7,10 @@
   <link rel="stylesheet" href="/wav2lip-avatar/avatar.css">
 </head>
 <body>
-  <video id="avatar" playsinline muted autoplay loop preload="auto" src="/dh-live/actions/lakeside_idle_test/01.mp4"></video>
+  <div id="stage">
+    <video id="avatar-idle" class="avatar-layer" playsinline muted autoplay loop preload="auto" src="/dh-live/actions/lakeside_idle_test/01.mp4"></video>
+    <video id="avatar-speech" class="avatar-layer" playsinline preload="auto"></video>
+  </div>
   <button id="state" type="button">神经口型已就绪</button>
   <script src="/wav2lip-avatar/avatar.js"></script>
 </body>

@@ -4,21 +4,40 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="theme-color" content="#f5efe7" />
-  <title>露米 · 你的虚拟好友</title>
+  <title>露米 · 你的好友</title>
   <link rel="stylesheet" href="/style.css" />
   <link rel="stylesheet" href="/mobile.css" />
   <link rel="stylesheet" href="/voice.css" />
   <link rel="stylesheet" href="/realistic.css" />
+  <link rel="stylesheet" href="/mode-switch.css" />
 </head>
 <body>
   <main class="shell">
-    <section class="avatar-panel" aria-label="数字人露米">
+    <section class="avatar-panel" aria-label="露米">
       <div class="brand"><span class="brand-mark">L</span><span>露米</span></div>
       <div class="status"><i></i><span id="statusText">正在醒来…</span></div>
+      <div class="avatar-mode-switch" id="avatarModeSwitch" role="group" aria-label="选择人物风格">
+        <button type="button" data-avatar-mode="real" aria-pressed="true">真人</button>
+        <button type="button" data-avatar-mode="anime" aria-pressed="false">动漫</button>
+      </div>
+      <label class="anime-look-control" id="animeLookControl" hidden>动漫造型
+        <select id="animeLookSelect" aria-label="选择动漫人物造型">
+          <option value="soft">学院日常</option>
+          <option value="vivid">暗色潮流</option>
+          <option value="nike1">Nike-chan v1</option>
+          <option value="nike2">Nike-chan v2</option>
+          <option value="classic">简约短发</option>
+        </select>
+      </label>
+      <div class="anime-view-controls" id="animeViewControls" role="group" aria-label="调整动漫人物角度" hidden>
+        <button type="button" data-view-angle="-45" aria-label="人物向左转">左转</button>
+        <button type="button" data-view-angle="0" class="active" aria-label="人物恢复正面">正面</button>
+        <button type="button" data-view-angle="45" aria-label="人物向右转">右转</button>
+      </div>
       <div class="ambient ambient-one"></div><div class="ambient ambient-two"></div>
       <div class="portrait" id="portrait" data-emotion="happy">
-        <iframe class="dh-live-frame" id="digitalHumanFrame" src="/dh-live/avatar.html" title="DH_live 真人数字人" allow="autoplay" aria-label="实时真人数字人"></iframe>
-        <div class="realistic-avatar" role="img" aria-label="露米的写实数字人形象">
+        <iframe class="dh-live-frame" id="digitalHumanFrame" src="/wav2lip-avatar/avatar.html" title="露米的人物形象" allow="autoplay" aria-label="露米的人物形象"></iframe>
+        <div class="realistic-avatar" role="img" aria-label="露米的真人形象">
           <img src="/assets/lumi-realistic-v2.png" alt="" draggable="false" />
           <div class="realistic-blink left" aria-hidden="true"></div>
           <div class="realistic-blink right" aria-hidden="true"></div>
@@ -61,11 +80,24 @@
         <div class="emotion-label" id="emotionLabel">很高兴见到你</div>
       </div>
       <div class="sound-wave" id="soundWave" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
-      <p class="avatar-note">LivePortrait 微表情 + DH_live 口型 · MiniMax 语音</p>
+      <p class="avatar-note">真人陪伴 · 自然中文语音</p>
     </section>
 
     <section class="chat-panel voice-panel">
-      <header><div><p class="eyebrow">VOICE COMPANION</p><h1>点一下，和我说话</h1></div><div class="header-actions"><button class="caption-button" id="captionButton" type="button" aria-pressed="false" title="显示字幕">字幕</button><button class="icon-button" id="clearButton" title="清空对话" aria-label="清空对话">↻</button></div></header>
+      <header><div><p class="eyebrow">VOICE COMPANION</p><h1>点一下，和我说话</h1></div><div class="header-actions">
+        <details class="persona-settings" id="personaSettings">
+          <summary>人物设置</summary>
+          <form id="personaForm">
+            <label>人物预设<select id="personaPreset"><option value="warm">温暖好友</option><option value="lively">元气伙伴</option><option value="calm">冷静知己</option><option value="custom">自定义</option></select></label>
+            <label>名字<input id="personaName" maxlength="20" required /></label>
+            <label>与我的关系<input id="personaRelationship" maxlength="40" required /></label>
+            <label>说话风格<textarea id="personaStyle" maxlength="160" rows="3" required></textarea></label>
+            <label>背景设定<textarea id="personaBackground" maxlength="240" rows="3" required></textarea></label>
+            <button type="submit">保存人物设置</button>
+          </form>
+        </details>
+        <button class="caption-button" id="captionButton" type="button" aria-pressed="false" title="显示字幕">字幕</button><button class="icon-button" id="clearButton" title="清空对话" aria-label="清空对话">↻</button>
+      </div></header>
       <div class="mode-banner" id="modeBanner">正在连接…</div>
       <div class="voice-stage">
         <button class="voice-button" id="voiceButton" type="button" aria-label="开始语音对话">
@@ -76,7 +108,7 @@
         <p class="live-transcript" id="liveTranscript" aria-live="polite">我会在你说完后自动回答</p>
       </div>
       <div class="messages captions" id="messages" aria-live="polite">
-        <article class="message assistant"><div class="mini-avatar">L</div><div><span>露米</span><p>嗨，我是露米。很高兴见到你！无论是想分享一件小事，还是只想找个人说说话，我都在。</p></div></article>
+        <article class="message assistant"><div class="mini-avatar">L</div><div><span>露米</span><p id="welcomeMessage">嗨，很高兴见到你！无论是想分享一件小事，还是只想找个人说说话，我都在。</p></div></article>
       </div>
       <form class="composer text-fallback" id="chatForm" hidden>
         <button type="button" class="mic" id="micButton" aria-label="语音输入" title="语音输入"><span></span></button>

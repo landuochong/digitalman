@@ -2,7 +2,7 @@ import { VrmCompanion } from "./vrm-avatar.js?v=20260806-77";
 
 const $=selector=>document.querySelector(selector);
 const mic=$("#micButton"),caption=$("#caption"),prompt=$("#voicePrompt"),detail=$("#detailText"),wave=$("#wave");
-const memoryResetVersion="20260806-identity-reset-1";
+const memoryResetVersion="20260807-user-reset-v3";
 if(localStorage.getItem("lumi-memory-reset")!==memoryResetVersion){
   localStorage.removeItem("lumi-vrm-history");localStorage.removeItem("lumiUserId");
   localStorage.setItem("lumi-memory-reset",memoryResetVersion);

@@ -13,11 +13,11 @@ const POLL_INTERVAL_MS = 10_000;
 const ACTIONS = {
   idle: {
     filename: "idle.mp4",
-    prompt: `固定机位的可爱真人数字伙伴待机镜头。严格保持参考图中的同一位年轻成年女性、脸型、五官、长发、粉色花朵发饰、海军风白色上衣和百褶裙、身材比例、湖边背景、构图、夕阳光线和颜色完全一致。她始终站在画面正中央，双脚和躯干位置不移动，肩膀放松，双臂和藏在身后的双手保持参考图姿势不变。只允许非常轻微且连续的自然呼吸、一次自然眨眼和甜美但几乎不可察觉的面部微笑；眼神明亮、友善、稳定地看向镜头。头部不摇晃，眼睛不左右乱看，身体不左右摆动，裙摆和头发不飘动。嘴唇始终自然闭合，不露牙，不说话，不发声。镜头完全静止，无推拉、无摇移、无变焦。首尾姿势和位置完全相同，整体可爱、清新、自然，不幼稚、不夸张。`,
+    prompt: `固定机位的可爱真人数字伙伴待机镜头。严格保持参考图中的同一位年轻成年女性、脸型、五官、长发、粉色花朵发饰、海军风白色上衣和百褶裙、身材比例、湖边背景、构图、夕阳光线和颜色完全一致。她始终站在画面正中央，双脚和躯干位置不移动，肩膀放松，双臂和藏在身后的双手保持参考图姿势不变。只允许非常轻微且连续的自然呼吸和一次自然眨眼；眼神明亮、友善、稳定地看向镜头。保持参考图中小巧、窄而自然的嘴型，绝对不能把嘴或嘴角横向放大；保留自然好看的暖珊瑚粉唇色，不变成灰粉或紫色。头部不摇晃，眼睛不左右乱看，身体不左右摆动，裙摆和头发不飘动。嘴唇始终轻柔闭合，不咧嘴微笑，不露牙，不说话，不发声。镜头完全静止，无推拉、无摇移、无变焦。首尾姿势和位置完全相同，整体可爱、清新、自然，不幼稚、不夸张。`,
   },
   smile: {
     filename: "smile.mp4",
-    prompt: `固定机位的可爱真人数字伙伴甜美微笑动作。严格保持参考图中的同一位年轻成年女性、脸型、五官、长发、粉色花朵发饰、海军风白色上衣和百褶裙、身材比例、湖边背景、构图、夕阳光线和颜色完全一致。她始终站在画面正中央，身体、肩膀、双臂和藏在身后的双手位置保持不变。开始时表情自然平静，随后缓慢露出清新、甜美、可爱的闭嘴微笑，脸颊微微上扬，眼神自然变得明亮柔和，停留片刻后平滑恢复初始表情。可以有一次轻柔眨眼，但不能歪头或摇头。嘴唇始终闭合，不露牙，不说话，不发声；眼睛稳定看向镜头，不左右乱看；身体不摆动，裙摆和头发不飘动。镜头完全静止，无推拉、无摇移、无变焦。首尾姿势、位置和表情完全相同，动作可爱而克制。`,
+    prompt: `固定机位的可爱真人数字伙伴甜美微笑动作。严格保持参考图中的同一位年轻成年女性、脸型、五官、长发、粉色花朵发饰、海军风白色上衣和百褶裙、身材比例、湖边背景、构图、夕阳光线和颜色完全一致。她始终站在画面正中央，身体、肩膀、双臂和藏在身后的双手位置保持不变。开始时表情自然平静，随后缓慢露出清新、甜美、可爱的极轻微闭嘴微笑，脸颊微微上扬，眼神自然变得明亮柔和，停留片刻后平滑恢复初始表情。嘴和嘴角必须保持小巧、窄而自然，不能横向拉宽或变大；保留参考图的暖珊瑚粉自然唇色，不变成灰粉或紫色。可以有一次轻柔眨眼，但不能歪头或摇头。嘴唇始终闭合，不露牙，不说话，不发声；眼睛稳定看向镜头，不左右乱看；身体不摆动，裙摆和头发不飘动。镜头完全静止，无推拉、无摇移、无变焦。首尾姿势、位置和表情完全相同，动作可爱而克制。`,
   },
   agree: {
     filename: "agree.mp4",
@@ -30,7 +30,7 @@ const ACTIONS = {
   idle_closed_cute: {
     filename: "idle-closed-cute.mp4",
     prompt:
-      "A cute young adult woman matching the reference image exactly stands naturally by the lakeside at sunset. Preserve her face, long dark hair, pink flower hair accessory, sailor-style white top, pleated skirt, body proportions, lighting, and background. Keep both hands behind her back and keep her head and body facing the camera. She stays almost perfectly still with only subtle natural breathing and one soft blink. Her lips remain gently sealed for the entire video, never opening and never showing teeth; no speech, no singing, no lip movement, no wink. Cute, clean, natural expression. Locked camera, no zoom, no reframing, no body sway, no walking, no hand movement, no background change.",
+      "A cute young adult woman matching the reference image exactly stands naturally by the lakeside at sunset. Preserve her face, long dark hair, pink flower hair accessory, sailor-style white top, pleated skirt, body proportions, lighting, and background. Keep both hands behind her back and keep her head and body facing the camera. She stays almost perfectly still with only subtle natural breathing and one soft blink. Preserve the reference's small, narrow, delicate mouth and warm natural coral-pink lip color exactly; never widen or enlarge the lips or mouth corners. Her lips remain gently sealed for the entire video with no smile, never opening and never showing teeth; no speech, no singing, no lip movement, no wink. Cute, clean, natural expression. Locked camera, no zoom, no reframing, no body sway, no walking, no hand movement, no background change.",
   },
   agree_micro_cute: {
     filename: "agree-micro-cute.mp4",
