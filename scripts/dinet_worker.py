@@ -77,13 +77,31 @@ class PersistentDINetRenderer:
         lip_color_strength: float = 0.78,
         mouth_width_scale: float = 0.88,
     ):
-        self.asset = asset.resolve()
+        self.asset = None
+        self.asset_signature = None
         self.mouth_motion_scale = max(0.0, float(mouth_motion_scale))
         self.lip_color_strength = float(np.clip(lip_color_strength, 0.0, 1.0))
         self.mouth_width_scale = float(np.clip(mouth_width_scale, 0.65, 1.0))
         self.audio_model = LoadAudioModel(str(audio_checkpoint))
         self.render_model = RenderModel_Mini()
         self.render_model.loadModel(str(render_checkpoint))
+
+        texture = cv2.imread(str(DH_LIVE_ROOT / "mini_live" / "bs_texture_halfFace.png"))
+        texture = cv2.cvtColor(texture, cv2.COLOR_BGR2RGB)
+        self.blendshape = texture[:6, :209].astype(np.float32) / 255.0 * 2.0 - 1.0
+        self.set_asset(asset)
+
+    def set_asset(self, asset: Path) -> None:
+        """Switch video motion while retaining the loaded neural/audio models."""
+        resolved = asset.resolve()
+        signature = tuple(
+            (item.stat().st_size, item.stat().st_mtime_ns)
+            for item in (resolved / "01.mp4", resolved / "combined_data.json.gz")
+        )
+        if resolved == self.asset and signature == self.asset_signature:
+            return
+        self.asset = resolved
+        self.asset_signature = signature
 
         with gzip.open(self.asset / "combined_data.json.gz", "rt", encoding="utf-8") as file:
             combined = json.load(file)
@@ -106,10 +124,6 @@ class PersistentDINetRenderer:
         ][: len(self.frames)]
         self._make_ping_pong_loop()
         self.opengl.GenVBO(self._parse_face_vertices(combined["face3D_obj"]))
-
-        texture = cv2.imread(str(DH_LIVE_ROOT / "mini_live" / "bs_texture_halfFace.png"))
-        texture = cv2.cvtColor(texture, cv2.COLOR_BGR2RGB)
-        self.blendshape = texture[:6, :209].astype(np.float32) / 255.0 * 2.0 - 1.0
 
     def _restore_source_lip_color(self, face: np.ndarray, source: np.ndarray) -> np.ndarray:
         """Keep DINet geometry but move lip chroma back toward the source video.
@@ -375,6 +389,8 @@ def main() -> None:
             request = json.loads(line)
             request_id = request["id"]
             with contextlib.redirect_stdout(sys.stderr):
+                if request.get("asset"):
+                    renderer.set_asset(Path(request["asset"]))
                 metrics = renderer.render(Path(request["audio"]), Path(request["output"]))
             send({"type": "done", "id": request_id, **metrics})
         except Exception as error:

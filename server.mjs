@@ -329,7 +329,7 @@ export const server = http.createServer(async (req, res) => {
     }
     if (pathname === "/api/dinet/render" && req.method === "POST") {
       if (!isLoopbackAddress(req.socket.remoteAddress)) return json(res, 403, { error:"本地 DINet 口型接口仅允许本机访问" });
-      const result = await dinetRenders.render(await binaryBody(req));
+      const result = await dinetRenders.render(await binaryBody(req),requestUrl.searchParams.get("action")||"idle");
       return json(res, 200, result);
     }
     if (req.method === "GET" && pathname === "/api/health") return json(res, 200, { ok:true, mode:apiKey ? provider : "demo", memory:true, continuity:true, textModel:provider === "minimax" ? miniMaxTextModel : textModel, ttsModel:provider === "minimax" ? miniMaxTtsModel : ttsModel });

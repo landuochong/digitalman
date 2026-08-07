@@ -15,11 +15,18 @@ test("main voice page offers real and anime modes in one conversation",async()=>
   assert.match(html,/id="personaVoice"/);
   assert.match(html,/人物设置/);
   assert.match(app,/lumi-avatar-mode/);
+  assert.match(html,/app\.js\?v=20260807-actions-v3/);
+  assert.match(app,/avatarRuntimeVersion="20260807-actions-v3"/);
   assert.match(app,/lumi-vrm-look/);
   assert.match(app,/lumi-vrm-persona/);
   assert.match(app,/lumi-voice-profile/);
   assert.match(app,/\/api\/voices/);
   assert.match(app,/voice:voiceProfile/);
+  assert.match(app,/action=\$\{encodeURIComponent\(action\)\}/);
+  assert.match(app,/spokenSentenceCount\+\+===0\?currentAction:"idle"/);
+  assert.match(app,/bow:"\/real-actions\/lakeside_bow_silent\.mp4"/);
+  assert.match(app,/surprise:"\/real-actions\/lakeside_surprise_silent\.mp4"/);
+  assert.match(app,/if\(silentAction\)await playSilentNeuralAction/);
   assert.match(app,/\/wav2lip-avatar\/avatar\.html/);
   assert.match(app,/\/vrm-embed\.html/);
   assert.match(app,/history:history\.slice/);

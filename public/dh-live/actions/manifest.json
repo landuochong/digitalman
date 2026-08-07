@@ -183,6 +183,96 @@
         "wave_approval",
         "bow"
       ]
+    },
+    "lakeside_wave": {
+      "asset": "lakeside_wave",
+      "returnTo": "lakeside_idle_test",
+      "interruptible": true,
+      "mouthMotionScale": 0.88,
+      "useFor": [
+        "wave_approval"
+      ]
+    },
+    "lakeside_clap": {
+      "asset": "lakeside_clap",
+      "returnTo": "lakeside_idle_test",
+      "interruptible": true,
+      "mouthMotionScale": 0.88,
+      "useFor": [
+        "clap"
+      ]
+    },
+    "lakeside_cheer": {
+      "asset": "lakeside_cheer",
+      "returnTo": "lakeside_idle_test",
+      "interruptible": true,
+      "mouthMotionScale": 0.88,
+      "useFor": [
+        "cheer"
+      ]
+    },
+    "lakeside_shy": {
+      "asset": "lakeside_shy",
+      "returnTo": "lakeside_idle_test",
+      "interruptible": true,
+      "mouthMotionScale": 0.88,
+      "useFor": [
+        "shy"
+      ]
+    },
+    "lakeside_thinking": {
+      "asset": "lakeside_thinking",
+      "returnTo": "lakeside_idle_test",
+      "interruptible": true,
+      "mouthMotionScale": 0.88,
+      "useFor": [
+        "thinking"
+      ]
+    },
+    "lakeside_caring": {
+      "asset": "lakeside_caring",
+      "returnTo": "lakeside_idle_test",
+      "interruptible": true,
+      "mouthMotionScale": 0.88,
+      "useFor": [
+        "caring"
+      ]
+    },
+    "lakeside_surprise": {
+      "asset": "lakeside_surprise",
+      "returnTo": "lakeside_idle_test",
+      "interruptible": true,
+      "mouthMotionScale": 0.88,
+      "useFor": [
+        "surprise"
+      ]
+    },
+    "lakeside_shrug": {
+      "asset": "lakeside_shrug",
+      "returnTo": "lakeside_idle_test",
+      "interruptible": true,
+      "mouthMotionScale": 0.88,
+      "useFor": [
+        "shrug"
+      ]
+    },
+    "lakeside_cross": {
+      "asset": "lakeside_cross",
+      "returnTo": "lakeside_idle_test",
+      "interruptible": true,
+      "mouthMotionScale": 0.88,
+      "useFor": [
+        "cross"
+      ]
+    },
+    "lakeside_arms_crossed": {
+      "asset": "lakeside_arms_crossed",
+      "returnTo": "lakeside_idle_test",
+      "interruptible": true,
+      "mouthMotionScale": 0.88,
+      "useFor": [
+        "confident_arms_crossed"
+      ]
     }
   }
 }

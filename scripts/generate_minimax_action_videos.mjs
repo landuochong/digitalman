@@ -9,6 +9,7 @@ const DEFAULT_REFERENCE = path.join(PROJECT_ROOT, "public", "assets", "lumi-matu
 const DEFAULT_OUTPUT = path.join(PROJECT_ROOT, "resources", "minimax-generated", "lumi-mature-v1");
 const API_BASE = "https://api.minimaxi.com";
 const POLL_INTERVAL_MS = 10_000;
+const LAKESIDE_ACTION_BASE = `Use the exact same cute young adult woman from the reference image: identical face, long dark hair, pink flower accessory, sailor-style white top, pleated skirt, body proportions, lakeside sunset background, framing, lighting and colors. Locked camera, full body centered, no zoom, no reframing, no background change. Her eyes remain naturally focused toward the camera. Her small narrow lips stay gently closed for the entire video, with warm coral-pink color, no teeth, no speech, no singing and no lip movement. The motion is subtle and physically natural, never exaggerated. Start from the exact reference pose and return smoothly to that exact pose at the end.`;
 
 const ACTIONS = {
   idle: {
@@ -36,6 +37,66 @@ const ACTIONS = {
     filename: "agree-micro-cute.mp4",
     prompt:
       "A cute young adult woman matching the reference image exactly stands naturally by the lakeside at sunset. Preserve her face, long dark hair, pink flower hair accessory, sailor-style white top, pleated skirt, body proportions, lighting, and background. Keep both hands behind her back and keep her body completely still. She looks directly into the camera with eyes open, gives a tiny warm closed-mouth smile, and for only a moment brings her chin inward by less than one centimeter, then immediately returns to the starting pose. Her forehead, eyes, and nose remain nearly at the same height; this is not a bow and not a downward head movement. Lips stay gently sealed, never show teeth; no speech, no lip movement, no wink. Locked camera, no zoom, no reframing, no body sway, no hand movement, no background change.",
+  },
+  wave: {
+    filename:"wave.mp4",
+    prompt:`${LAKESIDE_ACTION_BASE} She brings only her right hand from behind her back to shoulder height, gives two small relaxed waves with the palm facing the camera, then lowers it behind her back. Keep the left arm, shoulders and torso still. Do not raise the elbow above shoulder level.`,
+  },
+  clap: {
+    filename:"clap.mp4",
+    prompt:`${LAKESIDE_ACTION_BASE} She brings both forearms naturally forward and performs three gentle claps below her chin: palms vertical, fingers pointing upward, wrists aligned, elbows relaxed outward. The palms meet without crossing through each other. Then both hands return behind her back.`,
+  },
+  cheer: {
+    filename:"cheer.mp4",
+    prompt:`${LAKESIDE_ACTION_BASE} She makes one restrained celebratory gesture: both forearms rise beside her shoulders with small relaxed fists, pause briefly, then lower behind her back. Elbows stay below the top of her head; shoulders do not jump and the torso does not sway.`,
+  },
+  bow: {
+    filename:"bow.mp4",
+    prompt:`${LAKESIDE_ACTION_BASE} She performs one small polite bow from the waist, approximately ten degrees, keeping her head aligned with her torso and both hands behind her back, then returns upright. This is a short courteous bow, not a deep bow.`,
+  },
+  shy: {
+    filename:"shy.mp4",
+    prompt:`${LAKESIDE_ACTION_BASE} She shows a restrained shy reaction: her left hand rises lightly near one cheek without covering the face, her head tilts down and sideways only a few degrees, and a tiny closed-mouth smile appears. Then the hand returns behind her back and the head returns upright.`,
+  },
+  thinking: {
+    filename:"thinking.mp4",
+    prompt:`${LAKESIDE_ACTION_BASE} She makes a subtle thinking gesture: her right index finger rests lightly near the side of her chin, her head tilts only a few degrees, and her gaze shifts slightly upward for a moment without looking away from the camera. Then she returns her hand behind her back and faces forward.`,
+  },
+  caring: {
+    filename:"caring.mp4",
+    prompt:`${LAKESIDE_ACTION_BASE} She makes a gentle caring gesture: both hands come forward and rest softly together over the upper chest, shoulders relaxed, with a very slight sympathetic head tilt. Hold briefly, then return both hands behind her back and face forward.`,
+  },
+  surprise: {
+    filename:"surprise.mp4",
+    prompt:`${LAKESIDE_ACTION_BASE} She shows mild closed-mouth surprise: her right hand rises lightly in front of her lips without touching or covering the nose, eyebrows lift slightly and her head leans back only a few degrees. Her mouth remains fully closed. Then she returns to the exact calm reference pose.`,
+  },
+  shrug: {
+    filename:"shrug.mp4",
+    prompt:`${LAKESIDE_ACTION_BASE} She gives one small natural shrug: both shoulders rise slightly while her forearms move outward at waist level with relaxed open palms, then shoulders and hands return to the reference pose. No large arm spread and no torso sway.`,
+  },
+  shrug_left: {
+    filename:"shrug-left.mp4",
+    prompt:`${LAKESIDE_ACTION_BASE} She gives one small natural shrug: both shoulders rise slightly while her forearms move outward at waist level with relaxed open palms. At the same time, she gently tilts her head about eight degrees toward screen-left (toward her right shoulder), keeping her face visible and her eyes toward the camera. Hold briefly, then smoothly return her head, shoulders and hands to the exact reference pose. No large arm spread, no torso sway and no fast head movement.`,
+  },
+  shrug_left_v2: {
+    filename:"shrug-left-v2.mp4",
+    prompt:`${LAKESIDE_ACTION_BASE} She gives one small natural shrug: both shoulders rise slightly while her forearms move outward at waist level with relaxed open palms. At the same time, the TOP OF HER HEAD visibly moves toward the LEFT EDGE OF THE IMAGE, and the ear visible on the LEFT SIDE OF THE IMAGE moves closer to the shoulder on the LEFT SIDE OF THE IMAGE. This is a gentle counterclockwise head tilt of about eight degrees from the viewer's perspective. Keep her face visible and her eyes toward the camera. Hold briefly, then smoothly return her head, shoulders and hands to the exact reference pose. Never tilt toward the right edge of the image. No large arm spread, no torso sway and no fast head movement.`,
+  },
+  shrug_flower_left: {
+    filename:"shrug-flower-left.mp4",
+    prompt:`${LAKESIDE_ACTION_BASE} She gives one small natural shrug: both shoulders rise slightly while her forearms move outward only a little at waist level with relaxed open palms. At the same time, she gently tilts her head TOWARD THE PINK FLOWER HAIR ACCESSORY visible on the LEFT SIDE OF THE IMAGE. The flower-side ear moves closer to the flower-side shoulder, and the top of her head moves toward the flower and the left edge of the image. Keep her face visible and her eyes toward the camera. Hold briefly, then smoothly return her head, shoulders and hands to the exact reference pose. Never tilt away from the pink flower. No raised hands, no large arm spread, no torso sway and no fast head movement.`,
+  },
+  shrug_palms_up_left: {
+    filename:"shrug-palms-up-left.mp4",
+    prompt:`${LAKESIDE_ACTION_BASE} She makes a clear but restrained natural "I don't know" shrug. Both shoulders lift slightly. Both elbows bend and stay close to her waist. Both forearms move FORWARD in front of her body and slightly outward, with BOTH OPEN PALMS FACING UPWARD as if gently presenting or asking "what can I do?" Fingers are relaxed and naturally separated; the backs of the hands face downward. Her hands remain between waist and lower-chest height, never beside her body and never facing down. At the same time, she gently tilts her head toward the PINK FLOWER HAIR ACCESSORY on the LEFT SIDE OF THE IMAGE. Keep her face visible and eyes toward the camera. Hold the palms-up shrug briefly, then smoothly return head, shoulders and hands behind her back to the exact reference pose. No high raised hands, no palms facing the camera, no palms facing downward, no large arm spread, no torso sway and no fast movement.`,
+  },
+  cross: {
+    filename:"cross.mp4",
+    prompt:`${LAKESIDE_ACTION_BASE} She briefly brings both forearms in front of the upper chest to form a clear but gentle X-shaped refusal gesture, hands relaxed and below the chin, then uncrosses and returns both hands behind her back. Arms remain in front of the clothing without intersecting.`,
+  },
+  arms_crossed: {
+    filename:"arms-crossed.mp4",
+    prompt:`${LAKESIDE_ACTION_BASE} She brings both arms forward and folds them naturally across the lower chest in a calm confident pose, elbows relaxed and forearms visibly in front of the clothing. Hold briefly, then unfold and return both hands behind her back.`,
   },
 };
 

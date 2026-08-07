@@ -54,11 +54,12 @@ async function revealAlignedIdle(token) {
 window.addEventListener("message", async event => {
   if (event.origin !== location.origin || event.source !== parent) return;
   if (event.data?.type === "wav2lip-clear") { playToken++; document.body.classList.remove("loading"); playIdle(); return; }
-  if (event.data?.type !== "wav2lip-play" || !event.data.url) return;
+  const isSilentAction=event.data?.type==="wav2lip-action";
+  if ((event.data?.type !== "wav2lip-play"&&!isSilentAction) || !event.data.url) return;
   const token = ++playToken;
-  document.body.classList.add("loading"); state.textContent = "开始播放";
+  document.body.classList.add("loading"); state.textContent = isSilentAction?"正在回应":"开始播放";
   speechVideo.classList.remove("active");
-  speechVideo.pause(); speechVideo.loop = false; speechVideo.muted = false; speechVideo.src = event.data.url;
+  speechVideo.pause(); speechVideo.loop = false; speechVideo.muted = isSilentAction; speechVideo.src = event.data.url;
   speechVideo.onended = async () => {
     if (token !== playToken) return;
     if (!await revealAlignedIdle(token)) return;

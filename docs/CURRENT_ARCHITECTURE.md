@@ -102,7 +102,18 @@ MiniMax 只生成可朗读正文。`emotion` 和 `action` 在本地推断，不�
 
 DINet 当前采用“完整回答 → 单次 TTS WAV → 整段 MP4”的方式。常驻 worker 的推理速度已经快于实时，但首句仍需等待全文、TTS 和首个 MP4。下一阶段的性能优化应是分句流水线或 fMP4/WebM/WebRTC 增量传输，而不是继续压缩帧率或减小网络。
 
-真人动作来自预录底片，动作种类受素材限制；VRM 动作来自标准骨骼姿势，控制能力更强。两种渲染层共享语义动作名，但不能直接共享底层动作资源。
+真人动作来自同一人物的预录底片，VRM 动作来自标准骨骼姿势。两种渲染层共享语义动作名，但不能直接共享底层动作资源。真人当前对齐情况如下：
+
+| 语义动作 | 真人素材 | 状态 |
+| --- | --- | --- |
+| 待机、微笑 | `lakeside_idle_test`、`lakeside_smile_test` | 独立素材 |
+| 挥手、鼓掌、欢呼 | `lakeside_wave`、`lakeside_clap`、`lakeside_cheer` | 独立素材 |
+| 害羞、思考、关心、耸肩 | 对应 `lakeside_*` 动作包 | 独立口型素材 |
+| 惊讶 | `public/real-actions/lakeside_surprise_silent.mp4` | 2.6 秒静音捂嘴动作，避免嘴形覆盖手掌 |
+| 鞠躬 | `public/real-actions/lakeside_bow_silent.mp4` | 2.6 秒静音动作，回正后再说话 |
+| 交叉拒绝、抱臂 | `lakeside_cross`、`lakeside_arms_crossed` | 独立素材 |
+
+DINet 只常驻一套 Audio2BlendShape 与神经渲染模型。每次请求携带语义动作，worker 在同一进程内切换对应视频帧、人脸数据、参考特征和网格，避免每种动作重复加载一份模型。回答的第一句使用本轮动作，后续句子回到待机，动作与语音同时发生。
 
 ## 9. 验收基线
 

@@ -4,6 +4,8 @@ const input = $("#messageInput"), form = $("#chatForm"), sendButton = $("#sendBu
 const micButton = $("#micButton"), modeBanner = $("#modeBanner"), statusText = $("#statusText");
 const voiceButton = $("#voiceButton"), voicePrompt = $("#voicePrompt"), liveTranscript = $("#liveTranscript"), captionButton = $("#captionButton");
 const digitalHumanFrame = $("#digitalHumanFrame");
+const avatarRuntimeVersion="20260807-actions-v3";
+const avatarRuntimeUrl=path=>`${path}?v=${avatarRuntimeVersion}`;
 const avatarProfile = new URLSearchParams(location.search).get("profile");
 const selfRecordedProfile = avatarProfile === "self";
 const minimaxGeneratedProfile = avatarProfile === "minimax";
@@ -19,6 +21,10 @@ let avatarMode = switchableAvatarProfile
 if(!["real","anime","experiment"].includes(avatarMode))avatarMode="real";
 let neuralAvatarProfile = wav2LipAvatarProfile || (switchableAvatarProfile && avatarMode === "real");
 const neuralRenderEndpoint = wav2LipAvatarProfile ? "/api/wav2lip/render" : "/api/dinet/render";
+const silentNeuralActions={
+  bow:"/real-actions/lakeside_bow_silent.mp4",
+  surprise:"/real-actions/lakeside_surprise_silent.mp4"
+};
 const animeLooks={soft:"学院日常",vivid:"暗色潮流",nike1:"Nike-chan v1",nike2:"Nike-chan v2",classic:"简约短发"};
 const animeLookSchema="20260807-unified-look-v2";
 let animeLook=localStorage.getItem("lumi-vrm-look")||"nike1";
@@ -39,10 +45,10 @@ const minimaxGeneratedActions = {
   cheer:"minimax_smile_test", shrug:"minimax_idle_test", confident_arms_crossed:"minimax_idle_test", cross:"minimax_idle_test"
 };
 const lakesideGeneratedActions = {
-  idle:"lakeside_idle_test", happy:"lakeside_smile_test", smile:"lakeside_smile_test", shy:"lakeside_smile_test",
-  wave_approval:"lakeside_agree_test", bow:"lakeside_agree_test",
-  caring:"lakeside_idle_test", thinking:"lakeside_idle_test", surprise:"lakeside_idle_test", clap:"lakeside_smile_test",
-  cheer:"lakeside_smile_test", shrug:"lakeside_idle_test", confident_arms_crossed:"lakeside_idle_test", cross:"lakeside_idle_test"
+  idle:"lakeside_idle_test", happy:"lakeside_smile_test", smile:"lakeside_smile_test", shy:"lakeside_shy",
+  wave_approval:"lakeside_wave", bow:"lakeside_agree_test",
+  caring:"lakeside_caring", thinking:"lakeside_thinking", surprise:"lakeside_surprise", clap:"lakeside_clap",
+  cheer:"lakeside_cheer", shrug:"lakeside_shrug", confident_arms_crossed:"lakeside_arms_crossed", cross:"lakeside_cross"
 };
 const cleanAvatarActions = {
   idle:"idle", happy:"smile", smile:"smile", shy:"smile", wave_approval:"agree", bow:"agree",
@@ -50,14 +56,14 @@ const cleanAvatarActions = {
   confident_arms_crossed:"idle", cross:"idle"
 };
 if (switchableAvatarProfile && digitalHumanFrame) {
-  digitalHumanFrame.src = avatarMode === "anime" ? "/vrm-embed.html" : "/wav2lip-avatar/avatar.html";
+  digitalHumanFrame.src = avatarRuntimeUrl(avatarMode === "anime" ? "/vrm-embed.html" : "/wav2lip-avatar/avatar.html");
   portrait.dataset.avatarMode=avatarMode;
   const note=document.querySelector(".avatar-note");
   if(note)note.textContent=avatarMode==="anime"?"动漫陪伴 · 自然表情与动作":"真人陪伴 · 自然中文语音";
 } else if ((selfRecordedProfile || minimaxGeneratedProfile || lakesideGeneratedProfile || cleanAvatarProfile || neuralAvatarProfile) && digitalHumanFrame) {
   const initialAction = cleanAvatarProfile ? "idle" : lakesideGeneratedProfile ? "lakeside_idle_test" : minimaxGeneratedProfile ? "minimax_idle_test" : "self_idle";
   digitalHumanFrame.src = neuralAvatarProfile
-    ? "/wav2lip-avatar/avatar.html"
+    ? avatarRuntimeUrl("/wav2lip-avatar/avatar.html")
     : cleanAvatarProfile
     ? `/clean-avatar/avatar.html?action=${initialAction}`
     : `/dh-live/avatar.html?action=${initialAction}`;
@@ -124,7 +130,7 @@ function applyAvatarMode(next,{interrupt=true}={}){
   localStorage.setItem("lumi-avatar-mode",next);
   portrait.dataset.avatarMode=next;portrait.classList.remove("dh-live-ready");
   digitalHumanFrame.title=next==="real"?"露米的真人形象":"露米的动漫形象";
-  digitalHumanFrame.src=next==="real"?"/wav2lip-avatar/avatar.html":"/vrm-embed.html";
+  digitalHumanFrame.src=avatarRuntimeUrl(next==="real"?"/wav2lip-avatar/avatar.html":"/vrm-embed.html");
   if(animeLookControl)animeLookControl.hidden=next!=="anime";
   if(animeViewControls)animeViewControls.hidden=next!=="anime";
   avatarModeSwitch?.querySelectorAll("[data-avatar-mode]").forEach(button=>button.setAttribute("aria-pressed",String(button.dataset.avatarMode===next)));
@@ -295,12 +301,13 @@ async function playCloudSpeech(text, emotion) {
   });
 }
 
-async function prepareNeuralSpeech(text, emotion, batch) {
+async function prepareNeuralSpeech(text, emotion, batch, action="idle") {
   const response = await fetch("/api/speech", { method:"POST", headers:{"content-type":"application/json"}, body:JSON.stringify({ text, emotion, voice:voiceProfile }) });
   if (!response.ok) throw new Error("语音生成失败");
   const speechBuffer = await response.arrayBuffer();
   if (batch !== speechBatch) return null;
-  const renderResponse = await fetch(neuralRenderEndpoint, {
+  const renderEndpoint=dinetAvatarProfile||(!wav2LipAvatarProfile&&switchableAvatarProfile)?`${neuralRenderEndpoint}?action=${encodeURIComponent(action)}`:neuralRenderEndpoint;
+  const renderResponse = await fetch(renderEndpoint, {
     method:"POST",
     headers:{ "content-type":response.headers.get("content-type") || "application/octet-stream" },
     body:speechBuffer
@@ -325,14 +332,31 @@ async function playPreparedNeuralSpeech(rendered, batch) {
   });
 }
 
-function enqueueSpeech(text, emotion, batch) {
+async function playSilentNeuralAction(url,batch){
+  if(!url||batch!==speechBatch)return;
+  const requestId=crypto.randomUUID();
+  statusText.textContent="正在做出回应…";
+  digitalHumanFrame.contentWindow.postMessage({type:"wav2lip-action",url,requestId},location.origin);
+  await new Promise(resolve=>{
+    const timer=setTimeout(()=>{pendingWav2LipPlaybacks.delete(requestId);resolve();},15_000);
+    const finish=()=>{clearTimeout(timer);pendingWav2LipPlaybacks.delete(requestId);activeSpeechResolve=null;resolve();};
+    pendingWav2LipPlaybacks.set(requestId,finish);
+    activeSpeechResolve=finish;
+  });
+}
+
+function enqueueSpeech(text, emotion, batch, action="idle") {
   if (neuralAvatarProfile) {
     // Start TTS and rendering immediately for every completed sentence. Playback
     // stays ordered, while later sentences prepare during the current sentence.
-    const preparation = prepareNeuralSpeech(text, emotion, batch);
+    const silentAction=silentNeuralActions[action];
+    const preparation = prepareNeuralSpeech(text, emotion, batch,silentAction?"idle":action);
     speechQueue = speechQueue.then(async () => {
       if (batch !== speechBatch) return;
-      try { await playPreparedNeuralSpeech(await preparation, batch); }
+      try {
+        if(silentAction)await playSilentNeuralAction(silentAction,batch);
+        await playPreparedNeuralSpeech(await preparation, batch);
+      }
       catch (error) {
         if (batch !== speechBatch) return;
         speaking(false);
@@ -379,7 +403,7 @@ async function consumeEventStream(response, onEvent) {
 async function reply(message) {
   sendButton.disabled = true; showTyping(); setEmotion("curious"); setVoiceState("thinking","正在理解你刚才说的话"); statusText.textContent = "正在想…";
   const controller = new AbortController(); activeReplyController = controller;
-  const batch = speechBatch; let article, streamedText = "", currentEmotion = "calm";
+  const batch = speechBatch; let article, streamedText = "", currentEmotion = "calm",currentAction="idle",spokenSentenceCount=0;
   try {
     const response = await fetch("/api/chat/stream", { method:"POST", headers:{"content-type":"application/json"}, body:JSON.stringify({ message, history:history.slice(0,-1), userId, persona, fastSpeech:neuralAvatarProfile }), signal:controller.signal });
     if (!response.ok || !response.body) { const data=await response.json().catch(()=>({})); throw new Error(data.error || "连接失败"); }
@@ -387,13 +411,13 @@ async function reply(message) {
       if (controller.signal.aborted) return;
       if (event === "meta") {
         mode=data.mode; currentEmotion=data.emotion || "calm"; setEmotion(currentEmotion);
-        setDigitalHumanAction(data.action).catch(()=>{});
+        currentAction=data.action||"idle";setDigitalHumanAction(currentAction).catch(()=>{});
       }
       if (event === "sentence") {
         $("#typing")?.remove(); streamedText += data.text;
         article ||= addMessage("assistant", "", false);
         article.querySelector("p").textContent = streamedText;
-        enqueueSpeech(data.text,currentEmotion,batch);
+        enqueueSpeech(data.text,currentEmotion,batch,spokenSentenceCount++===0?currentAction:"idle");
       }
       if (event === "error") throw new Error(data.error || "流式回答中断");
       if (event === "done") {
