@@ -423,6 +423,8 @@ CPU 性能对比显示 batch 2/4/8 分别约为 8.9/9.5/9.5 fps，batch 16 下�
 
 账号下的克隆音色或文生音色通过 `MINIMAX_TTS_VOICES_JSON` 加入显式白名单，页面只显示标签和描述，不暴露配置过程。音色选择只进入 TTS payload，不进入 LLM 人物提示、历史或记忆。相关自动测试覆盖 6 种内置选项、默认回退、自定义音色解析和任意客户端 ID 拒绝；当前测试总数为 58。
 
+根据后续试听需求，内置列表继续增加 `female-yujie` 经典御姐、`wumei_yujie` 妩媚御姐、`Chinese (Mandarin)_Mature_Woman` 傲娇御姐和 `Arrogant_Miss` 强势小姐。四种仍使用公开 profile key 和服务端白名单，不改变原默认甜美女声。
+
 ## 10. 安全与配置
 
 - API Key 仅保存在 `.env`，不得写入代码、日志或本文档。

@@ -5,6 +5,10 @@ const miniMaxBuiltins=[
   {key:"mature",label:"成熟女声",description:"稳重成熟，语气更有质感",voiceId:"female-chengshu"},
   {key:"elegant",label:"淡雅学姐",description:"清雅温柔，语速感受平稳",voiceId:"danya_xuejie"},
   {key:"cute",label:"嗲嗲学妹",description:"可爱嗲气，风格更活泼",voiceId:"diadia_xuemei"},
+  {key:"yujie",label:"经典御姐",description:"成熟利落，气场清晰",voiceId:"female-yujie"},
+  {key:"charming_yujie",label:"妩媚御姐",description:"妩媚从容，角色感更强",voiceId:"wumei_yujie"},
+  {key:"tsundere_yujie",label:"傲娇御姐",description:"成熟自信，略带傲娇感",voiceId:"Chinese (Mandarin)_Mature_Woman"},
+  {key:"assertive_miss",label:"强势小姐",description:"表达直接，气场更强",voiceId:"Arrogant_Miss"},
 ];
 
 function clean(value,max=120){return String(value??"").replace(/[\u0000-\u001f\u007f]+/g," ").replace(/\s+/g," ").trim().slice(0,max);}

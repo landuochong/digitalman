@@ -5,8 +5,12 @@ import { buildVoiceCatalog } from "../src/voices.mjs";
 test("offers several allowlisted MiniMax voice types",()=>{
   const catalog=buildVoiceCatalog({provider:"minimax",defaultVoice:"female-tianmei"});
   assert.equal(catalog.defaultKey,"sweet");
-  assert.ok(catalog.voices.length>=6);
+  assert.ok(catalog.voices.length>=10);
   assert.equal(catalog.resolve("soft"),"Chinese (Mandarin)_Soft_Girl");
+  assert.equal(catalog.resolve("yujie"),"female-yujie");
+  assert.equal(catalog.resolve("charming_yujie"),"wumei_yujie");
+  assert.equal(catalog.resolve("tsundere_yujie"),"Chinese (Mandarin)_Mature_Woman");
+  assert.equal(catalog.resolve("assertive_miss"),"Arrogant_Miss");
   assert.equal(catalog.resolve("unknown"),"female-tianmei");
 });
 
