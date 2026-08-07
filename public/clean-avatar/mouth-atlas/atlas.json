@@ -1,0 +1,39 @@
+{
+  "format": "digitalman-mouth-atlas",
+  "version": 1,
+  "source": "idle-closed-cute.mp4",
+  "patchWidthScale": 1.62,
+  "aspectRatio": 1.7142857142857142,
+  "levels": [
+    {
+      "level": 0,
+      "image": "mouth-0.png",
+      "sourceFrame": 77,
+      "openRatio": 0.0014911191128748
+    },
+    {
+      "level": 1,
+      "image": "mouth-1.png",
+      "sourceFrame": 16,
+      "openRatio": 0.002984566113466562
+    },
+    {
+      "level": 2,
+      "image": "mouth-2.png",
+      "sourceFrame": 84,
+      "openRatio": 0.004179157473876519
+    },
+    {
+      "level": 3,
+      "image": "mouth-3.png",
+      "sourceFrame": 26,
+      "openRatio": 0.04719182787968407
+    },
+    {
+      "level": 4,
+      "image": "mouth-4.png",
+      "sourceFrame": 39,
+      "openRatio": 0.07166708024474543
+    }
+  ]
+}

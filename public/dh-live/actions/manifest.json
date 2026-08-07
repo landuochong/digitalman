@@ -1,0 +1,188 @@
+{
+  "version": 1,
+  "defaultAction": "idle",
+  "actions": {
+    "idle": {
+      "asset": "idle",
+      "loop": true,
+      "interruptible": true,
+      "useFor": [
+        "neutral",
+        "calm",
+        "listening"
+      ]
+    },
+    "self_idle": {
+      "asset": "self_idle",
+      "loop": true,
+      "interruptible": true,
+      "useFor": [
+        "recording_test",
+        "neutral"
+      ]
+    },
+    "self_agree": {
+      "asset": "self_agree",
+      "returnTo": "self_idle",
+      "interruptible": true,
+      "useFor": [
+        "recording_test",
+        "agreement"
+      ]
+    },
+    "self_smile": {
+      "asset": "self_smile",
+      "returnTo": "self_idle",
+      "interruptible": true,
+      "useFor": [
+        "recording_test",
+        "happy"
+      ]
+    },
+    "minimax_idle_test": {
+      "asset": "minimax_idle_test",
+      "loop": true,
+      "interruptible": true,
+      "useFor": [
+        "minimax_test",
+        "neutral"
+      ]
+    },
+    "minimax_smile_test": {
+      "asset": "minimax_smile_test",
+      "returnTo": "minimax_idle_test",
+      "interruptible": true,
+      "useFor": [
+        "minimax_test",
+        "happy"
+      ]
+    },
+    "minimax_agree_test": {
+      "asset": "minimax_agree_test",
+      "returnTo": "minimax_idle_test",
+      "interruptible": true,
+      "useFor": [
+        "minimax_test",
+        "agreement"
+      ]
+    },
+    "happy": {
+      "asset": "happy",
+      "returnTo": "idle",
+      "interruptible": true,
+      "useFor": [
+        "happy",
+        "friendly"
+      ]
+    },
+    "caring": {
+      "asset": "caring",
+      "returnTo": "idle",
+      "interruptible": true,
+      "useFor": [
+        "caring",
+        "concern",
+        "empathy"
+      ]
+    },
+    "thinking": {
+      "asset": "thinking",
+      "returnTo": "idle",
+      "interruptible": true,
+      "useFor": [
+        "curious",
+        "analysis",
+        "recall"
+      ]
+    },
+    "surprise": {
+      "asset": "surprise",
+      "returnTo": "idle",
+      "interruptible": true,
+      "useFor": [
+        "mild_surprise"
+      ]
+    },
+    "smile": {
+      "asset": "smile",
+      "returnTo": "idle",
+      "interruptible": true,
+      "useFor": [
+        "happy",
+        "caring"
+      ]
+    },
+    "wave_approval": {
+      "asset": "wave_approval",
+      "returnTo": "idle",
+      "interruptible": false,
+      "useFor": [
+        "greeting",
+        "agreement",
+        "congratulation"
+      ]
+    },
+    "shrug": {
+      "asset": "shrug",
+      "returnTo": "idle",
+      "interruptible": false,
+      "useFor": [
+        "uncertainty",
+        "mild_surprise"
+      ]
+    },
+    "confident_arms_crossed": {
+      "asset": "confident_arms_crossed",
+      "returnTo": "idle",
+      "interruptible": false,
+      "useFor": [
+        "confident",
+        "playful"
+      ]
+    },
+    "shy": {
+      "fallback": "happy"
+    },
+    "clap": {
+      "fallback": "happy"
+    },
+    "cheer": {
+      "fallback": "wave_approval"
+    },
+    "bow": {
+      "fallback": "idle"
+    },
+    "cross": {
+      "fallback": "confident_arms_crossed"
+    },
+    "lakeside_idle_test": {
+      "asset": "lakeside_idle_test",
+      "loop": true,
+      "interruptible": true,
+      "mouthMotionScale": 0.88
+    },
+    "lakeside_smile_test": {
+      "asset": "lakeside_smile_test",
+      "returnTo": "lakeside_idle_test",
+      "interruptible": true,
+      "mouthMotionScale": 0.88,
+      "useFor": [
+        "happy",
+        "smile",
+        "shy",
+        "clap",
+        "cheer"
+      ]
+    },
+    "lakeside_agree_test": {
+      "asset": "lakeside_agree_test",
+      "returnTo": "lakeside_idle_test",
+      "interruptible": true,
+      "mouthMotionScale": 0.88,
+      "useFor": [
+        "wave_approval",
+        "bow"
+      ]
+    }
+  }
+}

@@ -1,0 +1,97 @@
+diff --git a/mini_live/render.py b/mini_live/render.py
+index 456bf9d..fc7c55d 100644
+--- a/mini_live/render.py
++++ b/mini_live/render.py
+@@ -19,6 +19,14 @@ class RenderModel_gl:
+         if not glfw.init():
+             raise Exception("glfw can not be initialized!")
+         glfw.window_hint(glfw.VISIBLE, glfw.FALSE)
++        # macOS otherwise creates a legacy OpenGL context that cannot compile
++        # the 3.3 shaders used by the mesh renderer.
++        glfw.window_hint(glfw.CONTEXT_VERSION_MAJOR, 3)
++        glfw.window_hint(glfw.CONTEXT_VERSION_MINOR, 3)
++        glfw.window_hint(glfw.OPENGL_PROFILE, glfw.OPENGL_CORE_PROFILE)
++        glfw.window_hint(glfw.OPENGL_FORWARD_COMPAT, glfw.TRUE)
++        if hasattr(glfw, "COCOA_RETINA_FRAMEBUFFER"):
++            glfw.window_hint(glfw.COCOA_RETINA_FRAMEBUFFER, glfw.FALSE)
+         print(window_size[0], window_size[1])
+         self.window = glfw.create_window(window_size[0], window_size[1], "Face Render window", None, None)
+         if not self.window:
+@@ -26,10 +34,19 @@ class RenderModel_gl:
+             raise Exception("glfw window can not be created!")
+         glfw.set_window_pos(self.window, 100, 100)
+         glfw.make_context_current(self.window)
++        # Render into the logical-size lower-left viewport. On Retina displays
++        # GLFW may still allocate a 2x framebuffer even when the Cocoa hint is
++        # unavailable/ignored; reading only window_size from a 2x viewport then
++        # clips the prompt map to one quadrant.
++        self.framebuffer_size = glfw.get_framebuffer_size(self.window)
++        glViewport(0, 0, self.window_size[0], self.window_size[1])
+         # shader 设置
+         current_dir = os.path.dirname(os.path.abspath(__file__))
+-        self.program = compileProgram(compileShader(open(os.path.join(current_dir, "shader/prompt3.vsh")).readlines(), GL_VERTEX_SHADER),
+-                                       compileShader(open(os.path.join(current_dir, "shader/prompt3.fsh")).readlines(), GL_FRAGMENT_SHADER))
++        self.program = compileProgram(
++            compileShader(open(os.path.join(current_dir, "shader/prompt3.vsh")).readlines(), GL_VERTEX_SHADER),
++            compileShader(open(os.path.join(current_dir, "shader/prompt3.fsh")).readlines(), GL_FRAGMENT_SHADER),
++            validate=False,
++        )
+         self.VBO = glGenBuffers(1)
+         self.render_verts = None
+         self.render_face = None
+@@ -81,5 +98,7 @@ class RenderModel_gl:
+     def GenVBO(self, vertices_):
+         glfw.make_context_current(self.window)
++        if hasattr(self, "vao"):
++            glBindVertexArray(self.vao)
+         vertices = np.array(vertices_, dtype=np.float32)
+         glBindBuffer(GL_ARRAY_BUFFER, self.VBO)
+         glBufferData(GL_ARRAY_BUFFER, vertices.nbytes, vertices, GL_DYNAMIC_DRAW)
+@@ -92,5 +111,6 @@ class RenderModel_gl:
+     def render2cv(self, vertBuffer, out_size = (1000, 1000), mat_world=None, bs_array=None):
+         glfw.make_context_current(self.window)
++        glViewport(0, 0, self.window_size[0], self.window_size[1])
+         # 设置正交投影矩阵
+         # left = 0
+         # right = standard_size
+diff --git a/mini_live/shader/prompt3.fsh b/mini_live/shader/prompt3.fsh
+index a3f7a96..385a2b8 100644
+--- a/mini_live/shader/prompt3.fsh
++++ b/mini_live/shader/prompt3.fsh
+@@ -1,8 +1,7 @@
+-# version 330
+-precision mediump float;
+-in mediump vec2 v_texture;
+-in mediump vec2 v_bias;
+-out highp vec4 out_color;
++#version 330 core
++in vec2 v_texture;
++in vec2 v_bias;
++out vec4 out_color;
+ 
+ void main()
+ {
+@@ -28,4 +27,4 @@ void main()
+         vec2 wrap = (v_bias.xy + 1.0)/2.0;
+         out_color = vec4(wrap.xy, 0.5, 1.0);
+     }
+-}
+\ No newline at end of file
++}
+diff --git a/mini_live/shader/prompt3.vsh b/mini_live/shader/prompt3.vsh
+index dc895fd..0b9a73e 100644
+--- a/mini_live/shader/prompt3.vsh
++++ b/mini_live/shader/prompt3.vsh
+@@ -1,4 +1,4 @@
+-# version 330
++#version 330 core
+ 
+ layout(location = 0) in vec3 a_position;
+ layout(location = 1) in vec2 a_texture;
+@@ -55,4 +55,4 @@ void main() {
+         gl_Position = gProjection * vec4(tmp_Position.x, tmp_Position.y, tmp_Position.z, 1.0);
+     }
+     v_texture = a_texture;
+-}
+\ No newline at end of file
++}

@@ -1,0 +1,22 @@
+{
+  "format": "digitalman-clean-avatar",
+  "version": 1,
+  "defaultAction": "idle",
+  "actions": {
+    "idle": {
+      "video": "actions/idle.mp4",
+      "track": "actions/idle-mouth.json",
+      "loop": true
+    },
+    "smile": {
+      "video": "actions/smile.mp4",
+      "track": "actions/smile-mouth.json",
+      "returnTo": "idle"
+    },
+    "agree": {
+      "video": "actions/agree.mp4",
+      "track": "actions/agree-mouth.json",
+      "returnTo": "idle"
+    }
+  }
+}

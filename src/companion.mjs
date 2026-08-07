@@ -149,6 +149,8 @@ export function inferCompanionState(message, reply = "", companionState=null) {
   if (/鞠躬|鞠个躬|行个礼|谢谢你|感谢你|辛苦了/.test(String(message))) return { emotion:"happy", action:"bow" };
   if (/交叉手势|做个叉|叉手|拒绝姿势/.test(String(message))) return { emotion:"calm", action:"cross" };
   if (/抱胸|双臂交叉|自信姿势/.test(String(message))) return { emotion:"happy", action:"confident_arms_crossed" };
+  if (/点点头|点头|我同意|同意你|赞同|没错|对的/.test(String(message))) return { emotion:"happy", action:"wave_approval" };
+  if (/笑一个|笑一下|微笑|笑一笑/.test(String(message))) return { emotion:"happy", action:"happy" };
   if (/鼓掌|拍手|庆祝一下|帮我庆祝|为我庆祝|开心|高兴|成功|搞定|太好了|哈哈|好消息|恭喜|完成|做到了|通过了|赢了|录取|升职|顺利|终于/.test(text)) {
     return { emotion:"excited", action:"clap" };
   }
@@ -214,13 +216,17 @@ export function buildMiniMaxChatPayload({ model, message, history = [], stream =
   return payload;
 }
 
-export function takeCompleteSentences(text, flush = false) {
+export function takeCompleteSentences(text, flush = false, includeClauses = false) {
   const source = String(text ?? "");
   const sentences = [];
   let start = 0;
-  for (const match of source.matchAll(/[。！？!?；;\n]+/g)) {
+  const boundary = includeClauses ? /[，,、。！？!?；;\n]+/g : /[。！？!?；;\n]+/g;
+  for (const match of source.matchAll(boundary)) {
     const end = match.index + match[0].length;
     const sentence = source.slice(start, end).trim();
+    const terminal = /[。！？!?；;\n]/.test(match[0]);
+    const spokenLength = sentence.replace(/[，,、。！？!?；;\s]/g, "").length;
+    if (includeClauses && !terminal && spokenLength < 6) continue;
     if (sentence) sentences.push(sentence);
     start = end;
   }

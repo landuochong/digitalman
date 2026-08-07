@@ -9,3 +9,9 @@ resources/
 *.log
 public/vrm/models/nikechan_v1.vrm
 public/vrm/models/nikechan_v2.vrm
+/.duix-mobile/
+/.cache/
+/artifacts/
+/public/wav2lip-avatar/generated/
+/public/dinet-avatar/generated/
+__pycache__/

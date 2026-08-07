@@ -5,6 +5,9 @@ import { extname, join, normalize } from "node:path";
 import { fileURLToPath } from "node:url";
 import { buildChatPayload, buildMiniMaxChatPayload, buildMiniMaxReply, buildMiniMaxSpeechPayload, buildSpeechPayload, decodeMiniMaxAudio, demoReply, extractMiniMaxChatText, extractResponseText, inferCompanionState, normalizePersona, parseCompanionReply, sanitizeReplyText, takeCompleteSentences } from "./src/companion.mjs";
 import { CompanionMemoryStore } from "./src/memory.mjs";
+import { DhActionTaskStore, isLoopbackAddress, saveActionVideo } from "./src/dh-action-studio.mjs";
+import { Wav2LipRenderStore } from "./src/wav2lip-render.mjs";
+import { DINetRenderStore } from "./src/dinet-render.mjs";
 
 function loadLocalEnv() {
   try {
@@ -23,6 +26,11 @@ loadLocalEnv();
 const root = fileURLToPath(new URL("./public", import.meta.url));
 const memoryFile = process.env.MEMORY_FILE || fileURLToPath(new URL("./data/companion-memory.json", import.meta.url));
 const memoryStore = new CompanionMemoryStore(memoryFile);
+const projectRoot = fileURLToPath(new URL(".", import.meta.url));
+const actionUploadDir = fileURLToPath(new URL("./data/dh-action-uploads", import.meta.url));
+const actionTasks = new DhActionTaskStore({ projectRoot });
+const wav2lipRenders = new Wav2LipRenderStore({ projectRoot });
+const dinetRenders = new DINetRenderStore({ projectRoot });
 const port = Number(process.env.PORT || 3000);
 const provider = process.env.AI_PROVIDER || (process.env.OPENAI_API_KEY ? "openai" : process.env.MINIMAX_API_KEY ? "minimax" : "demo");
 const apiKey = provider === "minimax" ? process.env.MINIMAX_API_KEY : process.env.OPENAI_API_KEY;
@@ -52,6 +60,17 @@ async function body(req, limit = 64_000) {
   catch { throw Object.assign(new Error("JSON 格式无效"), { status: 400 }); }
 }
 
+async function binaryBody(req, limit = 4_000_000) {
+  const chunks=[]; let size=0;
+  for await (const chunk of req) {
+    size += chunk.length;
+    if (size > limit) throw Object.assign(new Error("音频文件过大"), { status:413 });
+    chunks.push(chunk);
+  }
+  if (!size) throw Object.assign(new Error("音频内容不能为空"), { status:400 });
+  return Buffer.concat(chunks);
+}
+
 async function openAIChat(message, history, userId, persona, memories, companionState) {
   const response = await fetch("https://api.openai.com/v1/responses", {
     method: "POST",
@@ -77,7 +96,7 @@ function sendEvent(res, event, data) {
   res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
 }
 
-async function miniMaxChatStream(message, history, persona, memories, companionState, userId, res) {
+async function miniMaxChatStream(message, history, persona, memories, companionState, userId, res, fastSpeech = false) {
   const response = await fetch(`${miniMaxBaseUrl}/chat/completions`, {
     method:"POST",
     headers:{ authorization:`Bearer ${apiKey}`, "content-type":"application/json" },
@@ -104,7 +123,7 @@ async function miniMaxChatStream(message, history, persona, memories, companionS
     }
     sentenceBuffer += clean.slice(observedCleanLength);
     observedCleanLength = clean.length;
-    const { sentences, remainder } = takeCompleteSentences(sentenceBuffer, flush);
+    const { sentences, remainder } = takeCompleteSentences(sentenceBuffer, flush, fastSpeech);
     for (const sentence of sentences) sendEvent(res, "sentence", { text:sentence });
     sentenceBuffer = remainder;
   };
@@ -162,13 +181,13 @@ async function chatStream(req, res) {
   const persona = normalizePersona(data.persona);
   const memories = await memoryStore.recall(data.userId,message);
   const companionState = await memoryStore.getCompanionState(data.userId);
-  if (provider === "minimax" && apiKey) return miniMaxChatStream(message, history, persona, memories, companionState, data.userId, res);
+  if (provider === "minimax" && apiKey) return miniMaxChatStream(message, history, persona, memories, companionState, data.userId, res, Boolean(data.fastSpeech));
   const result = provider === "openai" && apiKey
     ? await openAIChat(message, history, data.userId, persona, memories,companionState)
     : demoReply(message, persona);
   res.writeHead(200, { "content-type":"text/event-stream; charset=utf-8", "cache-control":"no-cache, no-transform" });
   sendEvent(res, "meta", { emotion:result.emotion, action:result.action, mode:apiKey ? provider : "demo" });
-  for (const sentence of takeCompleteSentences(result.reply, true).sentences) sendEvent(res, "sentence", { text:sentence });
+  for (const sentence of takeCompleteSentences(result.reply, true, Boolean(data.fastSpeech)).sentences) sendEvent(res, "sentence", { text:sentence });
   sendEvent(res, "done", { ...result, mode:apiKey ? provider : "demo" });
   res.end();
   void memoryStore.remember(data.userId,message);
@@ -218,10 +237,47 @@ async function staticFile(req, res) {
 
 export const server = http.createServer(async (req, res) => {
   try {
-    if (req.method === "GET" && req.url === "/api/health") return json(res, 200, { ok:true, mode:apiKey ? provider : "demo", memory:true, continuity:true, textModel:provider === "minimax" ? miniMaxTextModel : textModel, ttsModel:provider === "minimax" ? miniMaxTtsModel : ttsModel });
-    if (req.method === "POST" && req.url === "/api/chat") return await chat(req, res);
-    if (req.method === "POST" && req.url === "/api/chat/stream") return await chatStream(req, res);
-    if (req.method === "POST" && req.url === "/api/speech") return await speech(req, res);
+    const requestUrl = new URL(req.url, "http://localhost");
+    const pathname = requestUrl.pathname;
+    if (pathname.startsWith("/api/dh-actions/")) {
+      if (!isLoopbackAddress(req.socket.remoteAddress)) return json(res, 403, { error:"真人动作制作接口仅允许本机访问" });
+      if (req.method === "POST" && pathname === "/api/dh-actions/uploads") {
+        const upload = await saveActionVideo(req, { uploadDir:actionUploadDir, filename:requestUrl.searchParams.get("filename") || "action.mp4" });
+        return json(res, 201, actionTasks.addUpload(upload));
+      }
+      if (req.method === "POST" && pathname === "/api/dh-actions/tasks") {
+        const data = await body(req);
+        return json(res, 202, actionTasks.createTask(data.uploadId, data));
+      }
+      const taskMatch = pathname.match(/^\/api\/dh-actions\/tasks\/([0-9a-f-]+)$/i);
+      if (req.method === "GET" && taskMatch) {
+        const task = actionTasks.getTask(taskMatch[1]);
+        return task ? json(res, 200, task) : json(res, 404, { error:"找不到这个动作任务" });
+      }
+      return json(res, 404, { error:"动作制作接口不存在" });
+    }
+    if (pathname === "/api/wav2lip/status" && req.method === "GET") {
+      if (!isLoopbackAddress(req.socket.remoteAddress)) return json(res, 403, { error:"本地神经口型接口仅允许本机访问" });
+      return json(res, 200, await wav2lipRenders.readiness());
+    }
+    if (pathname === "/api/wav2lip/render" && req.method === "POST") {
+      if (!isLoopbackAddress(req.socket.remoteAddress)) return json(res, 403, { error:"本地神经口型接口仅允许本机访问" });
+      const result = await wav2lipRenders.render(await binaryBody(req));
+      return json(res, 200, result);
+    }
+    if (pathname === "/api/dinet/status" && req.method === "GET") {
+      if (!isLoopbackAddress(req.socket.remoteAddress)) return json(res, 403, { error:"本地 DINet 口型接口仅允许本机访问" });
+      return json(res, 200, await dinetRenders.readiness());
+    }
+    if (pathname === "/api/dinet/render" && req.method === "POST") {
+      if (!isLoopbackAddress(req.socket.remoteAddress)) return json(res, 403, { error:"本地 DINet 口型接口仅允许本机访问" });
+      const result = await dinetRenders.render(await binaryBody(req));
+      return json(res, 200, result);
+    }
+    if (req.method === "GET" && pathname === "/api/health") return json(res, 200, { ok:true, mode:apiKey ? provider : "demo", memory:true, continuity:true, textModel:provider === "minimax" ? miniMaxTextModel : textModel, ttsModel:provider === "minimax" ? miniMaxTtsModel : ttsModel });
+    if (req.method === "POST" && pathname === "/api/chat") return await chat(req, res);
+    if (req.method === "POST" && pathname === "/api/chat/stream") return await chatStream(req, res);
+    if (req.method === "POST" && pathname === "/api/speech") return await speech(req, res);
     if (req.method === "GET" || req.method === "HEAD") return await staticFile(req, res);
     json(res, 405, { error: "请求方法不支持" });
   } catch (error) {

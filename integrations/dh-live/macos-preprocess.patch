@@ -1,0 +1,12 @@
+diff --git a/data_preparation_mini.py b/data_preparation_mini.py
+index c1d93a0..15de498 100644
+--- a/data_preparation_mini.py
++++ b/data_preparation_mini.py
+@@ -279,6 +279,6 @@ def extract_from_video(
+             ffmpeg_cmd,
+             capture_output=True,
+             text=True,
+-            creationflags=subprocess.CREATE_NO_WINDOW
++            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0)
+         )
+     return total_frames

@@ -4,6 +4,14 @@
 
 完整的调研、实验过程、问题记录和 VRM 路线决策见 [docs/EXPERIMENT_LOG.md](docs/EXPERIMENT_LOG.md)。
 
+Duix-Mobile 真人版的 Android 桥接、复现步骤和当前限制见 [integrations/duix-android/README.md](integrations/duix-android/README.md)。
+
+真人预录动作路线对 LiveTalking 的源码分析、可移植部分和三段视频录制规范见 [docs/LIVETALKING_REFERENCE.md](docs/LIVETALKING_REFERENCE.md)。
+
+把新录制视频自动制作成 DH_live 动作包的命令和 macOS 环境准备见 [integrations/dh-live/README.md](integrations/dh-live/README.md)。
+
+服务启动后也可以打开 <http://localhost:3000/dh-action-studio.html> 使用本地“真人动作制作”页面：选择视频后先检查规格，再启动预处理并查看实时日志。上传和任务接口只接受本机访问，视频保存在 Git 已忽略的 `data/dh-action-uploads/`，不会发送到外部网站。
+
 ## 启动
 
 要求 Node.js 18 或更高版本，无需安装依赖。
@@ -17,6 +25,8 @@ npm start
 打开 <http://localhost:3000>。推荐 Chrome 或 Edge，以获得浏览器语音识别能力。
 
 - 真人视频实验版：<http://localhost:3000/>
+- 常驻 DINet 真人口型版（MiniMax 16 kHz WAV）：<http://localhost:3000/?profile=dinet>
+- Wav2Lip256 对照版：<http://localhost:3000/?profile=wav2lip>
 - VRM 动漫版：<http://localhost:3000/vrm.html>
 
 VRM 版使用独立的参数化骨骼、表情和音频嘴型系统：待机时只保留低幅呼吸、自然眨眼和小范围注视；每轮最多触发一个有冷却时间的手势，避免持续摇晃。当前可触发 11 种对话动作：挥手、鼓掌、欢呼、鞠躬、害羞、思考、关心、惊讶、耸肩、交叉手势和抱胸；另有自然下垂、指尖轻触、双臂抱胸 3 种待机姿势。页面提供三套随项目分发的造型，以及两套需要本地放置的 Nike-chan 可选造型，选择会保存在浏览器。人物区支持 360° 自由观察：左键/单指拖动旋转、滚轮缩放、右键拖动平移、双击恢复默认构图。右上角“角色设定”可选择温暖好友、元气伙伴、冷静知己，也可配置名字、关系和说话风格；角色设定只进入文案提示词，不会作为隐藏文字送入语音。依赖、模型来源和不同模型的许可条件记录在 [public/vrm/THIRD_PARTY.md](public/vrm/THIRD_PARTY.md)。

@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>真人动作制作 · 露米</title>
+  <link rel="stylesheet" href="/dh-action-studio.css">
+</head>
+<body>
+  <main class="studio">
+    <header>
+      <p class="eyebrow">DH_live ACTION STUDIO</p>
+      <h1>把真人视频变成可说话的动作</h1>
+      <p class="intro">选择一段 0.6–12 秒的正面动作视频。检查通过后，系统会提取脸部区域、生成口型驱动数据，并把动作安装到当前项目。</p>
+    </header>
+
+    <section class="workspace">
+      <div class="preview-card">
+        <video id="preview" playsinline muted loop controls></video>
+        <label class="file-picker">
+          <input id="video-file" type="file" accept="video/mp4,video/quicktime,video/webm,.m4v,.mkv">
+          <span>选择动作视频</span>
+        </label>
+        <p id="file-note" class="muted">建议：人物位置、镜头大小和现有 idle 视频保持一致；动作自然、幅度小，不要在原视频中说话。</p>
+      </div>
+
+      <form id="action-form" class="settings">
+        <label>动作名
+          <input id="action-name" name="name" value="nod_smile" pattern="[a-z][a-z0-9_]{1,39}" required>
+          <small>2–40 位小写字母、数字或下划线</small>
+        </label>
+        <label>适用场景
+          <input id="use-for" name="useFor" value="agreement,happy" placeholder="agreement,happy">
+        </label>
+        <div class="row">
+          <label>播放方式
+            <select id="loop" name="loop">
+              <option value="false">播放一次后回待机</option>
+              <option value="true">循环播放</option>
+            </select>
+          </label>
+          <label>结束后动作
+            <input id="return-to" name="returnTo" value="idle">
+          </label>
+        </div>
+        <div class="checks">
+          <label><input id="resize" type="checkbox"> 允许自动缩小大视频</label>
+          <label><input id="install" type="checkbox" checked> 生成后安装到动作列表</label>
+          <label><input id="force" type="checkbox"> 覆盖已有同名动作</label>
+        </div>
+        <div class="buttons">
+          <button id="check" type="button" class="secondary">检查视频</button>
+          <button id="build" type="submit" disabled>生成并安装</button>
+        </div>
+      </form>
+    </section>
+
+    <section id="result" class="result" aria-live="polite">
+      <div class="result-heading">
+        <div><span id="status-dot" class="dot"></span><strong id="status">等待选择视频</strong></div>
+        <span id="video-info"></span>
+      </div>
+      <div id="warnings" class="warnings"></div>
+      <pre id="logs">尚未开始。视频只会传到本机服务，不会上传到外部网站。</pre>
+    </section>
+  </main>
+  <script type="module" src="/dh-action-studio.js"></script>
+</body>
+</html>

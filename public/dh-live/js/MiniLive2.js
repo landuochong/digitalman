@@ -1,14 +1,45 @@
-const ACTION_NAMES = ["idle", "happy", "caring", "thinking", "surprise", "smile", "wave_approval", "shrug", "confident_arms_crossed"];
 const requestedInitialAction = new URLSearchParams(location.search).get("action");
-const initialAction = ACTION_NAMES.includes(requestedInitialAction) ? requestedInitialAction : "idle";
+const FALLBACK_ACTION_DEFINITIONS = {
+    idle: { asset: "idle", loop: true, interruptible: true },
+    happy: { asset: "happy", returnTo: "idle", interruptible: true },
+    caring: { asset: "caring", returnTo: "idle", interruptible: true },
+    thinking: { asset: "thinking", returnTo: "idle", interruptible: true },
+    surprise: { asset: "surprise", returnTo: "idle", interruptible: true },
+    smile: { asset: "smile", returnTo: "idle", interruptible: true },
+    wave_approval: { asset: "wave_approval", returnTo: "idle", interruptible: false },
+    shrug: { asset: "shrug", returnTo: "idle", interruptible: false },
+    confident_arms_crossed: { asset: "confident_arms_crossed", returnTo: "idle", interruptible: false }
+};
+let actionManifest = { defaultAction: "idle", actions: FALLBACK_ACTION_DEFINITIONS };
+
+function resolveAction(action, visited = new Set()) {
+    const defaultAction = actionManifest.defaultAction || "idle";
+    const requested = actionManifest.actions[action] ? action : defaultAction;
+    if (visited.has(requested)) return defaultAction;
+    visited.add(requested);
+    const definition = actionManifest.actions[requested];
+    return definition?.fallback ? resolveAction(definition.fallback, visited) : requested;
+}
+
+async function loadActionManifest() {
+    try {
+        const response = await fetch("actions/manifest.json", { cache: "no-cache" });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const manifest = await response.json();
+        if (!manifest?.actions?.idle?.asset) throw new Error("缺少 idle 动作资源");
+        actionManifest = manifest;
+    } catch (error) {
+        console.warn("DH_live 动作清单加载失败，使用内置清单:", error);
+    }
+}
 
 // ==================== 重要配置项 ====================
 let CONFIG = {
     showFPS: false,              // 是否显示 FPS
     chromaKeyEnabled: true,     // 是否开启绿幕扣除
     backgroundVideoSrc: "background/bg.mp4",  // 背景视频路径（开启绿幕扣除时使用）
-    videoSrc: `actions/${initialAction}/01.mp4`,
-    dataSrc: `actions/${initialAction}/combined_data.json.gz`,
+    videoSrc: "actions/idle/01.mp4",
+    dataSrc: "actions/idle/combined_data.json.gz",
     // 绿幕抠图参数配置
     chromaKey: {
         keyColor: { r: 0.45, g: 0.68, b: 0.52 },  // Mixkit 43811 的实际薄荷绿背景
@@ -313,8 +344,9 @@ function processChromaKey(foregroundSource) {
     return chromaKeyCanvas;
 }
 
-const ACTION_ASSET_DIRS = new Set(ACTION_NAMES);
-let asset_dir = `actions/${initialAction}`;
+let currentAction = "idle";
+let asset_dir = "actions/idle";
+let mouthMotionScale = 1;
 let isPaused = false; // 标志位，控制是否暂停处理
 // 获取 characterDropdown 元素
 const characterDropdown = document.getElementById('characterDropdown');
@@ -329,11 +361,17 @@ if (characterDropdown) {
 const videoProcessor = new VideoProcessor();
 let actionSwitch = Promise.resolve();
 
+function getMouthMotionScale(definition) {
+    const configuredScale = Number(definition?.mouthMotionScale);
+    return Number.isFinite(configuredScale) ? Math.min(1.15, Math.max(0.65, configuredScale)) : 1;
+}
+
 window.switchDhLiveAction = function(action) {
-    const safeAction = ACTION_ASSET_DIRS.has(action) ? action : "idle";
-    const nextAssetDir = `actions/${safeAction}`;
+    const safeAction = resolveAction(action);
+    const definition = actionManifest.actions[safeAction] || FALLBACK_ACTION_DEFINITIONS.idle;
+    const nextAssetDir = `actions/${definition.asset || safeAction}`;
     actionSwitch = actionSwitch.catch(() => {}).then(async () => {
-        if (asset_dir === nextAssetDir) return safeAction;
+        if (currentAction === safeAction && asset_dir === nextAssetDir) return safeAction;
         isPaused = true;
         document.getElementById('startMessage').style.display = 'block';
         await videoProcessor.init(`${nextAssetDir}/01.mp4`, `${nextAssetDir}/combined_data.json.gz`);
@@ -343,10 +381,13 @@ window.switchDhLiveAction = function(action) {
             chromaKeyCanvas.width = canvas_video.width;
             chromaKeyCanvas.height = canvas_video.height;
         }
+        currentAction = safeAction;
         asset_dir = nextAssetDir;
-        videoProcessor.video.loop = safeAction === "idle";
-        videoProcessor.video.onended = safeAction === "idle" ? null : () => {
-            if (asset_dir === nextAssetDir) window.switchDhLiveAction("idle");
+        mouthMotionScale = getMouthMotionScale(definition);
+        videoProcessor.video.loop = definition.loop === true;
+        const returnTo = definition.returnTo || actionManifest.defaultAction || "idle";
+        videoProcessor.video.onended = definition.loop ? null : () => {
+            if (asset_dir === nextAssetDir) window.switchDhLiveAction(returnTo);
         };
         isPaused = false;
         videoProcessor.play();
@@ -612,6 +653,14 @@ async function setupVertsBuffers() {
 }
 
 async function newVideoTask() {
+    await loadActionManifest();
+    const initialAction = resolveAction(requestedInitialAction);
+    const initialDefinition = actionManifest.actions[initialAction] || FALLBACK_ACTION_DEFINITIONS.idle;
+    currentAction = initialAction;
+    asset_dir = `actions/${initialDefinition.asset || initialAction}`;
+    mouthMotionScale = getMouthMotionScale(initialDefinition);
+    CONFIG.videoSrc = `${asset_dir}/01.mp4`;
+    CONFIG.dataSrc = `${asset_dir}/combined_data.json.gz`;
     await videoProcessor.init(CONFIG.videoSrc, CONFIG.dataSrc);
     await loadCombinedData();
     await init_gl();
@@ -626,6 +675,9 @@ async function newVideoTask() {
     }
     
     videoProcessor.play();
+    videoProcessor.video.loop = initialDefinition.loop === true;
+    const returnTo = initialDefinition.returnTo || actionManifest.defaultAction || "idle";
+    videoProcessor.video.onended = initialDefinition.loop ? null : () => window.switchDhLiveAction(returnTo);
     processVideoFrames();
     document.getElementById('startMessage').style.display = 'none';
 }
@@ -798,8 +850,12 @@ async function processDataSet(currentDataSetIndex) {
     const subPoints = currentpoints.slice(16);
     Module._updateBlendShape(bsPtr, 12 * 4);
     const bsArray = new Float32Array(Module.HEAPU8.buffer, bsPtr, 12);
+    const renderBsArray = mouthMotionScale === 1 ? bsArray : bsArray.slice();
+    if (renderBsArray !== bsArray) {
+        for (let index = 0; index < 6; index += 1) renderBsArray[index] *= mouthMotionScale;
+    }
 
-    render(matrix, subPoints, bsArray);
+    render(matrix, subPoints, renderBsArray);
     // console.log("bsArray", bsArray);
     resizedCtx.clearRect(0, 0, model_size, model_size);
     resizedCtx.drawImage(canvas_video, rect[0], rect[1], rect[2] - rect[0], rect[3] - rect[1], 0, 0, model_size, model_size);

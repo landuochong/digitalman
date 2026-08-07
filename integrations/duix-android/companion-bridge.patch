@@ -1,0 +1,684 @@
+diff --git a/duix-android/dh_aigc_android/duix-sdk/build.gradle b/duix-android/dh_aigc_android/duix-sdk/build.gradle
+index 608ea47..547ef5f 100644
+--- a/duix-android/dh_aigc_android/duix-sdk/build.gradle
++++ b/duix-android/dh_aigc_android/duix-sdk/build.gradle
+@@ -4,7 +4,7 @@ plugins {
+
+ android {
+     namespace 'ai.guiji.duix.sdk.client'
+-    compileSdk 33
++    compileSdk 34
+
+     defaultConfig {
+         minSdk 24
+@@ -65,4 +65,4 @@ android {
+
+ dependencies {
+     api fileTree(include: ['*.jar', '*.aar'], dir: 'libs')
+-}
+\ No newline at end of file
++}
+diff --git a/duix-android/dh_aigc_android/test/src/main/java/ai/guiji/duix/test/ui/activity/CallActivity.kt b/duix-android/dh_aigc_android/test/src/main/java/ai/guiji/duix/test/ui/activity/CallActivity.kt
+index 2443813..1e6acbe 100644
+--- a/duix-android/dh_aigc_android/test/src/main/java/ai/guiji/duix/test/ui/activity/CallActivity.kt
++++ b/duix-android/dh_aigc_android/test/src/main/java/ai/guiji/duix/test/ui/activity/CallActivity.kt
+@@ -6,27 +6,40 @@ import ai.guiji.duix.sdk.client.loader.ModelInfo
+ import ai.guiji.duix.sdk.client.render.DUIXRenderer
+ import ai.guiji.duix.sdk.client.thread.RenderThread
+ import ai.guiji.duix.test.R
++import ai.guiji.duix.test.companion.CompanionApiClient
++import ai.guiji.duix.test.companion.CompanionReply
+ import ai.guiji.duix.test.databinding.ActivityCallBinding
+ import ai.guiji.duix.test.ui.adapter.MotionAdapter
+ import ai.guiji.duix.test.ui.dialog.AudioRecordDialog
+ import ai.guiji.duix.test.util.StringUtils
+ import android.Manifest
++import android.app.Activity
++import android.content.Intent
+ import android.annotation.SuppressLint
+ import android.opengl.GLSurfaceView
+ import android.os.Bundle
++import android.os.SystemClock
+ import android.text.TextUtils
+ import android.util.Log
+ import android.view.View
+ import android.widget.CompoundButton
+ import android.widget.Toast
++import android.speech.RecognizerIntent
++import androidx.activity.result.contract.ActivityResultContracts
+ import com.bumptech.glide.Glide
+ import java.io.File
+ import java.io.FileInputStream
+ import java.io.FileOutputStream
++import java.util.concurrent.LinkedBlockingQueue
++import java.util.concurrent.TimeUnit
++import java.util.concurrent.atomic.AtomicInteger
+
+
+ class CallActivity : BaseActivity() {
+
++    private data class TextSegment(val text: String, val emotion: String, val terminal: Boolean = false)
++    private data class AudioSegment(val file: File?, val text: String = "", val terminal: Boolean = false)
++
+     companion object {
+         const val GL_CONTEXT_VERSION = 2
+     }
+@@ -34,6 +47,30 @@ class CallActivity : BaseActivity() {
+     private var modelUrl = ""
+     private var debug = false
+     private var mMessage = ""
++    private var companionRequestStartedAt = 0L
++    private val companionGeneration = AtomicInteger(0)
++    private val companionPlaybackLock = Object()
++    @Volatile private var companionPlaybackFinished = false
++    @Volatile private var companionLogFirstAudioStart = false
++    @Volatile private var companionPendingAction = "idle"
++    @Volatile private var companionPendingActionGeneration = -1
++    private val companionActionTriggeredGeneration = AtomicInteger(-1)
++    private val companionBaseUrl by lazy {
++        intent.getStringExtra("companionBaseUrl") ?: "http://127.0.0.1:3417"
++    }
++    private val companionClient by lazy { CompanionApiClient(companionBaseUrl) }
++    private val speechLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
++        if (result.resultCode != Activity.RESULT_OK) {
++            setCompanionStatus("没有听清，点一下再说")
++            return@registerForActivityResult
++        }
++        val message = result.data
++            ?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)
++            ?.firstOrNull()
++            ?.trim()
++            .orEmpty()
++        if (message.isNotEmpty()) askCompanion(message) else setCompanionStatus("没有识别到内容")
++    }
+
+     @SuppressLint("SetTextI18n")
+     private fun applyMessage(msg: String){
+@@ -87,26 +124,22 @@ class CallActivity : BaseActivity() {
+             }
+         })
+
+-        binding.btnRecord.setOnClickListener {
+-            requestPermission(arrayOf(Manifest.permission.RECORD_AUDIO), 1)
+-        }
++        binding.btnRecord.setOnClickListener { startSpeechRecognition() }
+
+         binding.btnPlayPCM.setOnClickListener {
+             applyMessage("start play pcm")
+             playPCMStream()
+         }
+
+-        binding.btnPlayWAV.setOnClickListener {
+-            applyMessage("start play wav")
+-            playWAVFile()
+-        }
++        binding.btnPlayWAV.setOnClickListener { askCompanion("你好，今天过得怎么样？") }
+
+         binding.btnRandomMotion.setOnClickListener {
+             applyMessage("start random motion")
+             duix?.startRandomMotion(true)
+         }
+         binding.btnStopPlay.setOnClickListener {
+-            duix?.stopAudio()
++            cancelCompanionPipeline()
++            setCompanionStatus("已停止")
+         }
+
+         mDUIXRender =
+@@ -137,16 +170,23 @@ class CallActivity : BaseActivity() {
+                 Constant.CALLBACK_EVENT_AUDIO_PLAY_START -> {
+                     applyMessage("callback audio play start")
+                     Log.i(TAG, "CALLBACK_EVENT_AUDIO_PLAY_START")
++                    if (companionLogFirstAudioStart && companionRequestStartedAt > 0L) {
++                        companionLogFirstAudioStart = false
++                        Log.i(TAG, "COMPANION_AUDIO_START_MS=${SystemClock.elapsedRealtime() - companionRequestStartedAt}")
++                    }
++                    triggerCompanionMotionIfAvailable()
+                 }
+
+                 Constant.CALLBACK_EVENT_AUDIO_PLAY_END -> {
+                     applyMessage("callback audio play end")
+                     Log.i(TAG, "CALLBACK_EVENT_PLAY_END")
++                    signalCompanionPlaybackFinished()
+                 }
+
+                 Constant.CALLBACK_EVENT_AUDIO_PLAY_ERROR -> {
+                     applyMessage("callback audio play error: $msg")
+                     Log.e(TAG, "CALLBACK_EVENT_PLAY_ERROR: $msg")
++                    signalCompanionPlaybackFinished()
+                 }
+
+                 Constant.CALLBACK_EVENT_MOTION_START -> {
+@@ -183,6 +223,7 @@ class CallActivity : BaseActivity() {
+             binding.btnPlayWAV.isEnabled = true
+             binding.switchMute.isEnabled = true
+             binding.btnStopPlay.isEnabled = true
++            setCompanionStatus("准备好了，点“点击说话”")
+
+             mModelInfo?.let { modelInfo ->
+                 if (modelInfo.motionRegions.isNotEmpty()) {
+@@ -209,8 +250,285 @@ class CallActivity : BaseActivity() {
+         }
+     }
+
++    private fun startSpeechRecognition() {
++        cancelCompanionPipeline()
++        val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
++            putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
++            putExtra(RecognizerIntent.EXTRA_LANGUAGE, "zh-CN")
++            putExtra(RecognizerIntent.EXTRA_PROMPT, "请说话")
++            putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1)
++        }
++        try {
++            setCompanionStatus("正在听…")
++            speechLauncher.launch(intent)
++        } catch (_: Exception) {
++            setCompanionStatus("当前设备没有可用的语音识别服务")
++        }
++    }
++
++    private fun askCompanion(message: String) {
++        val generation = companionGeneration.incrementAndGet()
++        companionPendingAction = "idle"
++        companionPendingActionGeneration = -1
++        companionActionTriggeredGeneration.set(-1)
++        duix?.stopAudio()
++        signalCompanionPlaybackFinished()
++        companionRequestStartedAt = SystemClock.elapsedRealtime()
++        companionLogFirstAudioStart = true
++        binding.btnRecord.isEnabled = false
++        binding.btnPlayWAV.isEnabled = false
++        setCompanionStatus("你：$message\n露米正在想…")
++        val textQueue = LinkedBlockingQueue<TextSegment>()
++        val audioQueue = LinkedBlockingQueue<AudioSegment>()
++        val streamedReply = StringBuilder()
++
++        Thread {
++            try {
++                val reply = companionClient.streamChat(message) { sentence, _ ->
++                    if (generation != companionGeneration.get()) throw InterruptedException("对话已取消")
++                    if (streamedReply.isEmpty()) {
++                        Log.i(TAG, "COMPANION_FIRST_SENTENCE_MS=${SystemClock.elapsedRealtime() - companionRequestStartedAt}")
++                    }
++                    streamedReply.append(sentence)
++                    setCompanionStatus("你：$message\n露米：$streamedReply")
++                }
++                Log.i(TAG, "COMPANION_STREAM_DONE_MS=${SystemClock.elapsedRealtime() - companionRequestStartedAt}")
++                if (streamedReply.isEmpty()) streamedReply.append(reply.text)
++                companionPendingAction = reply.action
++                companionPendingActionGeneration = generation
++                Log.i(TAG, "COMPANION_ACTION_REQUESTED=${reply.action}")
++                textQueue.put(TextSegment(reply.text, reply.emotion))
++            } catch (error: Exception) {
++                if (generation == companionGeneration.get()) {
++                    setCompanionStatus("连接失败：${error.message ?: "未知错误"}")
++                }
++            } finally {
++                textQueue.offer(TextSegment("", "calm", terminal = true))
++            }
++        }.apply { name = "companion-sse-$generation" }.start()
++
++        Thread {
++            var index = 0
++            try {
++                while (generation == companionGeneration.get()) {
++                    val segment = textQueue.poll(1, TimeUnit.SECONDS) ?: continue
++                    if (segment.terminal) break
++                    val wavFile = File(externalCacheDir, "companion_${generation}_${index++}.wav")
++                    companionClient.synthesize(CompanionReply(segment.text, segment.emotion), wavFile)
++                    if (generation != companionGeneration.get()) {
++                        wavFile.delete()
++                        break
++                    }
++                    if (index == 1) {
++                        Log.i(TAG, "COMPANION_FIRST_TTS_READY_MS=${SystemClock.elapsedRealtime() - companionRequestStartedAt}")
++                    }
++                    audioQueue.put(AudioSegment(wavFile, segment.text))
++                }
++            } catch (error: Exception) {
++                if (generation == companionGeneration.get()) {
++                    setCompanionStatus("语音生成失败：${error.message ?: "未知错误"}")
++                }
++            } finally {
++                audioQueue.offer(AudioSegment(null, terminal = true))
++            }
++        }.apply { name = "companion-tts-$generation" }.start()
++
++        Thread {
++            var pushStarted = false
++            try {
++                while (generation == companionGeneration.get()) {
++                    val segment = audioQueue.poll(1, TimeUnit.SECONDS) ?: continue
++                    if (segment.terminal) {
++                        if (pushStarted) {
++                            duix?.stopPush()
++                            waitForCompanionPlayback(generation)
++                        }
++                        break
++                    }
++                    val wavFile = segment.file ?: continue
++                    if (!pushStarted) {
++                        synchronized(companionPlaybackLock) { companionPlaybackFinished = false }
++                        duix?.startPush()
++                        pushStarted = true
++                    }
++                    duix?.pushPcm(readSmoothedPcm(wavFile))
++                    wavFile.delete()
++                }
++            } catch (error: Exception) {
++                if (generation == companionGeneration.get()) {
++                    setCompanionStatus("播放失败：${error.message ?: "未知错误"}")
++                }
++            } finally {
++                if (generation == companionGeneration.get()) {
++                    runOnUiThread {
++                        binding.btnRecord.isEnabled = true
++                        binding.btnPlayWAV.isEnabled = true
++                        if (streamedReply.isNotEmpty()) setCompanionStatus("你：$message\n露米：$streamedReply")
++                    }
++                }
++            }
++        }.apply { name = "companion-playback-$generation" }.start()
++    }
++
++    private fun readSmoothedPcm(wavFile: File): ByteArray {
++        val wav = wavFile.readBytes()
++        if (wav.size < 12 || asciiChunkId(wav, 0) != "RIFF" || asciiChunkId(wav, 8) != "WAVE") {
++            throw IllegalStateException("返回的 WAV 文件无效")
++        }
++        var offset = 12
++        var formatValid = false
++        var pcm: ByteArray? = null
++        while (offset + 8 <= wav.size) {
++            val chunkId = asciiChunkId(wav, offset)
++            val chunkSize = readUInt32Le(wav, offset + 4)
++            val dataOffset = offset + 8
++            val dataEnd = dataOffset.toLong() + chunkSize
++            if (dataEnd > wav.size || dataEnd > Int.MAX_VALUE) {
++                throw IllegalStateException("WAV 数据块长度无效")
++            }
++            if (chunkId == "fmt ") {
++                if (chunkSize < 16L) throw IllegalStateException("WAV fmt 数据块无效")
++                val audioFormat = readUInt16Le(wav, dataOffset)
++                val channels = readUInt16Le(wav, dataOffset + 2)
++                val sampleRate = readUInt32Le(wav, dataOffset + 4)
++                val bitsPerSample = readUInt16Le(wav, dataOffset + 14)
++                formatValid = audioFormat == 1 && channels == 1 && sampleRate == 16_000L && bitsPerSample == 16
++            } else if (chunkId == "data") {
++                val evenSize = chunkSize.toInt() and -2
++                pcm = wav.copyOfRange(dataOffset, dataOffset + evenSize)
++                Log.i(TAG, "COMPANION_WAV_DATA_OFFSET=$dataOffset")
++            }
++            offset = dataEnd.toInt() + (chunkSize.toInt() and 1)
++        }
++        if (!formatValid) throw IllegalStateException("WAV 必须是 16kHz 单声道 16-bit PCM")
++        val audio = pcm ?: throw IllegalStateException("WAV 缺少 data 数据块")
++        val sampleCount = audio.size / 2
++        val fadeSamples = minOf(160, sampleCount / 4)
++        for (index in 0 until fadeSamples) {
++            scalePcmSample(audio, index, index.toFloat() / fadeSamples)
++            scalePcmSample(audio, sampleCount - 1 - index, index.toFloat() / fadeSamples)
++        }
++        return audio + ByteArray(960)
++    }
++
++    private fun asciiChunkId(data: ByteArray, offset: Int): String {
++        if (offset < 0 || offset + 4 > data.size) return ""
++        return String(data, offset, 4, Charsets.US_ASCII)
++    }
++
++    private fun readUInt16Le(data: ByteArray, offset: Int): Int {
++        if (offset < 0 || offset + 2 > data.size) throw IllegalStateException("WAV 头部不完整")
++        return (data[offset].toInt() and 0xff) or ((data[offset + 1].toInt() and 0xff) shl 8)
++    }
++
++    private fun readUInt32Le(data: ByteArray, offset: Int): Long {
++        if (offset < 0 || offset + 4 > data.size) throw IllegalStateException("WAV 头部不完整")
++        return (data[offset].toLong() and 0xff) or
++            ((data[offset + 1].toLong() and 0xff) shl 8) or
++            ((data[offset + 2].toLong() and 0xff) shl 16) or
++            ((data[offset + 3].toLong() and 0xff) shl 24)
++    }
++
++    private fun scalePcmSample(pcm: ByteArray, sampleIndex: Int, factor: Float) {
++        val offset = sampleIndex * 2
++        val value = ((pcm[offset].toInt() and 0xff) or (pcm[offset + 1].toInt() shl 8)).toShort()
++        val scaled = (value * factor).toInt().toShort().toInt()
++        pcm[offset] = (scaled and 0xff).toByte()
++        pcm[offset + 1] = ((scaled shr 8) and 0xff).toByte()
++    }
++
++    private fun waitForCompanionPlayback(generation: Int) {
++        synchronized(companionPlaybackLock) {
++            val deadline = SystemClock.elapsedRealtime() + 120_000L
++            while (!companionPlaybackFinished && generation == companionGeneration.get()) {
++                val remaining = deadline - SystemClock.elapsedRealtime()
++                if (remaining <= 0L) break
++                companionPlaybackLock.wait(minOf(remaining, 1_000L))
++            }
++        }
++    }
++
++    private fun cancelCompanionPipeline() {
++        companionGeneration.incrementAndGet()
++        companionLogFirstAudioStart = false
++        companionPendingAction = "idle"
++        companionPendingActionGeneration = -1
++        companionActionTriggeredGeneration.set(-1)
++        duix?.stopAudio()
++        signalCompanionPlaybackFinished()
++        binding.btnRecord.isEnabled = true
++        binding.btnPlayWAV.isEnabled = true
++    }
++
++    private fun signalCompanionPlaybackFinished() {
++        synchronized(companionPlaybackLock) {
++            companionPlaybackFinished = true
++            companionPlaybackLock.notifyAll()
++        }
++    }
++
++    private fun triggerCompanionMotionIfAvailable() {
++        val generation = companionGeneration.get()
++        if (companionPendingActionGeneration != generation) return
++        if (!companionActionTriggeredGeneration.compareAndSet(-1, generation)) return
++        val action = companionPendingAction
++        if (action == "idle") {
++            Log.i(TAG, "COMPANION_ACTION_SKIPPED=idle")
++            return
++        }
++        val availableNames = mModelInfo?.motionRegions
++            ?.mapNotNull { motion -> motion.name?.takeIf { it.isNotBlank() && it != "unknown" } }
++            .orEmpty()
++        if (availableNames.isEmpty()) {
++            Log.i(TAG, "COMPANION_ACTION_SKIPPED=no_motion_regions action=$action")
++            return
++        }
++        val aliases = companionActionAliases[action].orEmpty() + action
++        val normalizedAliases = aliases.map(::normalizeMotionName).filter { it.isNotEmpty() }
++        val matched = availableNames.firstOrNull { name ->
++            val normalizedName = normalizeMotionName(name)
++            normalizedAliases.any { alias -> normalizedName == alias }
++        } ?: availableNames.firstOrNull { name ->
++            val normalizedName = normalizeMotionName(name)
++            normalizedAliases.any { alias ->
++                alias.length >= 3 && (normalizedName.contains(alias) || alias.contains(normalizedName))
++            }
++        }
++        if (matched == null) {
++            Log.i(TAG, "COMPANION_ACTION_SKIPPED=no_match action=$action available=$availableNames")
++            return
++        }
++        Log.i(TAG, "COMPANION_ACTION_MATCHED action=$action motion=$matched")
++        duix?.startMotion(matched, true)
++    }
++
++    private fun normalizeMotionName(value: String): String = value
++        .lowercase()
++        .replace(Regex("[\\s_\\-]+"), "")
++
++    private val companionActionAliases = mapOf(
++        "wave_approval" to listOf("wave", "waving", "greeting", "hello", "挥手", "招手", "问候"),
++        "clap" to listOf("clap", "clapping", "applause", "鼓掌", "拍手"),
++        "cheer" to listOf("cheer", "celebrate", "celebration", "欢呼", "庆祝", "加油"),
++        "bow" to listOf("bow", "鞠躬", "行礼"),
++        "shy" to listOf("shy", "bashful", "害羞", "脸红"),
++        "thinking" to listOf("think", "thinking", "思考", "想一想"),
++        "surprise" to listOf("surprise", "surprised", "惊讶", "吃惊"),
++        "caring" to listOf("care", "caring", "comfort", "关心", "安慰"),
++        "shrug" to listOf("shrug", "耸肩"),
++        "cross" to listOf("cross", "reject", "refuse", "交叉", "拒绝"),
++        "confident_arms_crossed" to listOf("armscrossed", "crossedarms", "confident", "抱胸", "自信"),
++        "happy" to listOf("happy", "smile", "开心", "微笑"),
++        "smile" to listOf("smile", "happy", "微笑", "开心")
++    )
++
++    private fun setCompanionStatus(text: String) {
++        runOnUiThread { binding.tvCompanionStatus.text = text }
++    }
++
+
+     override fun onDestroy() {
++        cancelCompanionPipeline()
+         super.onDestroy()
+         duix?.release()
+     }
+diff --git a/duix-android/dh_aigc_android/test/src/main/res/layout/activity_call.xml b/duix-android/dh_aigc_android/test/src/main/res/layout/activity_call.xml
+index 041ef6a..46bf832 100644
+--- a/duix-android/dh_aigc_android/test/src/main/res/layout/activity_call.xml
++++ b/duix-android/dh_aigc_android/test/src/main/res/layout/activity_call.xml
+@@ -86,11 +86,26 @@
+         android:layout_marginBottom="12dp"
+         />
+
++    <TextView
++        android:id="@+id/tvCompanionStatus"
++        android:layout_width="0dp"
++        android:layout_height="wrap_content"
++        android:layout_margin="12dp"
++        android:background="#99000000"
++        android:maxLines="5"
++        android:padding="10dp"
++        android:text="正在初始化…"
++        android:textColor="@color/white"
++        android:textSize="14sp"
++        app:layout_constraintBottom_toTopOf="@+id/btnStopPlay"
++        app:layout_constraintEnd_toEndOf="parent"
++        app:layout_constraintStart_toStartOf="parent" />
++
+     <Button
+         android:id="@+id/btnRecord"
+-        android:text="@string/record"
++        android:text="@string/talk_to_lumi"
+         android:enabled="false"
+-        android:visibility="gone"
++        android:visibility="visible"
+         android:textSize="13sp"
+         android:textColor="@color/white"
+         app:layout_constraintBottom_toTopOf="@+id/tvAITips"
+@@ -108,13 +123,14 @@
+         android:textSize="13sp"
+         android:textColor="@color/white"
+         android:enabled="false"
++        android:visibility="gone"
+         android:layout_width="match_parent"
+         android:layout_height="wrap_content"/>
+
+     <Button
+         android:id="@+id/btnPlayWAV"
+-        android:text="@string/play_wav"
+-        app:layout_constraintBottom_toTopOf="@+id/btnPlayPCM"
++        android:text="@string/test_conversation"
++        app:layout_constraintBottom_toTopOf="@+id/btnRecord"
+         android:background="@drawable/shape_common_btn"
+         android:layout_margin="6dp"
+         android:textSize="13sp"
+@@ -136,4 +152,4 @@
+         android:enabled="false"
+         android:layout_width="wrap_content"
+         android:layout_height="wrap_content"/>
+-</androidx.constraintlayout.widget.ConstraintLayout>
+\ No newline at end of file
++</androidx.constraintlayout.widget.ConstraintLayout>
+diff --git a/duix-android/dh_aigc_android/test/src/main/res/values/strings.xml b/duix-android/dh_aigc_android/test/src/main/res/values/strings.xml
+index e5455ca..4ad6c31 100644
+--- a/duix-android/dh_aigc_android/test/src/main/res/values/strings.xml
++++ b/duix-android/dh_aigc_android/test/src/main/res/values/strings.xml
+@@ -16,7 +16,9 @@
+     <string name="random_play_action">Random play action</string>
+     <string name="touch_me_record">Press and hold</string>
+     <string name="need_permission_continue">Permission is required to continue using</string>
+-    <string name="play_stop">Stop playing</string>
++    <string name="play_stop">停止播放</string>
++    <string name="talk_to_lumi">点击说话</string>
++    <string name="test_conversation">测试对话</string>
+     <string name="main_download_tips">The GitHub url may fail to download, you can consider using a proxy or caching the file to your own storage service</string>
+     <string name="debug_message">Debug message</string>
+-</resources>
+\ No newline at end of file
++</resources>
+diff --git a/duix-android/dh_aigc_android/test/src/main/java/ai/guiji/duix/test/companion/CompanionApiClient.kt b/duix-android/dh_aigc_android/test/src/main/java/ai/guiji/duix/test/companion/CompanionApiClient.kt
+new file mode 100644
+index 0000000..476325c
+--- /dev/null
++++ b/duix-android/dh_aigc_android/test/src/main/java/ai/guiji/duix/test/companion/CompanionApiClient.kt
+@@ -0,0 +1,159 @@
++package ai.guiji.duix.test.companion
++
++import okhttp3.MediaType.Companion.toMediaType
++import okhttp3.OkHttpClient
++import okhttp3.Request
++import okhttp3.RequestBody.Companion.toRequestBody
++import org.json.JSONArray
++import org.json.JSONObject
++import java.io.File
++import java.util.concurrent.TimeUnit
++
++data class CompanionReply(val text: String, val emotion: String, val action: String = "idle")
++
++class CompanionApiClient(private val baseUrl: String) {
++    private val jsonType = "application/json; charset=utf-8".toMediaType()
++    private val client = OkHttpClient.Builder()
++        .connectTimeout(5, TimeUnit.SECONDS)
++        .readTimeout(60, TimeUnit.SECONDS)
++        .writeTimeout(15, TimeUnit.SECONDS)
++        .build()
++    private val history = mutableListOf<Pair<String, String>>()
++
++    fun chat(message: String): CompanionReply {
++        val recentHistory = JSONArray()
++        synchronized(history) {
++            history.takeLast(20).forEach { (role, content) ->
++                recentHistory.put(JSONObject().put("role", role).put("content", content))
++            }
++        }
++        val payload = JSONObject()
++            .put("message", message)
++            .put("userId", "duix-android-poc")
++            .put("history", recentHistory)
++        val request = Request.Builder()
++            .url("$baseUrl/api/chat")
++            .post(payload.toString().toRequestBody(jsonType))
++            .build()
++        client.newCall(request).execute().use { response ->
++            val raw = response.body?.string().orEmpty()
++            if (!response.isSuccessful) throw IllegalStateException(readError(raw, "对话请求失败 (${response.code})"))
++            val result = JSONObject(raw)
++            val reply = result.optString("reply").trim()
++            if (reply.isEmpty()) throw IllegalStateException("后端没有返回回复")
++            synchronized(history) {
++                history += "user" to message
++                history += "assistant" to reply
++                while (history.size > 20) history.removeAt(0)
++            }
++            return CompanionReply(
++                reply,
++                result.optString("emotion", "calm"),
++                result.optString("action", "idle")
++            )
++        }
++    }
++
++    fun streamChat(message: String, onSentence: (String, String) -> Unit): CompanionReply {
++        val recentHistory = JSONArray()
++        synchronized(history) {
++            history.takeLast(20).forEach { (role, content) ->
++                recentHistory.put(JSONObject().put("role", role).put("content", content))
++            }
++        }
++        val payload = JSONObject()
++            .put("message", message)
++            .put("userId", "duix-android-poc")
++            .put("history", recentHistory)
++        val request = Request.Builder()
++            .url("$baseUrl/api/chat/stream")
++            .post(payload.toString().toRequestBody(jsonType))
++            .build()
++        client.newCall(request).execute().use { response ->
++            if (!response.isSuccessful) {
++                val raw = response.body?.string().orEmpty()
++                throw IllegalStateException(readError(raw, "流式对话请求失败 (${response.code})"))
++            }
++            val source = response.body?.source() ?: throw IllegalStateException("后端没有返回流式回复")
++            var event = "message"
++            val data = StringBuilder()
++            var emotion = "calm"
++            var action = "idle"
++            var streamedText = ""
++            var finalReply: CompanionReply? = null
++
++            fun consumeEvent() {
++                if (data.isEmpty()) return
++                val json = JSONObject(data.toString())
++                when (event) {
++                    "meta" -> {
++                        emotion = json.optString("emotion", emotion)
++                        action = json.optString("action", action)
++                    }
++                    "sentence" -> {
++                        val sentence = json.optString("text").trim()
++                        if (sentence.isNotEmpty()) {
++                            streamedText += sentence
++                            onSentence(sentence, emotion)
++                        }
++                    }
++                    "done" -> {
++                        emotion = json.optString("emotion", emotion)
++                        action = json.optString("action", action)
++                        val reply = json.optString("reply", streamedText).trim().ifEmpty { streamedText }
++                        finalReply = CompanionReply(reply, emotion, action)
++                    }
++                    "error" -> throw IllegalStateException(json.optString("error", "流式回答中断"))
++                }
++            }
++
++            while (true) {
++                val line = source.readUtf8Line() ?: break
++                if (line.isEmpty()) {
++                    consumeEvent()
++                    event = "message"
++                    data.setLength(0)
++                } else if (line.startsWith("event:")) {
++                    event = line.substringAfter(':').trim()
++                } else if (line.startsWith("data:")) {
++                    if (data.isNotEmpty()) data.append('\n')
++                    data.append(line.substringAfter(':').trim())
++                }
++            }
++            consumeEvent()
++            val reply = finalReply ?: CompanionReply(streamedText, emotion, action)
++            if (reply.text.isBlank()) throw IllegalStateException("后端没有返回回复")
++            synchronized(history) {
++                history += "user" to message
++                history += "assistant" to reply.text
++                while (history.size > 20) history.removeAt(0)
++            }
++            return reply
++        }
++    }
++
++    fun synthesize(reply: CompanionReply, output: File): File {
++        val payload = JSONObject().put("text", reply.text).put("emotion", reply.emotion)
++        val request = Request.Builder()
++            .url("$baseUrl/api/speech")
++            .post(payload.toString().toRequestBody(jsonType))
++            .build()
++        client.newCall(request).execute().use { response ->
++            if (!response.isSuccessful) {
++                val raw = response.body?.string().orEmpty()
++                throw IllegalStateException(readError(raw, "语音请求失败 (${response.code})"))
++            }
++            output.parentFile?.mkdirs()
++            response.body?.byteStream()?.use { input -> output.outputStream().use(input::copyTo) }
++                ?: throw IllegalStateException("后端没有返回语音")
++            if (output.length() < 44) throw IllegalStateException("返回的 WAV 文件无效")
++            return output
++        }
++    }
++
++    private fun readError(raw: String, fallback: String): String = try {
++        JSONObject(raw).optString("error", fallback)
++    } catch (_: Exception) {
++        fallback
++    }
++}
