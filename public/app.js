@@ -101,7 +101,8 @@ if(localStorage.getItem("lumi-persona-schema")!==personaSchema&&storedPersona){
   localStorage.setItem("lumi-vrm-persona",JSON.stringify(storedPersona));localStorage.setItem("lumi-persona-schema",personaSchema);
 }
 let persona=cleanPersona(storedPersona||personaPresets.warm);
-const personaForm=$("#personaForm"),personaPreset=$("#personaPreset"),personaName=$("#personaName"),personaRelationship=$("#personaRelationship"),personaStyle=$("#personaStyle"),personaBackground=$("#personaBackground");
+let voiceProfile=localStorage.getItem("lumi-voice-profile")||"";
+const personaForm=$("#personaForm"),personaPreset=$("#personaPreset"),personaName=$("#personaName"),personaRelationship=$("#personaRelationship"),personaStyle=$("#personaStyle"),personaBackground=$("#personaBackground"),personaVoice=$("#personaVoice");
 function matchingPersonaPreset(){return Object.entries(personaPresets).find(([,value])=>value.name===persona.name&&value.relationship===persona.relationship&&value.style===persona.style&&value.background===persona.background)?.[0]||"custom";}
 function renderPersona(){
   personaName.value=persona.name;personaRelationship.value=persona.relationship;personaStyle.value=persona.style;personaBackground.value=persona.background;personaPreset.value=matchingPersonaPreset();
@@ -112,7 +113,7 @@ function renderPersona(){
 }
 personaPreset?.addEventListener("change",()=>{const preset=personaPresets[personaPreset.value];if(preset){persona={...preset};renderPersona();}});
 [personaName,personaRelationship,personaStyle,personaBackground].forEach(field=>field?.addEventListener("input",()=>{personaPreset.value="custom";}));
-personaForm?.addEventListener("submit",event=>{event.preventDefault();persona=cleanPersona({name:personaName.value,relationship:personaRelationship.value,style:personaStyle.value,background:personaBackground.value});localStorage.setItem("lumi-vrm-persona",JSON.stringify(persona));renderPersona();$("#personaSettings")?.removeAttribute("open");liveTranscript.textContent=`人物设置已保存：${persona.name}`;});
+personaForm?.addEventListener("submit",event=>{event.preventDefault();persona=cleanPersona({name:personaName.value,relationship:personaRelationship.value,style:personaStyle.value,background:personaBackground.value});voiceProfile=personaVoice?.value||voiceProfile;localStorage.setItem("lumi-vrm-persona",JSON.stringify(persona));if(voiceProfile)localStorage.setItem("lumi-voice-profile",voiceProfile);renderPersona();$("#personaSettings")?.removeAttribute("open");liveTranscript.textContent=`人物设置已保存：${persona.name}`;});
 renderPersona();
 const emotionText = { neutral:"认真听你说", happy:"很高兴见到你", caring:"我会陪着你", curious:"正在好奇", excited:"替你开心", calm:"安静陪伴中" };
 
@@ -243,7 +244,7 @@ function animateBrowserSpeech(text) {
 }
 async function playCloudSpeech(text, emotion) {
   const requestToken = ++speakingToken;
-  const response = await fetch("/api/speech", { method:"POST", headers:{"content-type":"application/json"}, body:JSON.stringify({ text, emotion }) });
+  const response = await fetch("/api/speech", { method:"POST", headers:{"content-type":"application/json"}, body:JSON.stringify({ text, emotion, voice:voiceProfile }) });
   if (requestToken !== speakingToken) return;
   if (!response.ok) return animateBrowserSpeech(text);
   const speechBuffer = await response.arrayBuffer();
@@ -295,7 +296,7 @@ async function playCloudSpeech(text, emotion) {
 }
 
 async function prepareNeuralSpeech(text, emotion, batch) {
-  const response = await fetch("/api/speech", { method:"POST", headers:{"content-type":"application/json"}, body:JSON.stringify({ text, emotion }) });
+  const response = await fetch("/api/speech", { method:"POST", headers:{"content-type":"application/json"}, body:JSON.stringify({ text, emotion, voice:voiceProfile }) });
   if (!response.ok) throw new Error("语音生成失败");
   const speechBuffer = await response.arrayBuffer();
   if (batch !== speechBatch) return null;
@@ -458,5 +459,20 @@ if (!matchMedia("(prefers-reduced-motion: reduce)").matches) {
   setTimeout(wander,1200);
 }
 
-async function boot(){ history.forEach(item=>addMessage(item.role,item.content,false)); const health=await fetch("/api/health").then(r=>r.json()).catch(()=>({mode:"demo"})); mode=health.mode; modeBanner.textContent=mode!=="demo"?`${mode === "minimax" ? "MiniMax" : "OpenAI"} 语音对话已连接`:"本地演示模式"; statusText.textContent="在线 · 随时听你说"; setTimeout(()=>modeBanner.style.opacity=".55",2800); }
+async function boot(){
+  history.forEach(item=>addMessage(item.role,item.content,false));
+  const [health,voiceData]=await Promise.all([
+    fetch("/api/health").then(r=>r.json()).catch(()=>({mode:"demo"})),
+    fetch("/api/voices").then(r=>r.json()).catch(()=>({defaultKey:"",voices:[]}))
+  ]);
+  mode=health.mode;
+  if(personaVoice){
+    personaVoice.replaceChildren(...voiceData.voices.map(item=>{const option=document.createElement("option");option.value=item.key;option.textContent=`${item.label} · ${item.description}`;return option;}));
+    const available=voiceData.voices.some(item=>item.key===voiceProfile);voiceProfile=available?voiceProfile:voiceData.defaultKey||voiceData.voices[0]?.key||"";
+    if(voiceProfile){personaVoice.value=voiceProfile;localStorage.setItem("lumi-voice-profile",voiceProfile);}
+    personaVoice.disabled=!voiceData.voices.length;
+    if(!voiceData.voices.length){const option=document.createElement("option");option.textContent="演示模式使用浏览器声音";personaVoice.append(option);}
+  }
+  modeBanner.textContent=mode!=="demo"?`${mode === "minimax" ? "MiniMax" : "OpenAI"} 语音对话已连接`:"本地演示模式";statusText.textContent="在线 · 随时听你说";setTimeout(()=>modeBanner.style.opacity=".55",2800);
+}
 boot();

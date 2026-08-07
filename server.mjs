@@ -5,6 +5,7 @@ import { extname, join, normalize } from "node:path";
 import { fileURLToPath } from "node:url";
 import { buildChatPayload, buildMiniMaxChatPayload, buildMiniMaxReply, buildMiniMaxSpeechPayload, buildSpeechPayload, companionIdentityReply, companionPresenceReply, decodeMiniMaxAudio, demoReply, extractMiniMaxChatText, extractResponseText, inferCompanionState, normalizePersona, parseCompanionReply, sanitizeReplyText, takeCompleteSentences } from "./src/companion.mjs";
 import { CompanionMemoryStore } from "./src/memory.mjs";
+import { buildVoiceCatalog } from "./src/voices.mjs";
 import { DhActionTaskStore, isLoopbackAddress, saveActionVideo } from "./src/dh-action-studio.mjs";
 import { Wav2LipRenderStore } from "./src/wav2lip-render.mjs";
 import { DINetRenderStore } from "./src/dinet-render.mjs";
@@ -41,6 +42,11 @@ const miniMaxBaseUrl = (process.env.MINIMAX_BASE_URL || "https://api.minimaxi.co
 const miniMaxTextModel = process.env.MINIMAX_TEXT_MODEL || "MiniMax-M2.7-highspeed";
 const miniMaxTtsModel = process.env.MINIMAX_TTS_MODEL || "speech-2.8-turbo";
 const miniMaxTtsVoice = process.env.MINIMAX_TTS_VOICE || "female-tianmei";
+const voiceCatalog=buildVoiceCatalog({
+  provider:apiKey?provider:"demo",
+  defaultVoice:provider==="minimax"?miniMaxTtsVoice:ttsVoice,
+  customJson:provider==="minimax"?process.env.MINIMAX_TTS_VOICES_JSON:""
+});
 const mime = { ".html": "text/html; charset=utf-8", ".css": "text/css; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".json": "application/json; charset=utf-8", ".svg": "image/svg+xml", ".png": "image/png", ".wasm": "application/wasm", ".mp4": "video/mp4", ".vrm": "model/gltf-binary", ".gz": "application/gzip" };
 const recentChatTraces=[];
 let chatTraceSequence=0;
@@ -250,10 +256,11 @@ async function speech(req, res) {
   const input = String(data.text || "").trim().slice(0, 1800);
   if (!input) return json(res, 400, { error: "语音内容不能为空" });
   if (provider === "minimax") {
+    const selectedVoice=voiceCatalog.resolve(data.voice);
     const response = await fetch(`${miniMaxBaseUrl}/t2a_v2`, {
       method:"POST",
       headers:{ authorization:`Bearer ${apiKey}`, "content-type":"application/json" },
-      body:JSON.stringify(buildMiniMaxSpeechPayload({ model:miniMaxTtsModel, voice:miniMaxTtsVoice, text:input, emotion:data.emotion }))
+      body:JSON.stringify(buildMiniMaxSpeechPayload({ model:miniMaxTtsModel, voice:selectedVoice, text:input, emotion:data.emotion }))
     });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(payload?.base_resp?.status_msg || `MiniMax 语音接口失败 (${response.status})`);
@@ -261,10 +268,11 @@ async function speech(req, res) {
     res.writeHead(200, { "content-type":"audio/wav", "content-length":audio.length, "cache-control":"no-store" });
     return res.end(audio);
   }
+  const selectedVoice=voiceCatalog.resolve(data.voice);
   const response = await fetch("https://api.openai.com/v1/audio/speech", {
     method: "POST",
     headers: { authorization: `Bearer ${apiKey}`, "content-type": "application/json" },
-    body: JSON.stringify(buildSpeechPayload({ model:ttsModel, voice:ttsVoice, text:input }))
+    body: JSON.stringify(buildSpeechPayload({ model:ttsModel, voice:selectedVoice, text:input }))
   });
   if (!response.ok) throw new Error(`OpenAI 语音接口失败 (${response.status})`);
   res.writeHead(200, { "content-type": "audio/mpeg", "cache-control": "no-store" });
@@ -325,6 +333,7 @@ export const server = http.createServer(async (req, res) => {
       return json(res, 200, result);
     }
     if (req.method === "GET" && pathname === "/api/health") return json(res, 200, { ok:true, mode:apiKey ? provider : "demo", memory:true, continuity:true, textModel:provider === "minimax" ? miniMaxTextModel : textModel, ttsModel:provider === "minimax" ? miniMaxTtsModel : ttsModel });
+    if (req.method === "GET" && pathname === "/api/voices") return json(res,200,{provider:voiceCatalog.provider,defaultKey:voiceCatalog.defaultKey,voices:voiceCatalog.voices});
     if (req.method === "GET" && pathname === "/api/chat/debug/recent") {
       if (!isLoopbackAddress(req.socket.remoteAddress)) return json(res,403,{error:"聊天诊断记录仅允许本机访问"});
       return json(res,200,{persisted:false,limit:20,traces:recentChatTraces});

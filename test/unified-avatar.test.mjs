@@ -12,10 +12,14 @@ test("main voice page offers real and anime modes in one conversation",async()=>
   assert.match(html,/id="animeViewControls"/);
   assert.match(html,/id="personaForm"/);
   assert.match(html,/id="personaBackground"/);
+  assert.match(html,/id="personaVoice"/);
   assert.match(html,/人物设置/);
   assert.match(app,/lumi-avatar-mode/);
   assert.match(app,/lumi-vrm-look/);
   assert.match(app,/lumi-vrm-persona/);
+  assert.match(app,/lumi-voice-profile/);
+  assert.match(app,/\/api\/voices/);
+  assert.match(app,/voice:voiceProfile/);
   assert.match(app,/\/wav2lip-avatar\/avatar\.html/);
   assert.match(app,/\/vrm-embed\.html/);
   assert.match(app,/history:history\.slice/);

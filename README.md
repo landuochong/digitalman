@@ -1,76 +1,165 @@
-# 露米 · AI 虚拟好友
+# 露米 · 语音数字人好友
 
-一个可直接运行的语音优先数字人好友：点击麦克风说话，识别结束后自动发送，AI 通过语音回答；支持多轮上下文、音频驱动嘴型，以及眨眼、呼吸、注视和情绪表情。字幕默认关闭，可按需开启。没有 API Key 时会自动进入本地演示模式。
+一个本地优先、语音优先的数字人好友实验项目。用户说完一句话后，浏览器把识别结果发送给服务端；服务端流式生成中文回复并合成女性语音，真人或 VRM 动漫人物同步完成口型、表情和低幅动作。真人与动漫共用同一套聊天、人物设定、记忆和打断机制，可以在主页面直接切换。
 
-完整的调研、实验过程、问题记录和 VRM 路线决策见 [docs/EXPERIMENT_LOG.md](docs/EXPERIMENT_LOG.md)。
+当前实现和模块边界见 [当前架构](docs/CURRENT_ARCHITECTURE.md)，完整调研与实验过程见 [实验日志](docs/EXPERIMENT_LOG.md)。
 
-Duix-Mobile 真人版的 Android 桥接、复现步骤和当前限制见 [integrations/duix-android/README.md](integrations/duix-android/README.md)。
+## 当前能力
 
-真人预录动作路线对 LiveTalking 的源码分析、可移植部分和三段视频录制规范见 [docs/LIVETALKING_REFERENCE.md](docs/LIVETALKING_REFERENCE.md)。
+- 语音优先交互，字幕默认关闭，也保留文字输入作为浏览器不支持语音识别时的降级入口。
+- 支持 MiniMax、OpenAI 和无 Key 演示模式；API Key 只存在于 Node 服务端。
+- MiniMax 文案按句流式返回，TTS、动作准备和界面状态并行执行，支持用户中途打断。
+- 主页面直接切换真人 DINet 神经口型与 VRM 动漫人物，不重建聊天上下文。
+- VRM 支持 5 套造型、360° 观察、3 种待机姿势和 11 种对话动作。
+- 人物设置支持名字、关系、说话风格和背景；每轮请求都会作为系统消息的第一部分发送给模型。
+- 本地保存少量结构化长期记忆与衰减后的交流状态；“清空对话”会同时清除浏览器历史、服务端记忆和情绪连续状态。
+- 本机内存保留最近 20 次聊天诊断，可核对前端输入、模型请求、原始输出、流式分句与最终正文；服务重启后自动消失。
 
-把新录制视频自动制作成 DH_live 动作包的命令和 macOS 环境准备见 [integrations/dh-live/README.md](integrations/dh-live/README.md)。
+## 快速启动
 
-服务启动后也可以打开 <http://localhost:3000/dh-action-studio.html> 使用本地“真人动作制作”页面：选择视频后先检查规格，再启动预处理并查看实时日志。上传和任务接口只接受本机访问，视频保存在 Git 已忽略的 `data/dh-action-uploads/`，不会发送到外部网站。
-
-## 启动
-
-要求 Node.js 18 或更高版本，无需安装依赖。
+要求 Node.js 18 或更高版本。首次运行需要安装依赖：
 
 ```bash
+npm install
 cp .env.example .env
-# 编辑 .env，配置 OpenAI 或 MiniMax；只体验演示模式可跳过
+# 编辑 .env；不配置 Key 时自动进入演示模式
 npm start
 ```
 
-打开 <http://localhost:3000>。推荐 Chrome 或 Edge，以获得浏览器语音识别能力。
+打开 <http://localhost:3000>。语音识别推荐使用 Chrome 或 Edge。
 
-- 真人视频实验版：<http://localhost:3000/>
-- 常驻 DINet 真人口型版（MiniMax 16 kHz WAV）：<http://localhost:3000/?profile=dinet>
-- Wav2Lip256 对照版：<http://localhost:3000/?profile=wav2lip>
-- VRM 动漫版：<http://localhost:3000/vrm.html>
+如果 3000 端口已被占用：
 
-VRM 版使用独立的参数化骨骼、表情和音频嘴型系统：待机时只保留低幅呼吸、自然眨眼和小范围注视；每轮最多触发一个有冷却时间的手势，避免持续摇晃。当前可触发 11 种对话动作：挥手、鼓掌、欢呼、鞠躬、害羞、思考、关心、惊讶、耸肩、交叉手势和抱胸；另有自然下垂、指尖轻触、双臂抱胸 3 种待机姿势。页面提供三套随项目分发的造型，以及两套需要本地放置的 Nike-chan 可选造型，选择会保存在浏览器。人物区支持 360° 自由观察：左键/单指拖动旋转、滚轮缩放、右键拖动平移、双击恢复默认构图。右上角“角色设定”可选择温暖好友、元气伙伴、冷静知己，也可配置名字、关系和说话风格；角色设定只进入文案提示词，不会作为隐藏文字送入语音。依赖、模型来源和不同模型的许可条件记录在 [public/vrm/THIRD_PARTY.md](public/vrm/THIRD_PARTY.md)。
+```bash
+PORT=3417 npm start
+```
 
-如果 3000 端口已被占用，可使用 `PORT=3417 npm start`，然后打开对应端口。
+## 页面与实验入口
 
-## 本地长期记忆
+| 地址 | 用途 | 状态 |
+| --- | --- | --- |
+| `/` | 真人 DINet / VRM 动漫统一聊天页 | 当前主入口 |
+| `/?profile=anime` | 直接以动漫模式打开统一页 | 可用 |
+| `/?profile=dinet` | 固定 DINet 真人神经口型 | 当前真人主路线 |
+| `/?profile=wav2lip` | Wav2Lip256 对照实验 | 可用，等待整段渲染 |
+| `/?profile=clean` | Canvas 嘴形图集洁净室实验 | 保留的失败对照 |
+| `/?profile=lakeside` | MiniMax 湖畔素材 + DH_live | 旧路线对照 |
+| `/vrm.html` | 独立 VRM 调试页与动作测试 | 调试入口 |
+| `/dh-action-studio.html` | 本机真人动作视频检查和预处理 | 调试入口 |
 
-参考 `xiyu-ai` 的分层记忆、权重、衰减、去重与召回思路，项目会从用户明确表达中保存少量长期信息：希望使用的称呼、喜欢或不喜欢的事物、明确要求记住的内容，以及明天/下周等需要后续跟进的事项。回答前只召回与当前话题相关的最多 6 条记忆；回答后再异步写入，不阻塞流式文案和语音。
+默认真人模式依赖本地 DINet 环境和模型。如果只验证聊天、人物设置或动漫动作，可以切换到动漫模式；DINet 所需文件可通过 `/api/dinet/status` 检查。
 
-默认文件为 `data/companion-memory.json`，权限设置为仅当前用户可读写，且整个 `data/` 目录已被 Git 忽略。可用 `MEMORY_FILE` 指定其他位置。手机号、邮箱、证件、银行卡、密码、验证码和详细住址不会进入记忆；疑似提示词注入内容也会被拒绝。当前版本不保存完整服务端聊天记录。
+## 服务配置
 
-同一文件还保存非恋爱数值化的对话连续状态：交流次数只用于形成“初识、熟悉、亲近、默契”的语气提示；上一轮平静、愉快、关切、好奇或兴奋心境会按 1.5 小时半衰期自然减弱。当前消息的明确情绪永远优先，延续状态只影响措辞和低幅表情，不会重复触发挥手、鼓掌等明显动作，也不会向用户展示隐藏数值。
+MiniMax 示例：
 
-## 两种运行模式
+```dotenv
+AI_PROVIDER=minimax
+MINIMAX_API_KEY=你的聊天与语音Key
+MINIMAX_BASE_URL=https://api.minimaxi.com/v1
+MINIMAX_TEXT_MODEL=MiniMax-M2.7-highspeed
+MINIMAX_TTS_MODEL=speech-2.8-turbo
+MINIMAX_TTS_VOICE=female-tianmei
+```
 
-- 演示模式：内置本地回复，使用系统中文语音；可验证完整 UI、数字人表情和近似嘴型。
-- OpenAI 模式：后端通过 Responses API 生成回复，通过 Speech API 生成 MP3。
-- MiniMax 模式：后端通过 Chat Completions 流式生成纯朗读正文，服务端按句发送给 Speech 2.8 合成 16 kHz 单声道 WAV。情绪和动作在本地分析，与朗读正文完全分离。API Key 始终只保存在服务端。
+人物设置中的“声音类型”会从服务端 `/api/voices` 加载。MiniMax 模式内置甜美女声、柔和少女、温暖闺蜜、成熟女声、淡雅学姐和嗲嗲学妹 6 个白名单选项，用户选择保存在浏览器；`MINIMAX_TTS_VOICE` 决定第一次打开时的默认项。音色只影响 TTS，不会写入人物提示词或聊天历史。
 
-默认文本模型为 `gpt-5.6-luna`，适合高频好友对话的成本与响应速度；可用 `OPENAI_TEXT_MODEL` 覆盖。默认语音模型为低延迟的 `tts-1`，声音为 `nova`。
+如需加入当前账号的克隆音色或文生音色，可在 `.env` 配置服务端白名单：
 
-## 嘴型与表情设计
+```dotenv
+MINIMAX_TTS_VOICES_JSON={"lili":{"label":"丽丽专属","description":"我的克隆音色","voiceId":"你的voice_id"}}
+```
 
-- 语音播放时分别分析低频和中频能量，映射到开口高度、嘴宽和圆唇程度，而不是单纯二态开合。
-- 本地系统语音无法接入 Web Audio，因此用语音边界事件和合成节律生成近似嘴型。
-- 情绪标签控制眉形、腮红、姿态和状态文案；独立的眨眼、呼吸和注视动画减少“静态贴图感”。
-- 用户开始输入下一条消息或重新按下麦克风时，会立即停止当前语音，支持自然插话；频谱嘴型使用攻击/释放平滑，减少抖动。
+浏览器只提交 `lili` 这样的公开 key，真正的 `voice_id` 只由服务端解析。当前账号可用的完整音色可通过 MiniMax `POST /v1/get_voice` 查询。
 
-当前 MVP 的嘴型属于音频驱动近似同步。若需要影视级逐音素精度，下一阶段应接入返回 phoneme/viseme 时间戳的 TTS 或本地强制对齐器，并把 viseme 序列映射到 8–15 个标准嘴型。
+OpenAI 示例：
 
-## 验证
+```dotenv
+AI_PROVIDER=openai
+OPENAI_API_KEY=你的Key
+OPENAI_TEXT_MODEL=gpt-5.6-luna
+OPENAI_TTS_MODEL=tts-1
+OPENAI_TTS_VOICE=nova
+```
+
+MiniMax 视频生成使用独立的 `MINIMAX_VIDEO_API_KEY`，避免测试视频额度与聊天、TTS Key 混用。不要把任何 Key 写进浏览器代码、日志、提交记录或文档。
+
+## 人物设定和聊天上下文
+
+人物设置保存在浏览器的 `lumi-vrm-persona`，字段包括：
+
+- `name`：人物名字；
+- `relationship`：与用户的关系；
+- `style`：语言风格；
+- `background`：稳定的兴趣、性格和生活背景。
+
+每次请求的顺序固定为：
+
+```text
+人物系统设定
+→ 相关长期记忆与低幅连续状态
+→ 最近最多 10 条有效历史消息
+→ 当前用户消息
+```
+
+系统设定要求人物保持真实、连续的第一人称体验。散步、出门、下楼等普通生活场景按共同经历自然接话，不以手机、屏幕、程序或技术身份为理由拒绝。旧历史中此类身份跳出回复会在发送前过滤；过滤造成的相邻同角色消息会自动合并，避免破坏 MiniMax 的消息顺序。
+
+## 本地记忆与清理
+
+长期记忆默认写入 `data/companion-memory.json`，文件权限为 `0600`，`data/` 已被 Git 忽略。可通过 `MEMORY_FILE` 指定其他路径。
+
+当前只提取少量明确内容：用户称呼、喜欢或不喜欢的事物、明确的“请记住”命令，以及带时间的待跟进事项。手机号、邮箱、证件、银行卡、密码、验证码、详细住址和疑似提示词注入不会保存。“你还记得我刚才说什么吗”这类问题不会被误判为记忆命令。
+
+页面右上角的清空按钮会调用 `/api/chat/memory/clear`，同时删除当前浏览器聊天历史、该用户的结构化记忆和交流状态。
+
+## 真人口型
+
+当前主路线为 Audio2BlendShape + DINet：
+
+- 常驻 Python worker 一次加载 LSTM、DINet、人物帧、参考特征和网格；
+- MiniMax 返回 16 kHz、单声道 PCM WAV；解析器按 RIFF chunk 查找真正的 `data` 块，不假设固定 44 字节头；
+- LSTM 生成连续 6 维嘴形系数，DINet 在 184×184 局部区域重绘嘴部；
+- 湖畔人物使用嘴宽、形变幅度与珊瑚粉唇色校准；
+- 浏览器使用常驻待机层和有声口型层双视频叠加，回答结束淡出上层，不换空画面，因此不会闪白。
+
+已验证的整句渲染 RTF 约为 0.33–0.35，推理快于实时；当前主要延迟仍来自等待完整 TTS 和首个可播放视频，而不是 DINet 算力。详细原理见 [DH_live 原理分析](docs/DH_LIVE_PRINCIPLE_ANALYSIS.md) 和 [洁净真人架构](docs/CLEAN_AVATAR_ARCHITECTURE.md)。
+
+## VRM 动漫人物
+
+动漫模式使用 `three.js`、`@pixiv/three-vrm` 和 `@pixiv/three-vrm-animation`。待机只保留低幅呼吸、自然眨眼和小范围注视；一轮回答最多触发一个明显动作，动作从首段音频实际播放时开始，持续到该段语音结束。
+
+支持的对话动作：挥手、鼓掌、欢呼、鞠躬、害羞、思考、关心、惊讶、耸肩、交叉手势、抱胸。待机姿势：自然下垂、指尖轻触、双臂抱胸。人物区支持拖动旋转、滚轮缩放、右键平移和双击复位。
+
+项目分发 3 套造型。Nike-chan v1/v2 仅允许符合其条款的个人非商用使用，模型二进制不进入仓库；详见 [VRM 第三方说明](public/vrm/THIRD_PARTY.md) 和 [动作资源说明](public/vrm/motions/THIRD_PARTY.md)。
+
+## 诊断与验证
 
 ```bash
 npm test
 curl http://localhost:3000/api/health
-# 配置真实密钥后执行，会产生少量 API 用量
+curl http://localhost:3000/api/dinet/status
+# 配置真实 Key 后执行，会产生少量 API 用量
 npm run test:live
 ```
 
-## 隐私与边界
+聊天链路诊断仅允许本机访问：
 
-浏览器仅把最近 10 轮聊天发送给服务端；服务端不落盘保存完整聊天，但会按上一节规则在本机保存少量结构化长期记忆。产品应明确告知用户这是 AI 虚拟伙伴，而非真人或心理/医疗服务。生产部署时还应加入账号体系、内容安全策略、限流、记忆查看/删除入口和危机干预流程。
+```bash
+curl http://localhost:3000/api/chat/debug/recent
+```
 
-## 可选 Nike-chan 模型
+返回内容最多 20 条，只保存在当前 Node 进程内存中，包含人物设定、实际历史顺序、发给模型的消息、MiniMax 原始正文、已发送的流式短句和最终结果，不包含 API Key。
 
-个人非商用测试可以从 AITuber Kit 本地副本复制 `nikechan_v1.vrm` 和 `nikechan_v2.vrm` 到 `public/vrm/models/`。模型条款禁止向第三方再分发，因此这两个文件已被 Git 忽略；使用前请阅读 AITuber Kit 的 `docs/character_model_licence_en.md`。
+## 相关文档
+
+- [当前架构](docs/CURRENT_ARCHITECTURE.md)
+- [完整实验日志](docs/EXPERIMENT_LOG.md)
+- [真人洁净口型边界](docs/CLEAN_AVATAR_ARCHITECTURE.md)
+- [DH_live / DINet 原理分析](docs/DH_LIVE_PRINCIPLE_ANALYSIS.md)
+- [LiveTalking 参考结论](docs/LIVETALKING_REFERENCE.md)
+- [DH_live 动作制作](integrations/dh-live/README.md)
+- [Duix Android 验证](integrations/duix-android/README.md)
+
+## 隐私与发布边界
+
+服务端不落盘保存完整聊天；浏览器仅保留有限历史，本地文件只保存经过过滤的结构化记忆。诊断记录是短期内存数据，服务重启即消失。生产部署仍需增加账户隔离、权限认证、内容安全、限流、用户可见的记忆管理和危机干预流程，并重新核对所有人物模型、动作、推理权重和生成素材的许可证。
