@@ -15,16 +15,16 @@ test("main voice page offers real and anime modes in one conversation",async()=>
   assert.match(html,/id="personaVoice"/);
   assert.match(html,/人物设置/);
   assert.match(app,/lumi-avatar-mode/);
-  assert.match(html,/app\.js\?v=20260810-conversation-actions-v1/);
+  assert.match(html,/app\.js\?v=20260810-conversation-actions-v2/);
   assert.match(html,/aria-label="开始通话" aria-pressed="false"/);
-  assert.match(app,/avatarRuntimeVersion="20260810-conversation-actions-v1"/);
+  assert.match(app,/avatarRuntimeVersion="20260810-conversation-actions-v2"/);
   assert.match(app,/lumi-vrm-look/);
   assert.match(app,/lumi-vrm-persona/);
   assert.match(app,/lumi-voice-profile/);
   assert.match(app,/\/api\/voices/);
   assert.match(app,/voice:voiceProfile/);
   assert.match(app,/action=\$\{encodeURIComponent\(action\)\}/);
-  assert.match(app,/conversationActions\.actionForSentence\(data\.text,spokenSentenceCount\+\+\)/);
+  assert.match(app,/conversationActions\.actionForSentence\(data\.text,sentenceIndex,data\.action\|\|currentAction\)/);
   assert.match(app,/bow:"\/real-actions\/lakeside_bow_silent\.mp4"/);
   assert.match(app,/surprise:"\/real-actions\/lakeside_surprise_silent\.mp4"/);
   assert.match(app,/if\(silentAction\)await playSilentNeuralAction/);
@@ -40,7 +40,16 @@ test("embedded anime view receives shared speech and behavior events",async()=>{
   assert.match(html,/id="avatarCanvas"/);
   assert.match(html,/vrm-embed\.js/);
   assert.match(app,/\|\|"nike1"/);
-  for(const event of ["vrm-ready","vrm-behavior","vrm-speaking","vrm-audio-level","vrm-clear","vrm-finish-gesture","vrm-view-angle"])assert.match(app,new RegExp(event));
+  for(const event of ["vrm-ready","vrm-behavior","vrm-behavior-accepted","vrm-speaking","vrm-audio-level","vrm-clear","vrm-finish-gesture","vrm-view-angle"])assert.match(app,new RegExp(event));
+});
+
+test("anime avatar provides a restrained one-shot nod gesture",async()=>{
+  const [avatar,motion]=await Promise.all([readPublic("vrm-avatar.js"),readPublic("vrm-motion.js")]);
+  assert.match(avatar,/"wave_approval","nod","clap"/);
+  assert.match(motion,/nod:\{procedural:"nod",duration:1\.2,oneShot:true\}/);
+  assert.match(motion,/function createNodClip/);
+  assert.match(motion,/THREE\.LoopOnce/);
+  assert.match(await readPublic("vrm-embed.js"),/dataset\.actionStarted=String\(started\)/);
 });
 
 test("voice button toggles one continuous call instead of each utterance",async()=>{
@@ -52,4 +61,16 @@ test("voice button toggles one continuous call instead of each utterance",async(
   assert.match(app,/getFloatTimeDomainData/);
   assert.match(app,/voiceButton\.onclick=toggleCall/);
   assert.doesNotMatch(app,/voiceButton\.onclick=startListening/);
+});
+
+test("captions stay inside the right panel without hiding the avatar",async()=>{
+  const [html,app,voice,style]=await Promise.all([readPublic("index.html"),readPublic("app.js"),readPublic("voice.css"),readPublic("style.css")]);
+  assert.match(html,/aria-controls="messages"/);
+  assert.match(html,/voice\.css\?v=20260810-captions-v3/);
+  assert.match(html,/style\.css\?v=20260810-captions-v3/);
+  assert.match(app,/if\(visible\)messages\.scrollTop=messages\.scrollHeight/);
+  assert.match(voice,/\.voice-panel \{[^}]*overflow: hidden/);
+  assert.match(voice,/\.captions \{[^}]*min-height: 0;[^}]*overflow-y: auto/);
+  assert.match(voice,/body\.show-captions \.avatar-panel \{[^}]*visibility: visible/);
+  assert.match(style,/@media\(max-width:620px\)\{body/);
 });

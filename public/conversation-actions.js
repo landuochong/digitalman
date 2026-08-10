@@ -12,22 +12,31 @@ export class ConversationActionScheduler{
   constructor({cooldownMs=3000,clock=()=>Date.now()}={}){
     this.cooldownMs=cooldownMs;this.clock=clock;this.lastHighEnergyAt=-Infinity;this.reset();
   }
-  reset(){this.primary="idle";this.deferPrimary=false;this.started=false;}
-  startTurn({message="",action="idle",emotion="calm"}={}){
-    const now=this.clock(),explicit=EXPLICIT_ACTION_WORDS.test(String(message));
-    let primary=String(action||"idle");
-    if(HIGH_ENERGY_ACTIONS.has(primary)&&!explicit&&now-this.lastHighEnergyAt<this.cooldownMs)primary=FALLBACK_ACTIONS[primary]||"idle";
-    if(HIGH_ENERGY_ACTIONS.has(primary))this.lastHighEnergyAt=now;
-    this.primary=primary;this.deferPrimary=false;this.started=true;
-    return {action:primary,emotion,explicit};
+  reset(){this.primary="idle";this.requestedPrimary="idle";this.deferPrimary=false;this.secondaryUsed=false;this.explicit=false;this.started=false;}
+  resolveBudget(action,explicit=this.explicit){
+    const now=this.clock();let resolved=String(action||"idle");
+    if(HIGH_ENERGY_ACTIONS.has(resolved)&&!explicit&&now-this.lastHighEnergyAt<this.cooldownMs)resolved=FALLBACK_ACTIONS[resolved]||"idle";
+    if(HIGH_ENERGY_ACTIONS.has(resolved))this.lastHighEnergyAt=now;
+    return resolved;
   }
-  actionForSentence(text,index=0){
+  startTurn({message="",action="idle",emotion="calm"}={}){
+    this.explicit=EXPLICIT_ACTION_WORDS.test(String(message));this.requestedPrimary=String(action||"idle");
+    this.primary=this.resolveBudget(this.requestedPrimary,this.explicit);this.deferPrimary=false;this.secondaryUsed=false;this.started=true;
+    return {action:this.primary,emotion,explicit:this.explicit};
+  }
+  actionForSentence(text,index=0,candidateAction=this.requestedPrimary){
     if(!this.started)return "idle";
+    let proposed=String(candidateAction||"idle");
+    if(proposed===this.requestedPrimary)proposed=this.primary;
     if(index===0){
+      if(proposed!=="idle"&&proposed!==this.primary)this.primary=this.resolveBudget(proposed);
       this.deferPrimary=DEFER_ON_SHORT_OPENER.has(this.primary)&&spokenLength(text)<6;
       return this.deferPrimary?"idle":this.primary;
     }
     if(index===1&&this.deferPrimary)return this.primary;
+    if(!this.secondaryUsed&&proposed!=="idle"&&proposed!==this.primary){
+      this.secondaryUsed=true;return this.resolveBudget(proposed);
+    }
     return "idle";
   }
   finishTurn(){this.reset();return "idle";}

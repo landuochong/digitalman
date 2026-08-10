@@ -7,6 +7,7 @@ const POSE_ROOT="/vrm/motions/poses";
 const POSE_VERSION="20260806-aituber-actions-1";
 const ACTIONS={
   wave_approval:{files:["wave1.json","wave2.json"],step:0.5,duration:1.8},
+  nod:{procedural:"nod",duration:1.2,oneShot:true},
   clap:{files:["clap1.json","clap2.json"],step:0.3,duration:1.8},
   cheer:{files:["cheer.json"],duration:1.8},
   bow:{files:["bow.json"],duration:1.8},
@@ -96,6 +97,13 @@ function createSequenceClip(poses,vrm,step,name){
   return new THREE.AnimationClip(name,times.at(-1),tracks);
 }
 
+function createNodClip(vrm,name="pose_nod"){
+  const head=vrm.humanoid.getNormalizedBoneNode("head");if(!head)return new THREE.AnimationClip(name,1.2,[]);
+  const angles=[0,10,-2,7,0,0].map(value=>THREE.MathUtils.degToRad(value));
+  const values=angles.flatMap(angle=>new THREE.Quaternion().setFromEuler(new THREE.Euler(angle,0,0,"XYZ")).toArray());
+  return new THREE.AnimationClip(name,1.2,[new THREE.QuaternionKeyframeTrack(`${head.name}.quaternion`,[0,.2,.43,.66,.94,1.2],values)]);
+}
+
 function stabilizeRootTranslation(clip,vrm){
   const hips=vrm.humanoid.getNormalizedBoneNode("hips");if(!hips)return clip;
   for(const track of clip.tracks){
@@ -147,14 +155,18 @@ export class VrmMotionController{
     try{
       let files=config.files;
       if(actionName==="shy"&&this.modelProfile==="mouth")files=["shy_cover_left.json"];
-      const poses=await Promise.all(files.map(loadPose));
+      const poses=files?await Promise.all(files.map(loadPose)):[];
       if(requestId!==this.requestId||vrm!==this.vrm)return false;
       this.stopGesture(0.05);this.fadeRestOut(FADE_SECONDS);
-      const clip=config.step
+      const clip=config.procedural==="nod"
+        ?createNodClip(vrm,`pose_${actionName}`)
+        :config.step
         ?createSequenceClip(poses,vrm,config.step,`pose_${actionName}`)
         :createPoseClip(poses[0],vrm,`pose_${actionName}`);
       this.poseAction=this.mixer.clipAction(clip);
-      this.poseAction.setLoop(THREE.LoopRepeat,Infinity).reset().setEffectiveWeight(1).fadeIn(FADE_SECONDS).play();
+      if(config.oneShot){this.poseAction.setLoop(THREE.LoopOnce,1);this.poseAction.clampWhenFinished=true;}
+      else this.poseAction.setLoop(THREE.LoopRepeat,Infinity);
+      this.poseAction.reset().setEffectiveWeight(1).fadeIn(FADE_SECONDS).play();
       if(this.idleAction){
         this.additiveAction=this.createIdleOverlay(`idle_overlay_${actionName}`);
         this.additiveAction.fadeIn(FADE_SECONDS);

@@ -122,6 +122,17 @@
         "congratulation"
       ]
     },
+    "nod": {
+      "asset": "lakeside_agree_test",
+      "returnTo": "lakeside_idle_test",
+      "interruptible": true,
+      "mouthMotionScale": 0.88,
+      "useFor": [
+        "agreement",
+        "praise",
+        "acknowledgement"
+      ]
+    },
     "shrug": {
       "asset": "shrug",
       "returnTo": "idle",
@@ -181,6 +192,7 @@
       "mouthMotionScale": 0.88,
       "useFor": [
         "wave_approval",
+        "nod",
         "bow"
       ]
     },

@@ -1,4 +1,4 @@
-.voice-panel { position: relative; }
+.voice-panel { position: relative; min-width: 0; min-height: 0; overflow: hidden; }
 .header-actions { display: flex; align-items: center; gap: 9px; }
 .caption-button { border: 1px solid var(--line); background: #fff; color: #837987; height: 38px; border-radius: 20px; padding: 0 13px; font: 11px inherit; cursor: pointer; }
 .caption-button[aria-pressed="true"] { background: var(--coral); border-color: var(--coral); color: #fff; }
@@ -21,9 +21,10 @@
 .voice-button.call-active:not(.listening):not(.thinking):not(.speaking) .voice-ring { opacity: .34; }
 .voice-prompt { margin: 44px 0 8px; font: 400 20px/1.4 Georgia,"Songti SC",serif; color: var(--ink); }
 .live-transcript { min-height: 22px; max-width: 430px; margin: 0; text-align: center; color: #8c828b; font-size: 12px; line-height: 1.7; }
-.captions { display: none; flex: 0 1 42%; border-top: 1px solid var(--line); padding-top: 16px; }
+.captions { display: none; flex: 1 1 0; width: 100%; min-height: 0; overflow-y: auto; overscroll-behavior: contain; border-top: 1px solid var(--line); padding-top: 16px; }
 body.show-captions .voice-stage { flex: 0 0 44%; padding-bottom: 18px; }
 body.show-captions .captions { display: block; }
+body.show-captions .avatar-panel { min-width: 0; min-height: 0; visibility: visible; }
 .text-fallback[hidden] { display: none !important; }
 @keyframes voicePulse { from { transform: scale(.92); opacity: .75; } to { transform: scale(1.18); opacity: 0; } }
 @keyframes thinkingGlow { 50% { transform: scale(.96); box-shadow: 0 12px 42px rgba(185,86,94,.2), inset 0 1px rgba(255,255,255,.35); } }

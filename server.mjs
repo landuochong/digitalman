@@ -159,9 +159,10 @@ async function miniMaxChatStream(message, history, persona, memories, companionS
     observedCleanLength = clean.length;
     const { sentences, remainder } = takeCompleteSentences(sentenceBuffer, flush, fastSpeech);
     for (const sentence of sentences) {
-      const safeSentence=buildMiniMaxReply(sentence,message,companionState,history).reply;
+      const sentenceResult=buildMiniMaxReply(sentence,message,companionState,history);
+      const safeSentence=sentenceResult.reply;
       if(trace.emittedSentences.at(-1)===safeSentence&&safeSentence!==sentence)continue;
-      trace.emittedSentences.push(safeSentence);sendEvent(res, "sentence", { text:safeSentence });
+      trace.emittedSentences.push(safeSentence);sendEvent(res, "sentence", { text:safeSentence, emotion:sentenceResult.emotion, action:sentenceResult.action });
     }
     sentenceBuffer = remainder;
   };

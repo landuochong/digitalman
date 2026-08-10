@@ -1,4 +1,4 @@
-import { ConversationActionScheduler } from "./conversation-actions.js?v=20260810-conversation-actions-v1";
+import { ConversationActionScheduler } from "./conversation-actions.js?v=20260810-conversation-actions-v2";
 
 const $ = (selector) => document.querySelector(selector);
 const portrait = $("#portrait"), wave = $("#soundWave"), messages = $("#messages");
@@ -6,7 +6,7 @@ const input = $("#messageInput"), form = $("#chatForm"), sendButton = $("#sendBu
 const micButton = $("#micButton"), modeBanner = $("#modeBanner"), statusText = $("#statusText");
 const voiceButton = $("#voiceButton"), voicePrompt = $("#voicePrompt"), liveTranscript = $("#liveTranscript"), captionButton = $("#captionButton");
 const digitalHumanFrame = $("#digitalHumanFrame");
-const avatarRuntimeVersion="20260810-conversation-actions-v1";
+const avatarRuntimeVersion="20260810-conversation-actions-v2";
 const avatarRuntimeUrl=path=>`${path}?v=${avatarRuntimeVersion}`;
 const avatarProfile = new URLSearchParams(location.search).get("profile");
 const selfRecordedProfile = avatarProfile === "self";
@@ -37,23 +37,23 @@ if(localStorage.getItem("lumi-vrm-look-schema")!==animeLookSchema){
 }
 const selfRecordedActions = {
   idle:"self_idle", happy:"self_smile", smile:"self_smile", shy:"self_smile", clap:"self_smile", cheer:"self_smile",
-  wave_approval:"self_agree", bow:"self_agree",
+  wave_approval:"self_agree", nod:"self_agree", bow:"self_agree",
   caring:"self_idle", thinking:"self_idle", surprise:"self_idle", shrug:"self_idle", confident_arms_crossed:"self_idle", cross:"self_idle"
 };
 const minimaxGeneratedActions = {
   idle:"minimax_idle_test", happy:"minimax_smile_test", smile:"minimax_smile_test", shy:"minimax_smile_test",
-  wave_approval:"minimax_agree_test", bow:"minimax_agree_test",
+  wave_approval:"minimax_agree_test", nod:"minimax_agree_test", bow:"minimax_agree_test",
   caring:"minimax_idle_test", thinking:"minimax_idle_test", surprise:"minimax_idle_test", clap:"minimax_smile_test",
   cheer:"minimax_smile_test", shrug:"minimax_idle_test", confident_arms_crossed:"minimax_idle_test", cross:"minimax_idle_test"
 };
 const lakesideGeneratedActions = {
   idle:"lakeside_idle_test", happy:"lakeside_smile_test", smile:"lakeside_smile_test", shy:"lakeside_shy",
-  wave_approval:"lakeside_wave", bow:"lakeside_agree_test",
+  wave_approval:"lakeside_wave", nod:"lakeside_agree_test", bow:"lakeside_agree_test",
   caring:"lakeside_caring", thinking:"lakeside_thinking", surprise:"lakeside_surprise", clap:"lakeside_clap",
   cheer:"lakeside_cheer", shrug:"lakeside_shrug", confident_arms_crossed:"lakeside_arms_crossed", cross:"lakeside_cross"
 };
 const cleanAvatarActions = {
-  idle:"idle", happy:"smile", smile:"smile", shy:"smile", wave_approval:"agree", bow:"agree",
+  idle:"idle", happy:"smile", smile:"smile", shy:"smile", wave_approval:"agree", nod:"agree", bow:"agree",
   caring:"idle", thinking:"idle", surprise:"idle", clap:"smile", cheer:"smile", shrug:"idle",
   confident_arms_crossed:"idle", cross:"idle"
 };
@@ -162,10 +162,10 @@ function setEmotion(emotion = "neutral") {
   portrait.dataset.emotion = emotion;
   $("#emotionLabel").textContent = emotionText[emotion] || emotionText.neutral;
 }
-function setDigitalHumanAction(action = "idle") {
+function setDigitalHumanAction(action = "idle",{force=false,hold=true}={}) {
   if (!digitalHumanFrame?.contentWindow) return Promise.resolve();
   if (switchableAvatarProfile && avatarMode === "anime") {
-    digitalHumanFrame.contentWindow.postMessage({type:"vrm-behavior",emotion:portrait.dataset.emotion||"calm",action,hold:true},location.origin);
+    digitalHumanFrame.contentWindow.postMessage({type:"vrm-behavior",emotion:portrait.dataset.emotion||"calm",action,force,hold},location.origin);
     return Promise.resolve();
   }
   if (neuralAvatarProfile) return Promise.resolve();
@@ -417,13 +417,16 @@ async function reply(message) {
       if (event === "meta") {
         mode=data.mode; currentEmotion=data.emotion || "calm"; setEmotion(currentEmotion);
         const plan=conversationActions.startTurn({message,emotion:currentEmotion,action:data.action||"idle"});
-        currentAction=plan.action;setDigitalHumanAction(currentAction).catch(()=>{});
+        currentAction=plan.action;
       }
       if (event === "sentence") {
         $("#typing")?.remove(); streamedText += data.text;
         article ||= addMessage("assistant", "", false);
         article.querySelector("p").textContent = streamedText;
-        const sentenceAction=conversationActions.actionForSentence(data.text,spokenSentenceCount++);
+        if(data.emotion){currentEmotion=data.emotion;setEmotion(currentEmotion);}
+        const sentenceIndex=spokenSentenceCount++;
+        const sentenceAction=conversationActions.actionForSentence(data.text,sentenceIndex,data.action||currentAction);
+        if(sentenceAction!=="idle")setDigitalHumanAction(sentenceAction,{force:true,hold:true}).catch(()=>{});
         enqueueSpeech(data.text,currentEmotion,batch,sentenceAction);
       }
       if (event === "error") throw new Error(data.error || "流式回答中断");
@@ -455,7 +458,7 @@ $("#clearButton").addEventListener("click",async()=>{
     setVoiceState("idle","聊天记录和人物记忆已经清空，可以重新开始");
   }catch(error){setVoiceState("idle","聊天记录已清空，但人物记忆清理失败，请稍后重试");}
 });
-captionButton.addEventListener("click",()=>{ const visible=!document.body.classList.contains("show-captions");document.body.classList.toggle("show-captions",visible);captionButton.setAttribute("aria-pressed",String(visible));captionButton.title=visible?"隐藏字幕":"显示字幕";});
+captionButton.addEventListener("click",()=>{ const visible=!document.body.classList.contains("show-captions");document.body.classList.toggle("show-captions",visible);captionButton.setAttribute("aria-pressed",String(visible));captionButton.title=visible?"隐藏右侧聊天记录":"显示右侧聊天记录";if(visible)messages.scrollTop=messages.scrollHeight;});
 window.addEventListener("message",event=>{
   if(event.origin!==location.origin||event.source!==digitalHumanFrame?.contentWindow)return;
   if(event.data?.type==="dh-live-ready"){portrait.classList.add("dh-live-ready");statusText.textContent="真人形象已就绪";}
@@ -464,6 +467,7 @@ window.addEventListener("message",event=>{
     if(animeLooks[event.data.look]){animeLook=event.data.look;animeLookSelect.value=animeLook;}
     statusText.textContent=`${animeLooks[animeLook]||"动漫形象"}已就绪`;
   }
+  if(event.data?.type==="vrm-behavior-accepted"){portrait.dataset.vrmAction=event.data.action;portrait.dataset.vrmActionStarted=String(Boolean(event.data.started));}
   if(event.data?.type==="dh-live-audio-accepted") portrait.dataset.dhAudioBytes=String(event.data.bytes||0);
   if(event.data?.type==="wav2lip-ended"||event.data?.type==="wav2lip-error") pendingWav2LipPlaybacks.get(event.data.requestId)?.();
   if(event.data?.type==="dh-live-action-ready"||event.data?.type==="dh-live-action-error"){

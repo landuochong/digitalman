@@ -2,13 +2,13 @@ import * as THREE from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { VRMLoaderPlugin, VRMUtils } from "@pixiv/three-vrm";
-import { VrmMotionController } from "./vrm-motion.js?v=20260806-55";
+import { VrmMotionController } from "./vrm-motion.js?v=20260810-nod-v1";
 
 const clamp=(value,min=0,max=1)=>Math.min(max,Math.max(min,value));
 const damp=(current,target,speed,dt)=>THREE.MathUtils.damp(current,target,speed,dt);
 const NIKE2_SKIN_COLOR="#f6ddd6";
 const NIKE2_FOREARM_COLOR="#f2d2ca";
-const GESTURES=new Set(["wave_approval","clap","cheer","bow","shrug","cross","confident_arms_crossed","shy","thinking","caring","surprise"]);
+const GESTURES=new Set(["wave_approval","nod","clap","cheer","bow","shrug","cross","confident_arms_crossed","shy","thinking","caring","surprise"]);
 
 export class VrmCompanion{
   constructor(canvas,{modelUrl="/vrm/models/lumi-cc0.vrm",restPose="natural",onReady,onError}={}){

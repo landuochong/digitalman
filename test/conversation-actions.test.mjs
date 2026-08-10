@@ -17,6 +17,14 @@ test("plays a complete first-sentence gesture immediately",()=>{
   assert.equal(scheduler.actionForSentence("重点有两个。",1),"idle");
 });
 
+test("accepts one reply-derived micro gesture during a neutral turn",()=>{
+  const scheduler=new ConversationActionScheduler();
+  scheduler.startTurn({message:"我把事情做完了",action:"idle"});
+  assert.equal(scheduler.actionForSentence("这件事处理得很稳。",0,"idle"),"idle");
+  assert.equal(scheduler.actionForSentence("你做得很好。",1,"nod"),"nod");
+  assert.equal(scheduler.actionForSentence("继续保持。",2,"caring"),"idle");
+});
+
 test("limits repeated large inferred gestures but preserves explicit requests",()=>{
   let now=1000;
   const scheduler=new ConversationActionScheduler({clock:()=>now});

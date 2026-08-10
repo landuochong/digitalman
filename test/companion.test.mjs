@@ -18,7 +18,7 @@ test("normalizes unsafe emotion values", () => assert.equal(normalizeEmotion("an
 test("normalizes unsupported actions", () => assert.equal(normalizeAction("dance"), "idle"));
 test("supports the shy gesture", () => assert.equal(normalizeAction("shy"), "shy"));
 test("supports the migrated AITuber gestures", () => {
-  for(const action of ["cheer","bow","shrug","cross","confident_arms_crossed"]) assert.equal(normalizeAction(action),action);
+  for(const action of ["nod","cheer","bow","shrug","cross","confident_arms_crossed"]) assert.equal(normalizeAction(action),action);
 });
 test("demo responds empathetically to negative emotion", () => {
   const result = demoReply("我今天很焦虑也很累"); assert.equal(result.emotion, "caring"); assert.equal(result.action, "caring"); assert.match(result.reply, /陪|难受|轻松/);
@@ -150,7 +150,10 @@ test("infers natural daily phrases for VRM gestures", () => {
 });
 
 test("infers explicit nod and smile requests", () => {
-  assert.deepEqual(inferCompanionState("点点头"), { emotion:"happy", action:"wave_approval" });
+  assert.deepEqual(inferCompanionState("点点头"), { emotion:"happy", action:"nod" });
+  assert.deepEqual(inferCompanionState("我把那件事认真做完了","你做得很好。"), { emotion:"happy", action:"nod" });
+  assert.deepEqual(inferCompanionState("我今天帮陌生人搬东西","挺不错的呀。"), { emotion:"happy", action:"nod" });
+  assert.deepEqual(inferCompanionState("我今天帮陌生人搬东西","挺好的。"), { emotion:"happy", action:"nod" });
   assert.deepEqual(inferCompanionState("笑一个"), { emotion:"happy", action:"happy" });
 });
 test("extracts MiniMax chat content and strips thinking before parsing", () => {

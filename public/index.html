@@ -5,9 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="theme-color" content="#f5efe7" />
   <title>露米 · 你的好友</title>
-  <link rel="stylesheet" href="/style.css" />
+  <link rel="stylesheet" href="/style.css?v=20260810-captions-v3" />
   <link rel="stylesheet" href="/mobile.css" />
-  <link rel="stylesheet" href="/voice.css" />
+  <link rel="stylesheet" href="/voice.css?v=20260810-captions-v3" />
   <link rel="stylesheet" href="/realistic.css" />
   <link rel="stylesheet" href="/mode-switch.css" />
 </head>
@@ -36,7 +36,7 @@
       </div>
       <div class="ambient ambient-one"></div><div class="ambient ambient-two"></div>
       <div class="portrait" id="portrait" data-emotion="happy">
-        <iframe class="dh-live-frame" id="digitalHumanFrame" src="/wav2lip-avatar/avatar.html?v=20260810-conversation-actions-v1" title="露米的人物形象" allow="autoplay" aria-label="露米的人物形象"></iframe>
+        <iframe class="dh-live-frame" id="digitalHumanFrame" src="/wav2lip-avatar/avatar.html?v=20260810-conversation-actions-v2" title="露米的人物形象" allow="autoplay" aria-label="露米的人物形象"></iframe>
         <div class="realistic-avatar" role="img" aria-label="露米的真人形象">
           <img src="/assets/lumi-realistic-v2.png" alt="" draggable="false" />
           <div class="realistic-blink left" aria-hidden="true"></div>
@@ -97,7 +97,7 @@
             <button type="submit">保存人物设置</button>
           </form>
         </details>
-        <button class="caption-button" id="captionButton" type="button" aria-pressed="false" title="显示字幕">字幕</button><button class="icon-button" id="clearButton" title="清空对话" aria-label="清空对话">↻</button>
+        <button class="caption-button" id="captionButton" type="button" aria-pressed="false" aria-controls="messages" title="显示右侧聊天记录">字幕</button><button class="icon-button" id="clearButton" title="清空对话" aria-label="清空对话">↻</button>
       </div></header>
       <div class="mode-banner" id="modeBanner">正在连接…</div>
       <div class="voice-stage">
@@ -118,6 +118,6 @@
       </form>
     </section>
   </main>
-  <script type="module" src="/app.js?v=20260810-conversation-actions-v1"></script>
+  <script type="module" src="/app.js?v=20260810-conversation-actions-v2"></script>
 </body>
 </html>

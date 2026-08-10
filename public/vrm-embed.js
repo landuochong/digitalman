@@ -1,4 +1,4 @@
-import { VrmCompanion } from "./vrm-avatar.js?v=20260807-1";
+import { VrmCompanion } from "./vrm-avatar.js?v=20260810-nod-v1";
 
 const looks={classic:"/vrm/models/lumi-cc0.vrm",soft:"/vrm/models/avatar-sample-a.vrm",vivid:"/vrm/models/avatar-sample-b.vrm",nike1:"/vrm/models/nikechan_v1.vrm",nike2:"/vrm/models/nikechan_v2.vrm"};
 let activeLook=localStorage.getItem("lumi-vrm-look")||"nike1";
@@ -17,7 +17,11 @@ document.querySelector("#avatarCanvas").addEventListener("dblclick",()=>avatar.r
 window.addEventListener("message",async event=>{
   if(event.origin!==location.origin||event.source!==parent)return;
   const data=event.data||{};
-  if(data.type==="vrm-behavior")avatar.setBehavior(data.emotion||"calm",data.action||"idle",Boolean(data.force),Boolean(data.hold));
+  if(data.type==="vrm-behavior"){
+    const started=avatar.setBehavior(data.emotion||"calm",data.action||"idle",Boolean(data.force),Boolean(data.hold));
+    document.body.dataset.action=data.action||"idle";document.body.dataset.actionStarted=String(started);
+    parent.postMessage({type:"vrm-behavior-accepted",action:data.action||"idle",started},location.origin);
+  }
   if(data.type==="vrm-speaking"){
     avatar.setSpeaking(Boolean(data.active));
   }

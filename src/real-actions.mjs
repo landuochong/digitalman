@@ -6,6 +6,7 @@ export const REAL_ACTION_ASSETS=Object.freeze({
   clap:"lakeside_clap",
   cheer:"lakeside_cheer",
   wave_approval:"lakeside_wave",
+  nod:"lakeside_agree_test",
   bow:"lakeside_agree_test",
   caring:"lakeside_caring",
   thinking:"lakeside_thinking",
