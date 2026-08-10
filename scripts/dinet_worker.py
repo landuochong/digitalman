@@ -9,7 +9,6 @@ import gzip
 import json
 import subprocess
 import sys
-import tempfile
 import time
 from pathlib import Path
 
@@ -282,16 +281,28 @@ class PersistentDINetRenderer:
 
         output_path.parent.mkdir(parents=True, exist_ok=True)
         height, width = self.frames[0].shape[:2]
-        with tempfile.NamedTemporaryFile(
-            suffix=".mp4", prefix="dinet-", dir=output_path.parent, delete=False
-        ) as temporary:
-            silent_path = Path(temporary.name)
-        writer = cv2.VideoWriter(
-            str(silent_path), cv2.VideoWriter_fourcc(*"mp4v"), 25, (width, height)
+        # Feed raw frames straight into the final H.264 encoder.  The old path
+        # encoded every frame to a temporary mp4v file and then decoded and
+        # encoded the whole video again during muxing.  Keeping ffmpeg alive
+        # while DINet renders lets encoding overlap inference and removes that
+        # complete second video pass.
+        encoder = subprocess.Popen(
+            [
+                "ffmpeg", "-loglevel", "error", "-y",
+                "-f", "rawvideo", "-pix_fmt", "bgr24",
+                "-video_size", f"{width}x{height}", "-framerate", "25",
+                "-i", "pipe:0", "-i", str(audio_path),
+                "-c:v", "libx264", "-preset", "veryfast",
+                "-pix_fmt", "yuv420p", "-crf", "18",
+                "-c:a", "aac", "-shortest", "-movflags", "+faststart",
+                str(output_path),
+            ],
+            stdin=subprocess.PIPE,
+            stderr=subprocess.PIPE,
         )
-        if not writer.isOpened():
-            silent_path.unlink(missing_ok=True)
-            raise RuntimeError("无法创建临时视频")
+        if encoder.stdin is None:
+            encoder.kill()
+            raise RuntimeError("无法启动视频编码器")
 
         last_valid = np.zeros(12, dtype=np.float32)
         try:
@@ -343,23 +354,23 @@ class PersistentDINetRenderer:
                     x0, y0, x1, y1 = self.crop_rects[frame_index]
                     frame = self.frames[frame_index][:, :, :3].copy()
                     frame[y0:y1, x0:x1] = cv2.resize(face, (x1 - x0, y1 - y0))[:, :, :3]
-                    writer.write(frame[:, :, ::-1])
+                    encoder.stdin.write(np.ascontiguousarray(frame[:, :, ::-1]).tobytes())
+        except Exception:
+            encoder.stdin.close()
+            encoder.kill()
+            encoder.wait()
+            output_path.unlink(missing_ok=True)
+            raise
         finally:
-            writer.release()
+            if not encoder.stdin.closed:
+                encoder.stdin.close()
         frames_ready = time.perf_counter()
 
-        try:
-            subprocess.run(
-                [
-                    "ffmpeg", "-loglevel", "error", "-y",
-                    "-i", str(silent_path), "-i", str(audio_path),
-                    "-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", "18",
-                    "-c:a", "aac", "-shortest", str(output_path),
-                ],
-                check=True,
-            )
-        finally:
-            silent_path.unlink(missing_ok=True)
+        stderr = encoder.stderr.read().decode("utf-8", errors="replace") if encoder.stderr else ""
+        return_code = encoder.wait()
+        if return_code:
+            output_path.unlink(missing_ok=True)
+            raise RuntimeError(f"ffmpeg 视频编码失败：{stderr[-800:]}")
         finished = time.perf_counter()
         return {
             "frames": len(coefficients),

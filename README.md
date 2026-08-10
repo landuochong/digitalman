@@ -57,7 +57,8 @@ MiniMax 示例：
 AI_PROVIDER=minimax
 MINIMAX_API_KEY=你的聊天与语音Key
 MINIMAX_BASE_URL=https://api.minimaxi.com/v1
-MINIMAX_TEXT_MODEL=MiniMax-M2.7-highspeed
+MINIMAX_TTS_BASE_URL=https://api-bj.minimaxi.com/v1
+MINIMAX_TEXT_MODEL=MiniMax-M3
 MINIMAX_TTS_MODEL=speech-2.8-turbo
 MINIMAX_TTS_VOICE=female-tianmei
 ```

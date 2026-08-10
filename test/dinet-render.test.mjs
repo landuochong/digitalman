@@ -39,10 +39,20 @@ test("includes action package version in the DINet cache key",async()=>{
   assert.match(source,/dataInfo\.mtimeMs/);
 });
 
+test("DINet streams raw frames into the final H.264 encode",async()=>{
+  const source=await readFile(new URL("../scripts/dinet_worker.py",import.meta.url),"utf8");
+  assert.match(source,/subprocess\.Popen/);
+  assert.match(source,/"-f", "rawvideo"/);
+  assert.match(source,/"-preset", "veryfast"/);
+  assert.doesNotMatch(source,/cv2\.VideoWriter/);
+  assert.doesNotMatch(source,/silent_path/);
+});
+
 test("neural avatar keeps a persistent idle layer behind speech", async () => {
-  const [html, script] = await Promise.all([
+  const [html, script,styles] = await Promise.all([
     readFile(new URL("../public/wav2lip-avatar/avatar.html", import.meta.url), "utf8"),
-    readFile(new URL("../public/wav2lip-avatar/avatar.js", import.meta.url), "utf8")
+    readFile(new URL("../public/wav2lip-avatar/avatar.js", import.meta.url), "utf8"),
+    readFile(new URL("../public/wav2lip-avatar/avatar.css", import.meta.url), "utf8")
   ]);
   assert.match(html, /id="avatar-idle"/);
   assert.match(html, /id="avatar-speech"/);
@@ -51,4 +61,6 @@ test("neural avatar keeps a persistent idle layer behind speech", async () => {
   assert.match(script, /isSilentAction/);
   assert.match(script, /speechVideo\.muted = isSilentAction/);
   assert.doesNotMatch(script, /setTimeout\(playIdle,\s*250\)/);
+  assert.match(styles,/object-fit:contain/);
+  assert.match(styles,/lakeside_idle_test\/thumbnail\.jpg/);
 });

@@ -36,7 +36,7 @@
       </div>
       <div class="ambient ambient-one"></div><div class="ambient ambient-two"></div>
       <div class="portrait" id="portrait" data-emotion="happy">
-        <iframe class="dh-live-frame" id="digitalHumanFrame" src="/wav2lip-avatar/avatar.html?v=20260807-actions-v3" title="露米的人物形象" allow="autoplay" aria-label="露米的人物形象"></iframe>
+        <iframe class="dh-live-frame" id="digitalHumanFrame" src="/wav2lip-avatar/avatar.html?v=20260810-conversation-actions-v1" title="露米的人物形象" allow="autoplay" aria-label="露米的人物形象"></iframe>
         <div class="realistic-avatar" role="img" aria-label="露米的真人形象">
           <img src="/assets/lumi-realistic-v2.png" alt="" draggable="false" />
           <div class="realistic-blink left" aria-hidden="true"></div>
@@ -101,12 +101,12 @@
       </div></header>
       <div class="mode-banner" id="modeBanner">正在连接…</div>
       <div class="voice-stage">
-        <button class="voice-button" id="voiceButton" type="button" aria-label="开始语音对话">
+        <button class="voice-button" id="voiceButton" type="button" aria-label="开始通话" aria-pressed="false">
           <span class="voice-ring ring-one"></span><span class="voice-ring ring-two"></span>
           <span class="voice-mic"><i></i></span>
         </button>
-        <p class="voice-prompt" id="voicePrompt">点击麦克风开始说话</p>
-        <p class="live-transcript" id="liveTranscript" aria-live="polite">我会在你说完后自动回答</p>
+        <p class="voice-prompt" id="voicePrompt">点击麦克风开始通话</p>
+        <p class="live-transcript" id="liveTranscript" aria-live="polite">通话中会自动轮流说话</p>
       </div>
       <div class="messages captions" id="messages" aria-live="polite">
         <article class="message assistant"><div class="mini-avatar">L</div><div><span>露米</span><p id="welcomeMessage">嗨，很高兴见到你！无论是想分享一件小事，还是只想找个人说说话，我都在。</p></div></article>
@@ -118,6 +118,6 @@
       </form>
     </section>
   </main>
-  <script type="module" src="/app.js?v=20260807-actions-v3"></script>
+  <script type="module" src="/app.js?v=20260810-conversation-actions-v1"></script>
 </body>
 </html>

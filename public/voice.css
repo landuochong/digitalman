@@ -18,6 +18,7 @@
 .voice-button.thinking { animation: thinkingGlow 1.3s ease-in-out infinite; }
 .voice-button.speaking { background: linear-gradient(145deg, #8b758f, #594861); }
 .voice-button.speaking .voice-ring { animation: voicePulse 1s ease-out infinite; opacity: 1; border-color: rgba(99,77,105,.32); }
+.voice-button.call-active:not(.listening):not(.thinking):not(.speaking) .voice-ring { opacity: .34; }
 .voice-prompt { margin: 44px 0 8px; font: 400 20px/1.4 Georgia,"Songti SC",serif; color: var(--ink); }
 .live-transcript { min-height: 22px; max-width: 430px; margin: 0; text-align: center; color: #8c828b; font-size: 12px; line-height: 1.7; }
 .captions { display: none; flex: 0 1 42%; border-top: 1px solid var(--line); padding-top: 16px; }

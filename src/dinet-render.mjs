@@ -7,7 +7,7 @@ import { createInterface } from "node:readline";
 import { inferAudioExtension } from "./wav2lip-render.mjs";
 import { listRealActionAssets, resolveRealActionAsset } from "./real-actions.mjs";
 
-const RENDER_PROFILE = "dinet-mini-25fps-source-lip-color-v7-action-assets";
+const RENDER_PROFILE = "dinet-mini-25fps-source-lip-color-v9-single-pass-encode";
 
 export function buildDINetWorkerCommand(projectRoot) {
   return {

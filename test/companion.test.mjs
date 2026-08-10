@@ -110,6 +110,7 @@ test("builds streaming MiniMax payload and segments complete spoken sentences", 
   assert.deepEqual(takeCompleteSentences("第一句。第二句还没完"), { sentences:["第一句。"], remainder:"第二句还没完" });
   assert.deepEqual(takeCompleteSentences("最后一句", true), { sentences:["最后一句"], remainder:"" });
   assert.deepEqual(takeCompleteSentences("嗯，累了就说累，没什么的。", false, true), { sentences:["嗯，累了就说累，", "没什么的。"], remainder:"" });
+  assert.deepEqual(takeCompleteSentences("辛苦了，今天先休息一下", false, true), { sentences:["辛苦了，"], remainder:"今天先休息一下" });
 });
 test("MiniMax speaks only the reply while state is inferred locally", () => {
   assert.deepEqual(buildMiniMaxReply("慢慢来，我陪着你。", "我今天很焦虑"), { reply:"慢慢来，我陪着你。", emotion:"caring", action:"caring" });
@@ -140,6 +141,10 @@ test("infers natural daily phrases for VRM gestures", () => {
   assert.deepEqual(inferCompanionState("摆个抱胸姿势"), { emotion:"happy", action:"confident_arms_crossed" });
   assert.deepEqual(inferCompanionState("我也不知道怎么办"), { emotion:"curious", action:"shrug" });
   assert.deepEqual(inferCompanionState("你今天真可爱"), { emotion:"happy", action:"shy" });
+  assert.deepEqual(inferCompanionState("我给你买了一个礼物"), { emotion:"happy", action:"caring" });
+  assert.deepEqual(inferCompanionState("这束花送给你"), { emotion:"happy", action:"caring" });
+  assert.deepEqual(inferCompanionState("你真的很温柔很贴心"), { emotion:"happy", action:"shy" });
+  assert.deepEqual(buildMiniMaxReply("听到你这么说，我真的很开心。", "你真的很温柔很贴心"), { reply:"听到你这么说，我真的很开心。", emotion:"happy", action:"shy" });
   assert.deepEqual(inferCompanionState("嗯，我知道了","",{mood:"caring",moodIntensity:.6}), { emotion:"caring", action:"idle" });
   assert.deepEqual(inferCompanionState("我终于成功了","",{mood:"caring",moodIntensity:.8}), { emotion:"excited", action:"clap" });
 });

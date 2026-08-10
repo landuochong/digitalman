@@ -9,6 +9,7 @@ import { buildVoiceCatalog } from "./src/voices.mjs";
 import { DhActionTaskStore, isLoopbackAddress, saveActionVideo } from "./src/dh-action-studio.mjs";
 import { Wav2LipRenderStore } from "./src/wav2lip-render.mjs";
 import { DINetRenderStore } from "./src/dinet-render.mjs";
+import { BoundedAsyncCache } from "./src/audio-cache.mjs";
 
 function loadLocalEnv() {
   try {
@@ -39,7 +40,8 @@ const textModel = process.env.OPENAI_TEXT_MODEL || "gpt-5.6-luna";
 const ttsModel = process.env.OPENAI_TTS_MODEL || "tts-1";
 const ttsVoice = process.env.OPENAI_TTS_VOICE || "nova";
 const miniMaxBaseUrl = (process.env.MINIMAX_BASE_URL || "https://api.minimaxi.com/v1").replace(/\/$/, "");
-const miniMaxTextModel = process.env.MINIMAX_TEXT_MODEL || "MiniMax-M2.7-highspeed";
+const miniMaxTtsBaseUrl = (process.env.MINIMAX_TTS_BASE_URL || "https://api-bj.minimaxi.com/v1").replace(/\/$/, "");
+const miniMaxTextModel = process.env.MINIMAX_TEXT_MODEL || "MiniMax-M3";
 const miniMaxTtsModel = process.env.MINIMAX_TTS_MODEL || "speech-2.8-turbo";
 const miniMaxTtsVoice = process.env.MINIMAX_TTS_VOICE || "female-tianmei";
 const voiceCatalog=buildVoiceCatalog({
@@ -49,6 +51,7 @@ const voiceCatalog=buildVoiceCatalog({
 });
 const mime = { ".html": "text/html; charset=utf-8", ".css": "text/css; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".json": "application/json; charset=utf-8", ".svg": "image/svg+xml", ".png": "image/png", ".wasm": "application/wasm", ".mp4": "video/mp4", ".vrm": "model/gltf-binary", ".gz": "application/gzip" };
 const recentChatTraces=[];
+const miniMaxSpeechCache=new BoundedAsyncCache(64);
 let chatTraceSequence=0;
 
 function startChatTrace(endpoint,{ message,history,userId,persona,fastSpeech }){
@@ -257,15 +260,19 @@ async function speech(req, res) {
   if (!input) return json(res, 400, { error: "语音内容不能为空" });
   if (provider === "minimax") {
     const selectedVoice=voiceCatalog.resolve(data.voice);
-    const response = await fetch(`${miniMaxBaseUrl}/t2a_v2`, {
-      method:"POST",
-      headers:{ authorization:`Bearer ${apiKey}`, "content-type":"application/json" },
-      body:JSON.stringify(buildMiniMaxSpeechPayload({ model:miniMaxTtsModel, voice:selectedVoice, text:input, emotion:data.emotion }))
+    const cacheKey=JSON.stringify([miniMaxTtsModel,selectedVoice,String(data.emotion||""),input]);
+    const cached=miniMaxSpeechCache.getOrCreate(cacheKey,async()=>{
+      const response = await fetch(`${miniMaxTtsBaseUrl}/t2a_v2`, {
+        method:"POST",
+        headers:{ authorization:`Bearer ${apiKey}`, "content-type":"application/json" },
+        body:JSON.stringify(buildMiniMaxSpeechPayload({ model:miniMaxTtsModel, voice:selectedVoice, text:input, emotion:data.emotion }))
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload?.base_resp?.status_msg || `MiniMax 语音接口失败 (${response.status})`);
+      return decodeMiniMaxAudio(payload);
     });
-    const payload = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(payload?.base_resp?.status_msg || `MiniMax 语音接口失败 (${response.status})`);
-    const audio = decodeMiniMaxAudio(payload);
-    res.writeHead(200, { "content-type":"audio/wav", "content-length":audio.length, "cache-control":"no-store" });
+    const audio = await cached.value;
+    res.writeHead(200, { "content-type":"audio/wav", "content-length":audio.length, "cache-control":"no-store", "x-speech-cache":cached.hit?"hit":"miss" });
     return res.end(audio);
   }
   const selectedVoice=voiceCatalog.resolve(data.voice);

@@ -15,15 +15,16 @@ test("main voice page offers real and anime modes in one conversation",async()=>
   assert.match(html,/id="personaVoice"/);
   assert.match(html,/人物设置/);
   assert.match(app,/lumi-avatar-mode/);
-  assert.match(html,/app\.js\?v=20260807-actions-v3/);
-  assert.match(app,/avatarRuntimeVersion="20260807-actions-v3"/);
+  assert.match(html,/app\.js\?v=20260810-conversation-actions-v1/);
+  assert.match(html,/aria-label="开始通话" aria-pressed="false"/);
+  assert.match(app,/avatarRuntimeVersion="20260810-conversation-actions-v1"/);
   assert.match(app,/lumi-vrm-look/);
   assert.match(app,/lumi-vrm-persona/);
   assert.match(app,/lumi-voice-profile/);
   assert.match(app,/\/api\/voices/);
   assert.match(app,/voice:voiceProfile/);
   assert.match(app,/action=\$\{encodeURIComponent\(action\)\}/);
-  assert.match(app,/spokenSentenceCount\+\+===0\?currentAction:"idle"/);
+  assert.match(app,/conversationActions\.actionForSentence\(data\.text,spokenSentenceCount\+\+\)/);
   assert.match(app,/bow:"\/real-actions\/lakeside_bow_silent\.mp4"/);
   assert.match(app,/surprise:"\/real-actions\/lakeside_surprise_silent\.mp4"/);
   assert.match(app,/if\(silentAction\)await playSilentNeuralAction/);
@@ -40,4 +41,15 @@ test("embedded anime view receives shared speech and behavior events",async()=>{
   assert.match(html,/vrm-embed\.js/);
   assert.match(app,/\|\|"nike1"/);
   for(const event of ["vrm-ready","vrm-behavior","vrm-speaking","vrm-audio-level","vrm-clear","vrm-finish-gesture","vrm-view-angle"])assert.match(app,new RegExp(event));
+});
+
+test("voice button toggles one continuous call instead of each utterance",async()=>{
+  const app=await readPublic("app.js");
+  assert.match(app,/const toggleCall=\(\)=>voiceCallActive\?endCall\(\):beginCall\(\)/);
+  assert.match(app,/await completedQueue\.catch\(\(\)=>\{\}\)/);
+  assert.match(app,/scheduleListening\(180\)/);
+  assert.match(app,/now-silenceStarted>=650/);
+  assert.match(app,/getFloatTimeDomainData/);
+  assert.match(app,/voiceButton\.onclick=toggleCall/);
+  assert.doesNotMatch(app,/voiceButton\.onclick=startListening/);
 });
