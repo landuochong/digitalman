@@ -1,4 +1,4 @@
-import { VrmCompanion } from "./vrm-avatar.js?v=20260806-77";
+import { VrmCompanion } from "./vrm-avatar.js?v=20260810-thumbs-up-v1";
 
 const $=selector=>document.querySelector(selector);
 const mic=$("#micButton"),caption=$("#caption"),prompt=$("#voicePrompt"),detail=$("#detailText"),wave=$("#wave");
@@ -79,7 +79,7 @@ document.querySelectorAll(".looks button").forEach(button=>{
 });
 
 const actionPreviews={
-  wave_approval:{emotion:"happy",label:"挥手"},clap:{emotion:"excited",label:"鼓掌"},cheer:{emotion:"excited",label:"欢呼"},
+  wave_approval:{emotion:"happy",label:"挥手"},nod:{emotion:"happy",label:"点头"},thumbs_up:{emotion:"happy",label:"夸赞"},clap:{emotion:"excited",label:"鼓掌"},cheer:{emotion:"excited",label:"欢呼"},
   bow:{emotion:"happy",label:"鞠躬"},shrug:{emotion:"curious",label:"耸肩"},cross:{emotion:"calm",label:"交叉手势"},
   confident_arms_crossed:{emotion:"happy",label:"抱胸"},shy:{emotion:"happy",label:"害羞"},thinking:{emotion:"curious",label:"思考"},
   caring:{emotion:"caring",label:"关心"},surprise:{emotion:"excited",label:"惊讶"}

@@ -4,10 +4,11 @@ import { VRMAnimationLoaderPlugin, createVRMAnimationClip } from "@pixiv/three-v
 
 const FADE_SECONDS=0.35;
 const POSE_ROOT="/vrm/motions/poses";
-const POSE_VERSION="20260806-aituber-actions-1";
+const POSE_VERSION="20260810-thumbs-up-v1";
 const ACTIONS={
   wave_approval:{files:["wave1.json","wave2.json"],step:0.5,duration:1.8},
   nod:{procedural:"nod",duration:1.2,oneShot:true},
+  thumbs_up:{files:["thumbs_up.json"],duration:1.7},
   clap:{files:["clap1.json","clap2.json"],step:0.3,duration:1.8},
   cheer:{files:["cheer.json"],duration:1.8},
   bow:{files:["bow.json"],duration:1.8},
@@ -155,6 +156,7 @@ export class VrmMotionController{
     try{
       let files=config.files;
       if(actionName==="shy"&&this.modelProfile==="mouth")files=["shy_cover_left.json"];
+      if(actionName==="thumbs_up"&&vrm.meta.metaVersion!=="0")files=["thumbs_up_vrm1.json"];
       const poses=files?await Promise.all(files.map(loadPose)):[];
       if(requestId!==this.requestId||vrm!==this.vrm)return false;
       this.stopGesture(0.05);this.fadeRestOut(FADE_SECONDS);

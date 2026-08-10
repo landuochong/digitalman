@@ -133,6 +133,16 @@
         "acknowledgement"
       ]
     },
+    "thumbs_up": {
+      "asset": "lakeside_agree_test",
+      "returnTo": "lakeside_idle_test",
+      "interruptible": true,
+      "mouthMotionScale": 0.88,
+      "useFor": [
+        "praise",
+        "approval"
+      ]
+    },
     "shrug": {
       "asset": "shrug",
       "returnTo": "idle",
@@ -193,6 +203,7 @@
       "useFor": [
         "wave_approval",
         "nod",
+        "thumbs_up",
         "bow"
       ]
     },

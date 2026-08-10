@@ -17,6 +17,7 @@ test("preloads one persistent DINet worker with the lakeside asset", () => {
 test("maps anime action names onto same-character real video assets",()=>{
   assert.equal(resolveRealActionAsset("wave_approval"),"lakeside_wave");
   assert.equal(resolveRealActionAsset("nod"),"lakeside_agree_test");
+  assert.equal(resolveRealActionAsset("thumbs_up"),"lakeside_agree_test");
   assert.equal(resolveRealActionAsset("clap"),"lakeside_clap");
   assert.equal(resolveRealActionAsset("thinking"),"lakeside_thinking");
   assert.equal(resolveRealActionAsset("surprise"),"lakeside_idle_test");

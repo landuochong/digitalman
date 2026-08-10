@@ -1,0 +1,24 @@
+{
+  "version": "1.0",
+  "pose": {
+    "rightShoulder": { "rotation": [0, 0, -0.035, 0.9994] },
+    "rightUpperArm": { "rotation": [0.055, 0.085, -0.455, 0.8847] },
+    "rightLowerArm": { "rotation": [0.025, 0.805, 0.105, 0.5834] },
+    "rightHand": { "rotation": [-0.134, 0.226, 0.752, 0.604] },
+    "rightThumbMetacarpal": { "rotation": [0, 0, 0, 1] },
+    "rightThumbProximal": { "rotation": [0, 0, -0.7071, 0.7071] },
+    "rightThumbDistal": { "rotation": [0, 0, 0, 1] },
+    "rightIndexProximal": { "rotation": [0, 0, -0.5, 0.866] },
+    "rightIndexIntermediate": { "rotation": [0, 0, -0.58, 0.8146] },
+    "rightIndexDistal": { "rotation": [0, 0, -0.35, 0.9367] },
+    "rightMiddleProximal": { "rotation": [0, 0, -0.53, 0.848] },
+    "rightMiddleIntermediate": { "rotation": [0, 0, -0.6, 0.8] },
+    "rightMiddleDistal": { "rotation": [0, 0, -0.38, 0.925] },
+    "rightRingProximal": { "rotation": [0, 0, -0.55, 0.8352] },
+    "rightRingIntermediate": { "rotation": [0, 0, -0.62, 0.7846] },
+    "rightRingDistal": { "rotation": [0, 0, -0.4, 0.9165] },
+    "rightLittleProximal": { "rotation": [0, 0, -0.58, 0.8146] },
+    "rightLittleIntermediate": { "rotation": [0, 0, -0.64, 0.7684] },
+    "rightLittleDistal": { "rotation": [0, 0, -0.42, 0.9075] }
+  }
+}

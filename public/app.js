@@ -6,7 +6,7 @@ const input = $("#messageInput"), form = $("#chatForm"), sendButton = $("#sendBu
 const micButton = $("#micButton"), modeBanner = $("#modeBanner"), statusText = $("#statusText");
 const voiceButton = $("#voiceButton"), voicePrompt = $("#voicePrompt"), liveTranscript = $("#liveTranscript"), captionButton = $("#captionButton");
 const digitalHumanFrame = $("#digitalHumanFrame");
-const avatarRuntimeVersion="20260810-conversation-actions-v2";
+const avatarRuntimeVersion="20260810-thumbs-up-v1";
 const avatarRuntimeUrl=path=>`${path}?v=${avatarRuntimeVersion}`;
 const avatarProfile = new URLSearchParams(location.search).get("profile");
 const selfRecordedProfile = avatarProfile === "self";
@@ -37,23 +37,23 @@ if(localStorage.getItem("lumi-vrm-look-schema")!==animeLookSchema){
 }
 const selfRecordedActions = {
   idle:"self_idle", happy:"self_smile", smile:"self_smile", shy:"self_smile", clap:"self_smile", cheer:"self_smile",
-  wave_approval:"self_agree", nod:"self_agree", bow:"self_agree",
+  wave_approval:"self_agree", nod:"self_agree", thumbs_up:"self_agree", bow:"self_agree",
   caring:"self_idle", thinking:"self_idle", surprise:"self_idle", shrug:"self_idle", confident_arms_crossed:"self_idle", cross:"self_idle"
 };
 const minimaxGeneratedActions = {
   idle:"minimax_idle_test", happy:"minimax_smile_test", smile:"minimax_smile_test", shy:"minimax_smile_test",
-  wave_approval:"minimax_agree_test", nod:"minimax_agree_test", bow:"minimax_agree_test",
+  wave_approval:"minimax_agree_test", nod:"minimax_agree_test", thumbs_up:"minimax_agree_test", bow:"minimax_agree_test",
   caring:"minimax_idle_test", thinking:"minimax_idle_test", surprise:"minimax_idle_test", clap:"minimax_smile_test",
   cheer:"minimax_smile_test", shrug:"minimax_idle_test", confident_arms_crossed:"minimax_idle_test", cross:"minimax_idle_test"
 };
 const lakesideGeneratedActions = {
   idle:"lakeside_idle_test", happy:"lakeside_smile_test", smile:"lakeside_smile_test", shy:"lakeside_shy",
-  wave_approval:"lakeside_wave", nod:"lakeside_agree_test", bow:"lakeside_agree_test",
+  wave_approval:"lakeside_wave", nod:"lakeside_agree_test", thumbs_up:"lakeside_agree_test", bow:"lakeside_agree_test",
   caring:"lakeside_caring", thinking:"lakeside_thinking", surprise:"lakeside_surprise", clap:"lakeside_clap",
   cheer:"lakeside_cheer", shrug:"lakeside_shrug", confident_arms_crossed:"lakeside_arms_crossed", cross:"lakeside_cross"
 };
 const cleanAvatarActions = {
-  idle:"idle", happy:"smile", smile:"smile", shy:"smile", wave_approval:"agree", nod:"agree", bow:"agree",
+  idle:"idle", happy:"smile", smile:"smile", shy:"smile", wave_approval:"agree", nod:"agree", thumbs_up:"agree", bow:"agree",
   caring:"idle", thinking:"idle", surprise:"idle", clap:"smile", cheer:"smile", shrug:"idle",
   confident_arms_crossed:"idle", cross:"idle"
 };
@@ -478,7 +478,7 @@ window.addEventListener("message",event=>{
 
 
 const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-if (Recognition) { const recognition = new Recognition(); recognition.lang="zh-CN"; recognition.interimResults=true; recognition.continuous=false; let recognizedText="", recognitionFailed=false, recognitionRunning=false, restartListeningTimer,vadStream,vadContext,vadAnalyser,vadSamples,vadFrame;
+if (Recognition) { const recognition = new Recognition(); recognition.lang="zh-CN"; recognition.interimResults=true; recognition.continuous=false; let recognizedText="", recognitionFailed=false, recognitionRunning=false, restartListeningTimer,listeningGestureTimer,vadStream,vadContext,vadAnalyser,vadSamples,vadFrame;
   const updateCallButton=()=>{voiceButton.classList.toggle("call-active",voiceCallActive);voiceButton.setAttribute("aria-pressed",String(voiceCallActive));voiceButton.setAttribute("aria-label",voiceCallActive?"结束通话":"开始通话");micButton.setAttribute("aria-label",voiceCallActive?"结束通话":"开始通话");micButton.title=voiceCallActive?"结束通话":"开始通话";};
   const stopVadLoop=()=>{if(vadFrame)cancelAnimationFrame(vadFrame);vadFrame=0;};
   const releaseVad=()=>{stopVadLoop();vadStream?.getTracks().forEach(track=>track.stop());vadStream=null;vadAnalyser=null;vadSamples=null;vadContext?.close().catch(()=>{});vadContext=null;};
@@ -486,13 +486,15 @@ if (Recognition) { const recognition = new Recognition(); recognition.lang="zh-C
   const startVadLoop=()=>{stopVadLoop();if(!vadAnalyser)return;let noiseFloor=.008,hasSpeech=false,silenceStarted=0;const warmupUntil=performance.now()+320;const inspect=()=>{if(!voiceCallActive||!recognitionRunning||!vadAnalyser){vadFrame=0;return;}vadAnalyser.getFloatTimeDomainData(vadSamples);let energy=0;for(const value of vadSamples)energy+=value*value;const rms=Math.sqrt(energy/vadSamples.length),now=performance.now();if(now<warmupUntil&&rms<.025)noiseFloor=noiseFloor*.82+rms*.18;const threshold=Math.max(.016,noiseFloor*2.35);if(rms>threshold){hasSpeech=true;silenceStarted=0;}else if(hasSpeech&&recognizedText){silenceStarted ||= now;if(now-silenceStarted>=650){stopVadLoop();try{recognition.stop();}catch{}return;}}vadFrame=requestAnimationFrame(inspect);};vadFrame=requestAnimationFrame(inspect);};
   const startListening=()=>{if(!voiceCallActive||recognitionRunning)return;clearTimeout(restartListeningTimer);try{recognition.start()}catch{restartListeningTimer=setTimeout(startListening,350)}};
   const scheduleListening=(delay=350)=>{clearTimeout(restartListeningTimer);if(voiceCallActive)restartListeningTimer=setTimeout(startListening,delay);};
-  const endCall=()=>{voiceCallActive=false;clearTimeout(restartListeningTimer);if(recognitionRunning)recognition.abort();releaseVad();stopSpeech();micButton.classList.remove("listening");voiceButton.classList.remove("listening","thinking","speaking");updateCallButton();setVoiceState("idle","通话已结束");statusText.textContent="在线 · 随时听你说";};
+  const clearListeningGesture=()=>{clearTimeout(listeningGestureTimer);listeningGestureTimer=0;};
+  const scheduleListeningGesture=()=>{if(listeningGestureTimer||avatarMode!=="anime")return;listeningGestureTimer=setTimeout(()=>{listeningGestureTimer=0;if(voiceCallActive&&recognitionRunning&&recognizedText)setDigitalHumanAction("nod",{force:true,hold:false}).catch(()=>{});},1400+Math.random()*700);};
+  const endCall=()=>{voiceCallActive=false;clearTimeout(restartListeningTimer);clearListeningGesture();if(recognitionRunning)recognition.abort();releaseVad();stopSpeech();micButton.classList.remove("listening");voiceButton.classList.remove("listening","thinking","speaking");updateCallButton();setVoiceState("idle","通话已结束");statusText.textContent="在线 · 随时听你说";};
   const beginCall=async()=>{if(voiceCallActive)return;voiceCallActive=true;stopSpeech();updateCallButton();setVoiceState("idle","正在准备麦克风…");try{await ensureVad();}catch{}if(voiceCallActive){setVoiceState("idle","通话已开始，请自然说话");scheduleListening(80);}};
   const toggleCall=()=>voiceCallActive?endCall():beginCall();
-  recognition.onstart=()=>{recognitionRunning=true;recognizedText="";recognitionFailed=false;conversationActions.finishTurn();digitalHumanFrame?.contentWindow?.postMessage({type:"vrm-finish-gesture"},location.origin);micButton.classList.add("listening");setVoiceState("listening","请自然说话，停顿后我会立即回答");setEmotion("curious");statusText.textContent="我在听…";startVadLoop();};
-  recognition.onresult=e=>{recognizedText=Array.from(e.results).map(r=>r[0].transcript).join("").trim();liveTranscript.textContent=recognizedText||"我在听…"};
-  recognition.onend=async()=>{stopVadLoop();recognitionRunning=false;micButton.classList.remove("listening");voiceButton.classList.remove("listening");const text=recognizedText;recognizedText="";if(!voiceCallActive)return;if(text&&!recognitionFailed){setVoiceState("thinking",`${persona.name}正在回应`);await submit(text);const completedQueue=speechQueue;await completedQueue.catch(()=>{});if(voiceCallActive){setVoiceState("idle","请继续说话");scheduleListening(180);}}else if(!recognitionFailed){setVoiceState("idle","我还在听，请继续说");scheduleListening(350)}};
-  recognition.onerror=e=>{stopVadLoop();recognitionFailed=true;micButton.classList.remove("listening");voiceButton.classList.remove("listening");const denied=e.error==="not-allowed"||e.error==="service-not-allowed";if(denied){voiceCallActive=false;releaseVad();updateCallButton();setVoiceState("idle","请允许浏览器使用麦克风后重试");}else if(voiceCallActive){setVoiceState("idle","没有听清楚，正在继续聆听");scheduleListening(500)}};
+  recognition.onstart=()=>{recognitionRunning=true;recognizedText="";recognitionFailed=false;clearListeningGesture();conversationActions.finishTurn();digitalHumanFrame?.contentWindow?.postMessage({type:"vrm-finish-gesture"},location.origin);micButton.classList.add("listening");setVoiceState("listening","请自然说话，停顿后我会立即回答");setEmotion("curious");statusText.textContent="我在听…";startVadLoop();};
+  recognition.onresult=e=>{recognizedText=Array.from(e.results).map(r=>r[0].transcript).join("").trim();if(recognizedText)scheduleListeningGesture();liveTranscript.textContent=recognizedText||"我在听…"};
+  recognition.onend=async()=>{stopVadLoop();clearListeningGesture();recognitionRunning=false;micButton.classList.remove("listening");voiceButton.classList.remove("listening");const text=recognizedText;recognizedText="";if(!voiceCallActive)return;if(text&&!recognitionFailed){setVoiceState("thinking",`${persona.name}正在回应`);await submit(text);const completedQueue=speechQueue;await completedQueue.catch(()=>{});if(voiceCallActive){setVoiceState("idle","请继续说话");scheduleListening(180);}}else if(!recognitionFailed){setVoiceState("idle","我还在听，请继续说");scheduleListening(350)}};
+  recognition.onerror=e=>{stopVadLoop();clearListeningGesture();recognitionFailed=true;micButton.classList.remove("listening");voiceButton.classList.remove("listening");const denied=e.error==="not-allowed"||e.error==="service-not-allowed";if(denied){voiceCallActive=false;releaseVad();updateCallButton();setVoiceState("idle","请允许浏览器使用麦克风后重试");}else if(voiceCallActive){setVoiceState("idle","没有听清楚，正在继续聆听");scheduleListening(500)}};
   micButton.onclick=toggleCall;voiceButton.onclick=toggleCall;updateCallButton();
 } else { micButton.disabled=true;voiceButton.disabled=true;voicePrompt.textContent="当前浏览器不支持语音识别";liveTranscript.textContent="请使用最新版 Chrome 或 Edge"; }
 

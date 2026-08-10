@@ -15,9 +15,9 @@ test("main voice page offers real and anime modes in one conversation",async()=>
   assert.match(html,/id="personaVoice"/);
   assert.match(html,/人物设置/);
   assert.match(app,/lumi-avatar-mode/);
-  assert.match(html,/app\.js\?v=20260810-conversation-actions-v2/);
+  assert.match(html,/app\.js\?v=20260810-thumbs-up-v1/);
   assert.match(html,/aria-label="开始通话" aria-pressed="false"/);
-  assert.match(app,/avatarRuntimeVersion="20260810-conversation-actions-v2"/);
+  assert.match(app,/avatarRuntimeVersion="20260810-thumbs-up-v1"/);
   assert.match(app,/lumi-vrm-look/);
   assert.match(app,/lumi-vrm-persona/);
   assert.match(app,/lumi-voice-profile/);
@@ -45,11 +45,24 @@ test("embedded anime view receives shared speech and behavior events",async()=>{
 
 test("anime avatar provides a restrained one-shot nod gesture",async()=>{
   const [avatar,motion]=await Promise.all([readPublic("vrm-avatar.js"),readPublic("vrm-motion.js")]);
-  assert.match(avatar,/"wave_approval","nod","clap"/);
+  assert.match(avatar,/"wave_approval","nod","thumbs_up","clap"/);
   assert.match(motion,/nod:\{procedural:"nod",duration:1\.2,oneShot:true\}/);
   assert.match(motion,/function createNodClip/);
   assert.match(motion,/THREE\.LoopOnce/);
   assert.match(await readPublic("vrm-embed.js"),/dataset\.actionStarted=String\(started\)/);
+});
+
+test("praise has a dedicated anime thumbs-up and a restrained listening nod",async()=>{
+  const [avatar,motion,pose,app]=await Promise.all([
+    readPublic("vrm-avatar.js"),readPublic("vrm-motion.js"),readPublic("vrm/motions/poses/thumbs_up.json"),readPublic("app.js")
+  ]);
+  assert.match(avatar,/"nod","thumbs_up","clap"/);
+  assert.match(motion,/thumbs_up:\{files:\["thumbs_up\.json"\],duration:1\.7\}/);
+  assert.match(pose,/"rightThumbProximal"/);
+  assert.match(pose,/"rightLittleDistal"/);
+  assert.match(app,/scheduleListeningGesture/);
+  assert.match(app,/recognitionRunning&&recognizedText/);
+  assert.match(app,/setDigitalHumanAction\("nod",\{force:true,hold:false\}\)/);
 });
 
 test("voice button toggles one continuous call instead of each utterance",async()=>{
