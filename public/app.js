@@ -1,7 +1,7 @@
-import { ConversationActionScheduler } from "./conversation-actions.js?v=20260813-fast-voice-turn-v9";
-import { buildWav2LipPlaybackMessage } from "./avatar-protocol.js?v=20260813-fast-voice-turn-v9";
-import { AvatarStreamTurn } from "./avatar-stream-turn.js?v=20260813-fast-voice-turn-v9";
-import { RecognitionTurnGate,recognitionSilenceMs } from "./recognition-turn-gate.js?v=20260813-fast-voice-turn-v9";
+import { ConversationActionScheduler } from "./conversation-actions.js?v=20260813-video-only-stream-v10";
+import { buildWav2LipPlaybackMessage } from "./avatar-protocol.js?v=20260813-video-only-stream-v10";
+import { AvatarStreamTurn } from "./avatar-stream-turn.js?v=20260813-video-only-stream-v10";
+import { RecognitionTurnGate,recognitionSilenceMs } from "./recognition-turn-gate.js?v=20260813-video-only-stream-v10";
 
 const $ = (selector) => document.querySelector(selector);
 const portrait = $("#portrait"), wave = $("#soundWave"), messages = $("#messages");
@@ -9,7 +9,7 @@ const input = $("#messageInput"), form = $("#chatForm"), sendButton = $("#sendBu
 const micButton = $("#micButton"), modeBanner = $("#modeBanner"), statusText = $("#statusText");
 const voiceButton = $("#voiceButton"), voicePrompt = $("#voicePrompt"), liveTranscript = $("#liveTranscript"), captionButton = $("#captionButton");
 const digitalHumanFrame = $("#digitalHumanFrame");
-const avatarRuntimeVersion="20260813-fast-voice-turn-v9";
+const avatarRuntimeVersion="20260813-video-only-stream-v10";
 const avatarRuntimeUrl=path=>`${path}?v=${avatarRuntimeVersion}`;
 const avatarProfile = new URLSearchParams(location.search).get("profile");
 const selfRecordedProfile = avatarProfile === "self";
@@ -89,6 +89,7 @@ let history = JSON.parse(localStorage.getItem("lumi-history") || "[]");
 let mode = "demo", speakingToken = 0, audioContext, activeAudio, activeSpeechResolve, speechTimer, actionRequestId = 0;
 const activeStreamingSpeech=new Set();
 let avatarAudioContext=null;
+let avatarPcmReady=false;
 
 function unlockAvatarAudio(){
   const Context=window.AudioContext||window.webkitAudioContext;
@@ -139,7 +140,7 @@ const emotionText = { neutral:"认真听你说", happy:"很高兴见到你", car
 function applyAvatarMode(next,{interrupt=true}={}){
   if(!switchableAvatarProfile||!["real","anime"].includes(next)||next===avatarMode)return;
   if(interrupt)stopSpeech();
-  avatarMode=next;neuralAvatarProfile=next==="real";
+  avatarMode=next;neuralAvatarProfile=next==="real";avatarPcmReady=false;
   localStorage.setItem("lumi-avatar-mode",next);
   portrait.dataset.avatarMode=next;portrait.classList.remove("dh-live-ready");
   digitalHumanFrame.title=next==="real"?"露米的真人形象":"露米的动漫形象";
@@ -340,11 +341,12 @@ async function prepareNeuralSpeech(text, emotion, batch, action="idle") {
 function prepareStreamingNeuralSpeech(text,emotion,batch,behavior={action:"idle"}){
   const action=typeof behavior==="string"?behavior:behavior?.action||"idle";
   const frameOffset=typeof behavior==="object"?Math.max(0,Number(behavior?.frameOffset)||0):0;
+  const externalAudio=avatarPcmReady&&avatarAudioContext?.state==="running";
   const queue=[],waiters=[];let ended=false,failure=null,firstSegmentObserved=false;
   const wake=()=>{while(waiters.length&&(queue.length||ended||failure))waiters.shift()();};
   const controller=new AbortController();
   const consume=(async()=>{
-    const response=await fetch("/api/dinet/speech-stream",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({text,emotion,voice:voiceProfile,action,frameOffset}),signal:controller.signal});
+    const response=await fetch("/api/dinet/speech-stream",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({text,emotion,voice:voiceProfile,action,frameOffset,externalAudio}),signal:controller.signal});
     if(!response.ok||!response.body){const data=await response.json().catch(()=>({}));throw new Error(data.error||"流式回答准备失败");}
     await consumeEventStream(response,async(event,data)=>{
       if(batch!==speechBatch){controller.abort();return;}
@@ -535,7 +537,7 @@ $("#clearButton").addEventListener("click",async()=>{
 captionButton.addEventListener("click",()=>{ const visible=!document.body.classList.contains("show-captions");document.body.classList.toggle("show-captions",visible);captionButton.setAttribute("aria-pressed",String(visible));captionButton.title=visible?"隐藏右侧聊天记录":"显示右侧聊天记录";if(visible)messages.scrollTop=messages.scrollHeight;});
 window.addEventListener("message",event=>{
   if(event.origin!==location.origin||event.source!==digitalHumanFrame?.contentWindow)return;
-  if(event.data?.type==="dh-live-ready"){portrait.classList.add("dh-live-ready");statusText.textContent="真人形象已就绪";}
+  if(event.data?.type==="dh-live-ready"){portrait.classList.add("dh-live-ready");statusText.textContent="真人形象已就绪";if(voiceCallActive)digitalHumanFrame?.contentWindow?.postMessage({type:"wav2lip-audio-unlock"},location.origin);}
   if(event.data?.type==="vrm-ready"){
     portrait.classList.add("dh-live-ready");
     if(animeLooks[event.data.look]){animeLook=event.data.look;animeLookSelect.value=animeLook;}
@@ -543,7 +545,7 @@ window.addEventListener("message",event=>{
   }
   if(event.data?.type==="vrm-behavior-accepted"){portrait.dataset.vrmAction=event.data.action;portrait.dataset.vrmActionStarted=String(Boolean(event.data.started));}
   if(event.data?.type==="dh-live-audio-accepted") portrait.dataset.dhAudioBytes=String(event.data.bytes||0);
-  if(event.data?.type==="wav2lip-audio-mode"){portrait.dataset.audioMode=event.data.mode;portrait.dataset.audioGapMs=String(event.data.gapMs||0);}
+  if(event.data?.type==="wav2lip-audio-mode"){portrait.dataset.audioMode=event.data.mode;portrait.dataset.audioGapMs=String(event.data.gapMs||0);avatarPcmReady=event.data.mode==="pcm-ready"||event.data.mode==="pcm";}
   if(event.data?.type==="wav2lip-ended"||event.data?.type==="wav2lip-error") pendingWav2LipPlaybacks.get(event.data.requestId)?.();
   if(event.data?.type==="dh-live-action-ready"||event.data?.type==="dh-live-action-error"){
     pendingActions.get(event.data.requestId)?.(); pendingActions.delete(event.data.requestId);

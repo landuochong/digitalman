@@ -41,7 +41,7 @@ export class DINetStreamSessionStore {
     this.sessions = new Map();
   }
 
-  start({ action = "idle", sampleRate = DEFAULT_SAMPLE_RATE, channels = DEFAULT_CHANNELS, frameOffset = 0 } = {}) {
+  start({ action = "idle", sampleRate = DEFAULT_SAMPLE_RATE, channels = DEFAULT_CHANNELS, frameOffset = 0, videoOnly = false } = {}) {
     if (sampleRate !== DEFAULT_SAMPLE_RATE || channels !== DEFAULT_CHANNELS) {
       throw streamError("流式 DINet 当前只接受 16 kHz、单声道 PCM16", 415);
     }
@@ -52,9 +52,9 @@ export class DINetStreamSessionStore {
     this.sessions.set(id, {
       id, action, sampleRate, channels, startedAt,
       firstChunkAt:null, nextSequence:0, bytes:0, chunks:[], state:"open",
-      segmentSequence:0, frameOffset, renderedAudioMs:0
+      segmentSequence:0, frameOffset, renderedAudioMs:0,videoOnly:Boolean(videoOnly)
     });
-    return { id, action, sampleRate, channels, frameOffset, nextSequence:0, mode:"stateful-segments" };
+    return { id, action, sampleRate, channels, frameOffset,videoOnly:Boolean(videoOnly), nextSequence:0, mode:"stateful-segments" };
   }
 
   append(id, sequence, chunk) {
@@ -131,7 +131,7 @@ export class DINetStreamSessionStore {
       const rendered=await this.renderer.render(
         encodePcm16Wav(pcm,session.sampleRate,session.channels),
         session.action,
-        {frameOffset,outputFrames,streamId:id,streamFinal:final}
+        {frameOffset,outputFrames,streamId:id,streamFinal:final,videoOnly:session.videoOnly}
       );
       const frames=Number(rendered?.metrics?.frames)||outputFrames;
       session.frameOffset+=frames;
@@ -139,7 +139,7 @@ export class DINetStreamSessionStore {
       const result={
         ...rendered,
         segment:{
-          id,sequence,frameOffset,audioMs:Math.round(take/bytesPerMs),renderMs:Math.round(this.now()-renderStartedAt),audioMode:"stateful",
+          id,sequence,frameOffset,audioMs:Math.round(take/bytesPerMs),renderMs:Math.round(this.now()-renderStartedAt),audioMode:session.videoOnly?"external-pcm":"multiplexed",
           audio:{encoding:"pcm_s16le",sampleRate:session.sampleRate,channels:session.channels,data:pcm.toString("base64")}
         }
       };

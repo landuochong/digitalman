@@ -46,6 +46,9 @@ test("DINet streams raw frames into the final H.264 encode",async()=>{
   assert.match(source,/subprocess\.Popen/);
   assert.match(source,/"-f", "rawvideo"/);
   assert.match(source,/"-preset", "veryfast"/);
+  assert.match(source,/if video_only:/);
+  assert.match(source,/"-an"/);
+  assert.match(source,/"videoOnly": video_only/);
   assert.match(source,/audio_offset_ms/);
   assert.match(source,/StreamingAudio2BlendShape/);
   assert.match(source,/stream_id/);
@@ -101,6 +104,7 @@ test("stream endpoint reports TTS and first playable segment timing",async()=>{
   assert.match(server,/prepareAvatarAction\(initialState\.action,trace\)/);
   assert.match(server,/prepareAvatarAction\(groundedResult\.action,trace\)/);
   assert.match(server,/assetPrepareMs/);
+  assert.match(server,/videoOnly:data\.externalAudio===true/);
 });
 
 test("prepares a resolved action through the serialized persistent worker",async()=>{

@@ -1,4 +1,4 @@
-import { VrmCompanion } from "./vrm-avatar.js?v=20260813-fast-voice-turn-v9";
+import { VrmCompanion } from "./vrm-avatar.js?v=20260813-video-only-stream-v10";
 
 const looks={classic:"/vrm/models/lumi-cc0.vrm",soft:"/vrm/models/avatar-sample-a.vrm",vivid:"/vrm/models/avatar-sample-b.vrm",nike1:"/vrm/models/nikechan_v1.vrm",nike2:"/vrm/models/nikechan_v2.vrm"};
 let activeLook=localStorage.getItem("lumi-vrm-look")||"nike1";

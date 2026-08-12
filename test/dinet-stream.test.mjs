@@ -80,8 +80,8 @@ test("drains 800 ms segments early and keeps the action frame clock continuous",
   const tail=await store.drain(session.id,{final:true});
   assert.equal(tail.length,1);assert.equal(tail[0].segment.audioMs,700);
   assert.deepEqual(calls,[
-    {bytes:25_600,action:"wave_approval",frameOffset:0,outputFrames:20,streamId:session.id,streamFinal:false},
-    {bytes:22_400,action:"wave_approval",frameOffset:25,outputFrames:18,streamId:session.id,streamFinal:true},
+    {bytes:25_600,action:"wave_approval",frameOffset:0,outputFrames:20,streamId:session.id,streamFinal:false,videoOnly:false},
+    {bytes:22_400,action:"wave_approval",frameOffset:25,outputFrames:18,streamId:session.id,streamFinal:true,videoOnly:false},
   ]);
   assert.deepEqual(store.complete(session.id),{id:session.id,completed:true,segments:2,audioMs:1500});
 });
@@ -97,8 +97,24 @@ test("emits a shorter first segment before returning to the steady window",async
   const segments=await store.drain(session.id);
   assert.deepEqual(segments.map(item=>item.segment.audioMs),[400,800]);
   assert.deepEqual(segments.map(item=>item.segment.frameOffset),[0,10]);
-  assert.deepEqual(segments.map(item=>item.segment.audioMode),["stateful","stateful"]);
+  assert.deepEqual(segments.map(item=>item.segment.audioMode),["multiplexed","multiplexed"]);
   assert.deepEqual(calls.map(item=>item.outputFrames),[10,20]);
+});
+
+test("renders video-only segments when external PCM playback is negotiated",async()=>{
+  const calls=[];
+  const store=new DINetStreamSessionStore({
+    firstSegmentMs:400,
+    renderer:{render:async(_wav,_action,options)=>{calls.push(options);return{url:"/silent-video.mp4",videoOnly:true,metrics:{frames:options.outputFrames}};}}
+  });
+  const session=store.start({action:"caring",videoOnly:true});
+  assert.equal(session.videoOnly,true);
+  store.append(session.id,0,Buffer.alloc(20_480));
+  const [segment]=await store.drain(session.id);
+  assert.equal(calls[0].videoOnly,true);
+  assert.equal(segment.videoOnly,true);
+  assert.equal(segment.segment.audioMode,"external-pcm");
+  assert.equal(Buffer.from(segment.segment.audio.data,"base64").length,12_800);
 });
 
 test("defaults to uniform 800 ms segments that preserve playback headroom",async()=>{

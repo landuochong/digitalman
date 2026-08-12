@@ -7,7 +7,7 @@ import { createInterface } from "node:readline";
 import { inferAudioExtension } from "./wav2lip-render.mjs";
 import { listRealActionAssets, resolveRealActionAsset } from "./real-actions.mjs";
 
-const RENDER_PROFILE = "dinet-mini-25fps-bedroom-background-v10-single-pass-encode";
+const RENDER_PROFILE = "dinet-mini-25fps-bedroom-background-v11-optional-video-only-stream";
 
 export function buildDINetWorkerCommand(projectRoot) {
   return {
@@ -72,7 +72,7 @@ class PersistentDINetWorker {
     clearTimeout(this.active.timer); this.active.reject(error); this.active = null;
   }
 
-  render(audioPath, outputPath, asset, frameOffset=0, audioOffsetMs=0, outputFrames=0, streamId="", streamFinal=false) {
+  render(audioPath, outputPath, asset, frameOffset=0, audioOffsetMs=0, outputFrames=0, streamId="", streamFinal=false, videoOnly=false) {
     const task = this.chain.then(async () => {
       await this.start();
       return new Promise((resolve, reject) => {
@@ -91,6 +91,7 @@ class PersistentDINetWorker {
           outputFrames,
           streamId,
           streamFinal,
+          videoOnly,
           asset:join(this.projectRoot, "public", "dh-live", "actions", asset)
         })}\n`);
       });
@@ -160,7 +161,7 @@ export class DINetRenderStore {
   prepareAction(action="idle"){return this.worker.prepare(resolveRealActionAsset(action));}
   cancelStream(streamId){return this.worker.cancelStream(streamId);}
 
-  async render(audioBuffer, action="idle", { frameOffset=0, audioOffsetMs=0, outputFrames=0, streamId="", streamFinal=false }={}) {
+  async render(audioBuffer, action="idle", { frameOffset=0, audioOffsetMs=0, outputFrames=0, streamId="", streamFinal=false, videoOnly=false }={}) {
     const extension = inferAudioExtension(audioBuffer);
     if (extension !== "wav") {
       throw Object.assign(new Error("DINet 当前仅接受 PCM WAV 音频"), { status:415 });
@@ -181,6 +182,7 @@ export class DINetRenderStore {
       .update(`audio-offset-ms:${audioOffsetMs}`)
       .update(`output-frames:${outputFrames}`)
       .update(`stream-id:${streamId}`)
+      .update(`video-only:${Boolean(videoOnly)}`)
       .update(`${videoInfo.size}:${videoInfo.mtimeMs}:${dataInfo.size}:${dataInfo.mtimeMs}`)
       .update(audioBuffer)
       .digest("hex")
@@ -189,34 +191,35 @@ export class DINetRenderStore {
     const outputPath = join(this.outputDir, outputName);
     if (await exists(outputPath)) {
       const info = await stat(outputPath);
-      return { url:`/dinet-avatar/generated/${outputName}`, bytes:info.size, cached:true,action,asset };
+      return { url:`/dinet-avatar/generated/${outputName}`, bytes:info.size, cached:true,action,asset,videoOnly:Boolean(videoOnly) };
     }
     if (this.pending.has(hash)) return this.pending.get(hash);
 
-    const task = this.#render(hash, audioBuffer, outputPath, outputName,asset,action,frameOffset,audioOffsetMs,outputFrames,streamId,streamFinal)
+    const task = this.#render(hash, audioBuffer, outputPath, outputName,asset,action,frameOffset,audioOffsetMs,outputFrames,streamId,streamFinal,Boolean(videoOnly))
       .finally(() => this.pending.delete(hash));
     this.pending.set(hash, task);
     return task;
   }
 
-  async #render(hash, audioBuffer, outputPath, outputName,asset,action,frameOffset,audioOffsetMs,outputFrames,streamId,streamFinal) {
+  async #render(hash, audioBuffer, outputPath, outputName,asset,action,frameOffset,audioOffsetMs,outputFrames,streamId,streamFinal,videoOnly) {
     await mkdir(this.workDir, { recursive:true });
     await mkdir(this.outputDir, { recursive:true });
     const audioPath = join(this.workDir, `${hash}.wav`);
     const stagingPath = join(this.workDir, `${hash}.partial.mp4`);
     await writeFile(audioPath, audioBuffer, { mode:0o600 });
     try {
-      const metrics = await this.worker.render(audioPath, stagingPath, asset, frameOffset, audioOffsetMs, outputFrames, streamId, streamFinal);
+      const metrics = await this.worker.render(audioPath, stagingPath, asset, frameOffset, audioOffsetMs, outputFrames, streamId, streamFinal, videoOnly);
       await rename(stagingPath, outputPath);
       const info = await stat(outputPath);
       return {
         url:`/dinet-avatar/generated/${outputName}`,
         bytes:info.size,
         cached:false,
-        action,asset,frameOffset,
+        action,asset,frameOffset,videoOnly,
         metrics:{
           frames:metrics.frames,
           audioMode:metrics.audioMode,
+          videoOnly:Boolean(metrics.videoOnly),
           audioMs:metrics.audioMs,
           framesMs:metrics.framesMs,
           muxMs:metrics.muxMs,
