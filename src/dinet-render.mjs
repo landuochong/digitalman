@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { createInterface } from "node:readline";
 import { inferAudioExtension } from "./wav2lip-render.mjs";
 import { listRealActionAssets, resolveRealActionAsset } from "./real-actions.mjs";
+import { GeneratedMediaCache } from "./generated-media-cache.mjs";
 
 const RENDER_PROFILE = "dinet-mini-25fps-bedroom-background-v11-optional-video-only-stream";
 
@@ -137,7 +138,9 @@ export class DINetRenderStore {
     this.workDir = join(projectRoot, "data", "dinet-render");
     this.outputDir = join(projectRoot, "public", "dinet-avatar", "generated");
     this.pending = new Map();
+    this.cache=new GeneratedMediaCache({directory:this.outputDir});
     this.worker = new PersistentDINetWorker(this.projectRoot);
+    this.cache.prune().catch(()=>{});
     if (autostart) this.worker.start().catch(() => {});
   }
 
@@ -158,6 +161,7 @@ export class DINetRenderStore {
   }
 
   warmup(){return this.worker.start();}
+  cacheStatus(){return this.cache.snapshot();}
   prepareAction(action="idle"){return this.worker.prepare(resolveRealActionAsset(action));}
   cancelStream(streamId){return this.worker.cancelStream(streamId);}
 
@@ -189,10 +193,8 @@ export class DINetRenderStore {
       .slice(0, 24);
     const outputName = `${hash}.mp4`;
     const outputPath = join(this.outputDir, outputName);
-    if (await exists(outputPath)) {
-      const info = await stat(outputPath);
-      return { url:`/dinet-avatar/generated/${outputName}`, bytes:info.size, cached:true,action,asset,videoOnly:Boolean(videoOnly) };
-    }
+    const cachedInfo=await this.cache.use(outputPath);
+    if(cachedInfo)return { url:`/dinet-avatar/generated/${outputName}`, bytes:cachedInfo.size, cached:true,action,asset,videoOnly:Boolean(videoOnly) };
     if (this.pending.has(hash)) return this.pending.get(hash);
 
     const task = this.#render(hash, audioBuffer, outputPath, outputName,asset,action,frameOffset,audioOffsetMs,outputFrames,streamId,streamFinal,Boolean(videoOnly))
@@ -211,6 +213,7 @@ export class DINetRenderStore {
       const metrics = await this.worker.render(audioPath, stagingPath, asset, frameOffset, audioOffsetMs, outputFrames, streamId, streamFinal, videoOnly);
       await rename(stagingPath, outputPath);
       const info = await stat(outputPath);
+      void this.cache.prune({protectedPaths:[outputPath]}).catch(()=>{});
       return {
         url:`/dinet-avatar/generated/${outputName}`,
         bytes:info.size,

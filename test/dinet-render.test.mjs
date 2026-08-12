@@ -41,6 +41,13 @@ test("includes action package version in the DINet cache key",async()=>{
   assert.match(source,/dataInfo\.mtimeMs/);
 });
 
+test("bounds generated DINet media while protecting a newly returned file",async()=>{
+  const source=await readFile(new URL("../src/dinet-render.mjs",import.meta.url),"utf8");
+  assert.match(source,/new GeneratedMediaCache\(\{directory:this\.outputDir\}\)/);
+  assert.match(source,/await this\.cache\.use\(outputPath\)/);
+  assert.match(source,/this\.cache\.prune\(\{protectedPaths:\[outputPath\]\}\)/);
+});
+
 test("DINet streams raw frames into the final H.264 encode",async()=>{
   const source=await readFile(new URL("../scripts/dinet_worker.py",import.meta.url),"utf8");
   assert.match(source,/subprocess\.Popen/);
@@ -127,4 +134,5 @@ test("action preparation diagnostic endpoint stays loopback-only",async()=>{
   assert.match(server,/pathname==="\/api\/dinet\/prepare-action"/);
   assert.match(server,/isLoopbackAddress\(req\.socket\.remoteAddress\)/);
   assert.match(server,/dinetRenders\.prepareAction/);
+  assert.match(server,/cache:await dinetRenders\.cacheStatus\(\)/);
 });
