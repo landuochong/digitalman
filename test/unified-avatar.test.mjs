@@ -15,16 +15,19 @@ test("main voice page offers real and anime modes in one conversation",async()=>
   assert.match(html,/id="personaVoice"/);
   assert.match(html,/人物设置/);
   assert.match(app,/lumi-avatar-mode/);
-  assert.match(html,/app\.js\?v=20260812-stream-v3/);
+  assert.match(html,/app\.js\?v=20260812-behavior-director-v1/);
   assert.match(html,/aria-label="开始通话" aria-pressed="false"/);
-  assert.match(app,/avatarRuntimeVersion="20260812-stream-v3"/);
+  assert.match(app,/avatarRuntimeVersion="20260812-behavior-director-v1"/);
   assert.match(app,/lumi-vrm-look/);
   assert.match(app,/lumi-vrm-persona/);
   assert.match(app,/lumi-voice-profile/);
   assert.match(app,/\/api\/voices/);
   assert.match(app,/voice:voiceProfile/);
   assert.match(app,/action=\$\{encodeURIComponent\(action\)\}/);
-  assert.match(app,/conversationActions\.actionForSentence\(data\.text,sentenceIndex,data\.action\|\|currentAction\)/);
+  assert.match(app,/conversationActions\.planForSentence\(data\.text,sentenceIndex,data\.action\|\|currentAction,currentEmotion\)/);
+  assert.match(app,/portrait\.dataset\.behavior=JSON\.stringify\(sentencePlan\)/);
+  assert.match(app,/behavior:sentencePlan/);
+  assert.match(app,/conversation-actions\.js\?v=20260812-behavior-director-v1/);
   assert.match(app,/bow:"\/real-actions\/bedroom_bow_silent\.mp4"/);
   assert.match(app,/surprise:"\/real-actions\/bedroom_surprise_silent\.mp4"/);
   assert.match(app,/if\(silentAction\)await playSilentNeuralAction/);
@@ -51,7 +54,7 @@ test("user-facing pages hide provider and rendering implementation names",async(
 
 test("real avatar video covers the complete left panel",async()=>{
   const [html,css]=await Promise.all([readPublic("wav2lip-avatar/avatar.html"),readPublic("wav2lip-avatar/avatar.css")]);
-  assert.match(html,/avatar\.css\?v=20260812-stream-v3/);
+  assert.match(html,/avatar\.css\?v=20260812-behavior-director-v1/);
   assert.match(css,/\.avatar-layer\{[^}]*width:100%;height:100%;object-fit:cover;object-position:center center/);
   assert.match(css,/#stage\{[^}]*lumi-bedroom-background-v1\.png[^}]*center\/cover/);
 });
@@ -62,6 +65,8 @@ test("embedded anime view receives shared speech and behavior events",async()=>{
   assert.match(html,/vrm-embed\.js/);
   assert.match(app,/\|\|"nike1"/);
   for(const event of ["vrm-ready","vrm-behavior","vrm-behavior-accepted","vrm-speaking","vrm-audio-level","vrm-clear","vrm-finish-gesture","vrm-view-angle"])assert.match(app,new RegExp(event));
+  assert.match(app,/data\.behavior\|\|null/);
+  assert.match(app,/dataset\.behavior=JSON\.stringify/);
 });
 
 test("anime avatar provides a restrained one-shot nod gesture",async()=>{
@@ -113,8 +118,8 @@ test("streaming avatar experiment consumes ordered server segments and cancels s
 test("captions stay inside the right panel without hiding the avatar",async()=>{
   const [html,app,voice,style]=await Promise.all([readPublic("index.html"),readPublic("app.js"),readPublic("voice.css"),readPublic("style.css")]);
   assert.match(html,/aria-controls="messages"/);
-  assert.match(html,/voice\.css\?v=20260812-stream-v3/);
-  assert.match(html,/style\.css\?v=20260812-stream-v3/);
+  assert.match(html,/voice\.css\?v=20260812-behavior-director-v1/);
+  assert.match(html,/style\.css\?v=20260812-behavior-director-v1/);
   assert.match(html,/id="liveTranscript" aria-live="off" hidden/);
   assert.match(app,/if\(visible\)messages\.scrollTop=messages\.scrollHeight/);
   assert.match(voice,/\.voice-panel \{[^}]*overflow: hidden/);

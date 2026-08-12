@@ -35,3 +35,16 @@ test("limits repeated large inferred gestures but preserves explicit requests",(
   assert.equal(scheduler.startTurn({message:"给我鼓掌",action:"clap"}).action,"clap");
   assert.equal(conversationActionPolicy.cooldownMs,3000);
 });
+
+test("builds an observable behavior timeline without another model call",()=>{
+  const scheduler=new ConversationActionScheduler();
+  const turn=scheduler.startTurn({message:"我今天有点累",action:"caring",emotion:"caring"});
+  assert.deepEqual({action:turn.action,gaze:turn.gaze,head:turn.head},{action:"caring",gaze:"user",head:"slight_tilt"});
+  assert.ok(turn.intensity>0&&turn.holdMs>=3000);
+  const opener=scheduler.planForSentence("辛苦了，",0,"caring","caring");
+  const body=scheduler.planForSentence("慢慢来，我陪你。",1,"caring","caring");
+  assert.equal(opener.action,"idle");assert.equal(opener.deferred,true);
+  assert.equal(body.action,"caring");assert.equal(body.deferred,true);
+  assert.deepEqual(scheduler.getTimeline().map(item=>item.action),["caring","idle","caring"]);
+  assert.ok(conversationActionPolicy.behaviorActions.includes("nod"));
+});

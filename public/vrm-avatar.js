@@ -14,7 +14,7 @@ export class VrmCompanion{
   constructor(canvas,{modelUrl="/vrm/models/lumi-cc0.vrm",restPose="natural",onReady,onError}={}){
     this.canvas=canvas;this.onReady=onReady;this.onError=onError;
     this.clock=new THREE.Clock();this.vrm=null;this.audioLevel=0;this.speaking=false;this.blush=0;this.blushMeshes=[];this.forearmOverlays=[];
-    this.emotion="calm";this.action="idle";this.expression=0;this.blink=0;
+    this.emotion="calm";this.action="idle";this.expression=0;this.blink=0;this.behaviorIntensity=.2;this.gaze="user";this.lookOffset=new THREE.Vector3();
     this.nextBlink=2.2+Math.random()*2;this.blinkTime=-1;this.lastGesture=-Infinity;
     this.modelUrl=modelUrl;this.loadingToken=0;this.motion=new VrmMotionController();this.motion.restPose=restPose;
     this.scene=new THREE.Scene();
@@ -159,8 +159,9 @@ export class VrmCompanion{
   nudgeViewAngle(degrees){return this.setViewAngle(this.getViewAngle()+degrees);}
   getViewAngle(){const offset=this.camera.position.clone().sub(this.controls.target);return THREE.MathUtils.radToDeg(Math.atan2(offset.x,offset.z));}
   resetView(){this.fitModel();return 0;}
-  setBehavior(emotion="calm",action="idle",force=false,holdGesture=false){
+  setBehavior(emotion="calm",action="idle",force=false,holdGesture=false,behavior=null){
     this.emotion=emotion;this.action=action;
+    this.behaviorIntensity=clamp(Number(behavior?.intensity)||.2,.05,.85);this.gaze=String(behavior?.gaze||"user");
     const now=this.clock.elapsedTime;
     if(GESTURES.has(action)&&(force||now-this.lastGesture>=3)){
       this.lastGesture=now;void this.motion.play(action,{hold:holdGesture});
@@ -181,7 +182,8 @@ export class VrmCompanion{
     this.setExpression("blink",this.blink);
   }
   updateExpressions(dt,t){
-    const target=this.emotion==="happy"||this.emotion==="excited"?.28:this.emotion==="caring"?.12:.04;
+    const base=this.emotion==="happy"||this.emotion==="excited"?.28:this.emotion==="caring"?.12:.04;
+    const target=base*(.72+this.behaviorIntensity*.72);
     this.expression=damp(this.expression,target,4,dt);this.setExpression("happy",this.expression);
     this.setExpression("relaxed",this.emotion==="calm"?.1:0);
     this.setExpression("surprised",this.motion.activeAction==="surprise"?.34:0);
@@ -199,7 +201,12 @@ export class VrmCompanion{
     requestAnimationFrame(()=>this.animate());
     const dt=Math.min(this.clock.getDelta(),.05),t=this.clock.elapsedTime;
     this.controls.update();
-    if(this.vrm){this.lookTarget.position.copy(this.camera.position);this.motion.update(dt);this.updateBlink(t,dt);this.updateExpressions(dt,t);this.vrm.update(dt);}
+    if(this.vrm){
+      const targetX=this.gaze==="aside"?.11:0,targetY=this.gaze==="down"?-.08:this.gaze==="up"?.06:0;
+      this.lookOffset.x=damp(this.lookOffset.x,targetX,3.2,dt);this.lookOffset.y=damp(this.lookOffset.y,targetY,3.2,dt);
+      this.lookTarget.position.copy(this.camera.position).add(this.lookOffset);
+      this.motion.update(dt);this.updateBlink(t,dt);this.updateExpressions(dt,t);this.vrm.update(dt);
+    }
     this.renderer.render(this.scene,this.camera);
   }
 }

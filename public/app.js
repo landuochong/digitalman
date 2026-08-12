@@ -1,4 +1,4 @@
-import { ConversationActionScheduler } from "./conversation-actions.js?v=20260810-conversation-actions-v2";
+import { ConversationActionScheduler } from "./conversation-actions.js?v=20260812-behavior-director-v1";
 
 const $ = (selector) => document.querySelector(selector);
 const portrait = $("#portrait"), wave = $("#soundWave"), messages = $("#messages");
@@ -6,7 +6,7 @@ const input = $("#messageInput"), form = $("#chatForm"), sendButton = $("#sendBu
 const micButton = $("#micButton"), modeBanner = $("#modeBanner"), statusText = $("#statusText");
 const voiceButton = $("#voiceButton"), voicePrompt = $("#voicePrompt"), liveTranscript = $("#liveTranscript"), captionButton = $("#captionButton");
 const digitalHumanFrame = $("#digitalHumanFrame");
-const avatarRuntimeVersion="20260812-stream-v3";
+const avatarRuntimeVersion="20260812-behavior-director-v1";
 const avatarRuntimeUrl=path=>`${path}?v=${avatarRuntimeVersion}`;
 const avatarProfile = new URLSearchParams(location.search).get("profile");
 const selfRecordedProfile = avatarProfile === "self";
@@ -156,10 +156,10 @@ function setEmotion(emotion = "neutral") {
   portrait.dataset.emotion = emotion;
   $("#emotionLabel").textContent = emotionText[emotion] || emotionText.neutral;
 }
-function setDigitalHumanAction(action = "idle",{force=false,hold=true}={}) {
+function setDigitalHumanAction(action = "idle",{force=false,hold=true,behavior=null}={}) {
   if (!digitalHumanFrame?.contentWindow) return Promise.resolve();
   if (switchableAvatarProfile && avatarMode === "anime") {
-    digitalHumanFrame.contentWindow.postMessage({type:"vrm-behavior",emotion:portrait.dataset.emotion||"calm",action,force,hold},location.origin);
+    digitalHumanFrame.contentWindow.postMessage({type:"vrm-behavior",emotion:portrait.dataset.emotion||"calm",action,force,hold,behavior},location.origin);
     return Promise.resolve();
   }
   if (neuralAvatarProfile) return Promise.resolve();
@@ -457,7 +457,7 @@ async function reply(message) {
       if (event === "meta") {
         mode=data.mode; currentEmotion=data.emotion || "calm"; setEmotion(currentEmotion);
         const plan=conversationActions.startTurn({message,emotion:currentEmotion,action:data.action||"idle"});
-        currentAction=plan.action;
+        currentAction=plan.action;portrait.dataset.behavior=JSON.stringify(plan);
       }
       if (event === "sentence") {
         $("#typing")?.remove(); streamedText += data.text;
@@ -465,8 +465,9 @@ async function reply(message) {
         article.querySelector("p").textContent = streamedText;
         if(data.emotion){currentEmotion=data.emotion;setEmotion(currentEmotion);}
         const sentenceIndex=spokenSentenceCount++;
-        const sentenceAction=conversationActions.actionForSentence(data.text,sentenceIndex,data.action||currentAction);
-        if(sentenceAction!=="idle")setDigitalHumanAction(sentenceAction,{force:true,hold:true}).catch(()=>{});
+        const sentencePlan=conversationActions.planForSentence(data.text,sentenceIndex,data.action||currentAction,currentEmotion);
+        const sentenceAction=sentencePlan.action;portrait.dataset.behavior=JSON.stringify(sentencePlan);
+        if(sentenceAction!=="idle")setDigitalHumanAction(sentenceAction,{force:true,hold:true,behavior:sentencePlan}).catch(()=>{});
         enqueueSpeech(data.text,currentEmotion,batch,sentenceAction);
       }
       if (event === "error") throw new Error(data.error || "回答中断");
