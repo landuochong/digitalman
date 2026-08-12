@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 const DEFAULT_SAMPLE_RATE = 16_000;
 const DEFAULT_CHANNELS = 1;
 const DEFAULT_MAX_AUDIO_MS = 60_000;
-const DEFAULT_SEGMENT_MS = 800;
+const DEFAULT_SEGMENT_MS = 1200;
 const DEFAULT_FIRST_SEGMENT_MS = 400;
 const MIN_TAIL_MS = 240;
 

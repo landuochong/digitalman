@@ -6,7 +6,7 @@ const input = $("#messageInput"), form = $("#chatForm"), sendButton = $("#sendBu
 const micButton = $("#micButton"), modeBanner = $("#modeBanner"), statusText = $("#statusText");
 const voiceButton = $("#voiceButton"), voicePrompt = $("#voicePrompt"), liveTranscript = $("#liveTranscript"), captionButton = $("#captionButton");
 const digitalHumanFrame = $("#digitalHumanFrame");
-const avatarRuntimeVersion="20260812-bedroom-v1";
+const avatarRuntimeVersion="20260812-stream-v3";
 const avatarRuntimeUrl=path=>`${path}?v=${avatarRuntimeVersion}`;
 const avatarProfile = new URLSearchParams(location.search).get("profile");
 const selfRecordedProfile = avatarProfile === "self";
@@ -349,9 +349,13 @@ function prepareStreamingNeuralSpeech(text,emotion,batch,action="idle"){
 
 async function playStreamingNeuralSpeech(stream,batch){
   const playbacks=[];
-  while(batch===speechBatch){
-    const item=await stream.next();if(item.done)break;
-    playbacks.push(playPreparedNeuralSpeech(item.value,batch,{enqueue:true}));
+  try{
+    while(batch===speechBatch){
+      const item=await stream.next();if(item.done)break;
+      playbacks.push(playPreparedNeuralSpeech(item.value,batch,{enqueue:true}));
+    }
+  }finally{
+    if(batch===speechBatch)digitalHumanFrame.contentWindow.postMessage({type:"wav2lip-stream-end"},location.origin);
   }
   await Promise.all(playbacks);
   if(batch===speechBatch)speaking(false);
@@ -528,7 +532,7 @@ if (Recognition) { const recognition = new Recognition(); recognition.lang="zh-C
   const beginCall=async()=>{if(voiceCallActive)return;voiceCallActive=true;stopSpeech();updateCallButton();setVoiceState("idle","正在准备麦克风…");try{await ensureVad();}catch{}if(voiceCallActive){setVoiceState("idle","通话已开始，请自然说话");scheduleListening(80);}};
   const toggleCall=()=>voiceCallActive?endCall():beginCall();
   recognition.onstart=()=>{recognitionRunning=true;recognizedText="";recognitionFailed=false;clearListeningGesture();conversationActions.finishTurn();digitalHumanFrame?.contentWindow?.postMessage({type:"vrm-finish-gesture"},location.origin);micButton.classList.add("listening");setVoiceState("listening","请自然说话，停顿后我会立即回答");setEmotion("curious");statusText.textContent="我在听…";startVadLoop();};
-  recognition.onresult=e=>{recognizedText=Array.from(e.results).map(r=>r[0].transcript).join("").trim();if(recognizedText)scheduleListeningGesture();liveTranscript.textContent=recognizedText||"我在听…"};
+  recognition.onresult=e=>{recognizedText=Array.from(e.results).map(r=>r[0].transcript).join("").trim();if(recognizedText)scheduleListeningGesture();};
   recognition.onend=async()=>{stopVadLoop();clearListeningGesture();recognitionRunning=false;micButton.classList.remove("listening");voiceButton.classList.remove("listening");const text=recognizedText;recognizedText="";if(!voiceCallActive)return;if(text&&!recognitionFailed){setVoiceState("thinking",`${persona.name}正在回应`);await submit(text);const completedQueue=speechQueue;await completedQueue.catch(()=>{});if(voiceCallActive){setVoiceState("idle","请继续说话");scheduleListening(180);}}else if(!recognitionFailed){setVoiceState("idle","我还在听，请继续说");scheduleListening(350)}};
   recognition.onerror=e=>{stopVadLoop();clearListeningGesture();recognitionFailed=true;micButton.classList.remove("listening");voiceButton.classList.remove("listening");const denied=e.error==="not-allowed"||e.error==="service-not-allowed";if(denied){voiceCallActive=false;releaseVad();updateCallButton();setVoiceState("idle","请允许浏览器使用麦克风后重试");}else if(voiceCallActive){setVoiceState("idle","没有听清楚，正在继续聆听");scheduleListening(500)}};
   micButton.onclick=toggleCall;voiceButton.onclick=toggleCall;updateCallButton();

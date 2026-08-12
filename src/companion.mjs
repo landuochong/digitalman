@@ -160,7 +160,7 @@ export function inferCompanionState(message, reply = "", companionState=null) {
   if (/笑一个|笑一下|微笑|笑一笑/.test(String(message))) return { emotion:"happy", action:"happy" };
   if (/害羞|脸红|不好意思|真可爱|好可爱|你.{0,6}(?:可爱|漂亮|好看|温柔|贴心|优秀|真棒|厉害)|喜欢你|夸夸你/.test(String(message))) return { emotion:"happy", action:"shy" };
   if (/你(?:真的)?(?:很|太)(?:棒|厉害|优秀|善良|贴心|了不起)|(?:真|很)(?:棒|厉害|优秀|善良|贴心|了不起)|做得(?:很好|真棒)|为你(?:感到)?骄傲/.test(String(reply))) return { emotion:"happy", action:"thumbs_up" };
-  if (/(?:挺|真|很)(?:好|不错|有心)/.test(String(reply))) return { emotion:"happy", action:"nod" };
+  if (/(?:挺|很)(?:好|不错|有心)|真(?:不错|有心)/.test(String(reply))) return { emotion:"happy", action:"nod" };
   if (/鼓掌|拍手|庆祝一下|帮我庆祝|为我庆祝|开心|高兴|成功|搞定|太好了|哈哈|好消息|恭喜|完成|做到了|通过了|赢了|录取|升职|顺利|终于/.test(text)) {
     return { emotion:"excited", action:"clap" };
   }
@@ -168,6 +168,14 @@ export function inferCompanionState(message, reply = "", companionState=null) {
   if (/不确定|不知道|也许|可能吧/.test(text)) return { emotion:"curious", action:"shrug" };
   if (/[?？]|为什么|怎么|如何|觉得|认为|怎么办|能不能|可以吗|要不要|推荐|帮我想|分析|选择|哪个好/.test(String(message))) return { emotion:"curious", action:"thinking" };
   if (/你好|嗨|哈喽|嘿|早上好|中午好|下午好|晚上好|在吗|hello|hi/i.test(String(message))) return { emotion:"happy", action:"wave_approval" };
+  // Natural low-amplitude gestures inferred from the actual reply. These are
+  // intentionally evaluated after explicit/high-energy user intents so they
+  // enrich ordinary conversation without replacing clap, surprise or caring.
+  if (/^(?:嗯|对|是的|没错|确实|当然|好呀|可以呀|行呀|知道了|明白了)|(?:我懂|我明白|我赞同|听起来不错|这样挺好|这个可以)/.test(String(reply))) return { emotion:"happy", action:"nod" };
+  if (/(?:真好|太好啦|很开心|挺开心|好喜欢|喜欢这样|听着就开心|让人高兴|很可爱|挺有意思)/.test(String(reply))) return { emotion:"happy", action:"happy" };
+  if (/(?:慢慢来|别着急|别担心|不用硬撑|先休息|歇一会|我陪你|我在呢|抱抱你|照顾好自己)/.test(String(reply))) return { emotion:"caring", action:"caring" };
+  if (/(?:我想想|让我想想|仔细想|先理一理|可以从.{0,8}开始|先看看|关键是|重点是)/.test(String(reply))) return { emotion:"curious", action:"thinking" };
+  if (/(?:我|刚刚|刚才|今天|昨天|终于).{0,18}(?:到了|到家|回来|吃完|看完|做完|下班|出门|散步|睡醒|起床|买了|学了|试了|见了|聊了|去了|完成了)/.test(String(message))) return { emotion:"happy", action:"nod" };
   if(companionState?.moodIntensity>=.32){
     const emotion=["happy","caring","curious","excited"].includes(companionState.mood)?companionState.mood:"calm";
     return { emotion, action:"idle" };

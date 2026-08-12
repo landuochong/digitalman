@@ -97,3 +97,14 @@ test("emits a shorter first segment before returning to the steady window",async
   assert.deepEqual(segments.map(item=>item.segment.audioMode),["stateful","stateful"]);
   assert.deepEqual(calls.map(item=>item.outputFrames),[10,20]);
 });
+
+test("defaults to a 400 ms opener and longer steady segments",async()=>{
+  const durations=[];
+  const store=new DINetStreamSessionStore({
+    renderer:{render:async(wav,_action,options)=>{durations.push(wav.readUInt32LE(40)/32);return{url:"/part.mp4",metrics:{frames:options.outputFrames}};}}
+  });
+  const session=store.start();
+  store.append(session.id,0,Buffer.alloc(65_280));
+  await store.drain(session.id);
+  assert.deepEqual(durations,[400,1200]);
+});

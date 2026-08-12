@@ -158,6 +158,13 @@ test("infers explicit nod and smile requests", () => {
   assert.deepEqual(inferCompanionState("我今天帮陌生人搬东西","挺好的。"), { emotion:"happy", action:"nod" });
   assert.deepEqual(inferCompanionState("笑一个"), { emotion:"happy", action:"happy" });
 });
+test("adds restrained gestures to ordinary reply language",()=>{
+  assert.deepEqual(inferCompanionState("我把书看完了","嗯，我明白你的意思。"),{emotion:"happy",action:"nod"});
+  assert.deepEqual(inferCompanionState("今天去散步了","听起来真好，我也很喜欢这样的傍晚。"),{emotion:"happy",action:"happy"});
+  assert.deepEqual(inferCompanionState("事情有点多","别着急，慢慢来，我陪你。"),{emotion:"caring",action:"caring"});
+  assert.deepEqual(inferCompanionState("这个方案很复杂","让我想想，重点是先理清顺序。"),{emotion:"curious",action:"thinking"});
+  assert.deepEqual(inferCompanionState("我刚吃完饭","那就好，吃饱了就舒服些。"),{emotion:"happy",action:"nod"});
+});
 test("extracts MiniMax chat content and strips thinking before parsing", () => {
   const text=extractMiniMaxChatText({choices:[{message:{content:'<think>分析</think>{"reply":"你好","emotion":"happy"}'}}]});
   assert.deepEqual(parseCompanionReply(text),{reply:"你好",emotion:"happy",action:"idle"});
