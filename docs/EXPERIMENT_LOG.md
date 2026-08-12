@@ -531,6 +531,8 @@ MiniMax TTS 改用北京低延迟入口 `api-bj.minimaxi.com`。同一短句本�
 
 分段音爆与停顿继续下探到播放器音轨。旧版每段 MP4 自带独立 AAC，浏览器只能在上一段 `ended` 后调用下一段 `play()`，即使内容有序仍会反复初始化媒体解码器。现在 segment 同时携带其原始 16 kHz PCM，iframe 用 Web Audio 绝对时钟连续调度，视频静音作为画面层；无法解锁 AudioContext 时自动回退 MP4 音轨。首段扩大到 800 毫秒后，热实测首段生成 531 毫秒，后三个 1.2 秒段分别 754、726、784 毫秒，稳定快于播放速度。流式 TTS 同时补齐情绪白名单：此前 `caring` 被原样放进 MiniMax `voice_setting.emotion` 会返回 `invalid params`，现在只发送上游支持的情绪，关心回复实测生成 5.05 秒音频成功。
 
+随后按真实浏览器消息链复查，发现主页面原先只把 `url/requestId` 转发给人物 iframe，服务端返回的 `segment.audio` 在最后一跳丢失，页面实际仍会使用 MP4 音轨；此外，iframe 收到异步 `postMessage` 后再创建 AudioContext 也可能错过按钮点击的用户激活。现把播放消息构造抽成可独立测试的协议函数，明确携带完整 segment，并由主页面在首次指针操作或开始通话时同步创建、恢复一个共享 AudioContext，iframe 只复用它。新增回归测试同时覆盖流式和整句消息，防止“服务端有 PCM、页面却没使用”的假通过。
+
 ## 10. 安全与配置
 
 - API Key 仅保存在 `.env`，不得写入代码、日志或本文档。

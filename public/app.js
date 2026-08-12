@@ -1,4 +1,5 @@
-import { ConversationActionScheduler } from "./conversation-actions.js?v=20260812-continuous-pcm-v5";
+import { ConversationActionScheduler } from "./conversation-actions.js?v=20260812-continuous-pcm-v7";
+import { buildWav2LipPlaybackMessage } from "./avatar-protocol.js?v=20260812-continuous-pcm-v7";
 
 const $ = (selector) => document.querySelector(selector);
 const portrait = $("#portrait"), wave = $("#soundWave"), messages = $("#messages");
@@ -6,7 +7,7 @@ const input = $("#messageInput"), form = $("#chatForm"), sendButton = $("#sendBu
 const micButton = $("#micButton"), modeBanner = $("#modeBanner"), statusText = $("#statusText");
 const voiceButton = $("#voiceButton"), voicePrompt = $("#voicePrompt"), liveTranscript = $("#liveTranscript"), captionButton = $("#captionButton");
 const digitalHumanFrame = $("#digitalHumanFrame");
-const avatarRuntimeVersion="20260812-continuous-pcm-v5";
+const avatarRuntimeVersion="20260812-continuous-pcm-v7";
 const avatarRuntimeUrl=path=>`${path}?v=${avatarRuntimeVersion}`;
 const avatarProfile = new URLSearchParams(location.search).get("profile");
 const selfRecordedProfile = avatarProfile === "self";
@@ -85,6 +86,17 @@ if(localStorage.getItem("lumi-history-schema")!==historySchema){localStorage.rem
 let history = JSON.parse(localStorage.getItem("lumi-history") || "[]");
 let mode = "demo", speakingToken = 0, audioContext, activeAudio, activeSpeechResolve, speechTimer, actionRequestId = 0;
 const activeStreamingSpeech=new Set();
+let avatarAudioContext=null;
+
+function unlockAvatarAudio(){
+  const Context=window.AudioContext||window.webkitAudioContext;
+  if(!Context)return Promise.resolve(null);
+  try{avatarAudioContext||=new Context({sampleRate:16000});}catch{return Promise.resolve(null);}
+  window.__lumiAvatarAudioContext=avatarAudioContext;
+  if(avatarAudioContext.state==="running")return Promise.resolve(avatarAudioContext);
+  return avatarAudioContext.resume().then(()=>avatarAudioContext).catch(()=>null);
+}
+document.addEventListener("pointerdown",()=>void unlockAvatarAudio(),{once:true,capture:true});
 let realSpeechTimelineMs=0;
 let speechQueue = Promise.resolve(), speechBatch = 0, activeReplyController;
 const conversationActions=new ConversationActionScheduler();
@@ -375,7 +387,7 @@ async function playPreparedNeuralSpeech(rendered, batch, {enqueue=false}={}) {
   if (!rendered || batch !== speechBatch) return;
   const requestId = crypto.randomUUID();
   speaking(true);
-  digitalHumanFrame.contentWindow.postMessage({ type:enqueue?"wav2lip-enqueue":"wav2lip-play", url:rendered.url, requestId }, location.origin);
+  digitalHumanFrame.contentWindow.postMessage(buildWav2LipPlaybackMessage(rendered,requestId,{enqueue}),location.origin);
   await new Promise(resolve => {
     const timer = setTimeout(() => { pendingWav2LipPlaybacks.delete(requestId); speaking(false); resolve(); }, 180_000);
     const finish = () => { clearTimeout(timer); pendingWav2LipPlaybacks.delete(requestId); if(!enqueue&&batch===speechBatch)speaking(false); activeSpeechResolve=null; resolve(); };
@@ -542,7 +554,7 @@ if (Recognition) { const recognition = new Recognition(); recognition.lang="zh-C
   const clearListeningGesture=()=>{clearTimeout(listeningGestureTimer);listeningGestureTimer=0;};
   const scheduleListeningGesture=()=>{if(listeningGestureTimer||avatarMode!=="anime")return;listeningGestureTimer=setTimeout(()=>{listeningGestureTimer=0;if(voiceCallActive&&recognitionRunning&&recognizedText)setDigitalHumanAction("nod",{force:true,hold:false}).catch(()=>{});},1400+Math.random()*700);};
   const endCall=()=>{voiceCallActive=false;clearTimeout(restartListeningTimer);clearListeningGesture();if(recognitionRunning)recognition.abort();releaseVad();stopSpeech();micButton.classList.remove("listening");voiceButton.classList.remove("listening","thinking","speaking");updateCallButton();setVoiceState("idle","通话已结束");statusText.textContent="在线 · 随时听你说";};
-  const beginCall=async()=>{if(voiceCallActive)return;voiceCallActive=true;stopSpeech();digitalHumanFrame?.contentWindow?.postMessage({type:"wav2lip-audio-unlock"},location.origin);updateCallButton();setVoiceState("idle","正在准备麦克风…");try{await ensureVad();}catch{}if(voiceCallActive){setVoiceState("idle","通话已开始，请自然说话");scheduleListening(80);}};
+  const beginCall=async()=>{if(voiceCallActive)return;voiceCallActive=true;stopSpeech();void unlockAvatarAudio();digitalHumanFrame?.contentWindow?.postMessage({type:"wav2lip-audio-unlock"},location.origin);updateCallButton();setVoiceState("idle","正在准备麦克风…");try{await ensureVad();}catch{}if(voiceCallActive){setVoiceState("idle","通话已开始，请自然说话");scheduleListening(80);}};
   const toggleCall=()=>voiceCallActive?endCall():beginCall();
   recognition.onstart=()=>{recognitionRunning=true;recognizedText="";recognitionFailed=false;clearListeningGesture();conversationActions.finishTurn();digitalHumanFrame?.contentWindow?.postMessage({type:"vrm-finish-gesture"},location.origin);micButton.classList.add("listening");setVoiceState("listening","请自然说话，停顿后我会立即回答");setEmotion("curious");statusText.textContent="我在听…";startVadLoop();};
   recognition.onresult=e=>{recognizedText=Array.from(e.results).map(r=>r[0].transcript).join("").trim();if(recognizedText)scheduleListeningGesture();};

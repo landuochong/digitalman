@@ -43,8 +43,9 @@ function pcmBuffer(context,audio){
 }
 
 async function ensureStreamAudio(){
-  const Context=window.AudioContext||window.webkitAudioContext;if(!Context)return null;
-  streamAudioContext||=new Context({sampleRate:16000});
+  const sharedContext=parent.__lumiAvatarAudioContext;
+  const Context=window.AudioContext||window.webkitAudioContext;if(!sharedContext&&!Context)return null;
+  streamAudioContext||=sharedContext||new Context({sampleRate:16000});
   if(streamAudioContext.state!=="running")await streamAudioContext.resume().catch(()=>{});
   return streamAudioContext.state==="running"?streamAudioContext:null;
 }
