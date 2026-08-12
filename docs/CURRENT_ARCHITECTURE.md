@@ -157,6 +157,8 @@ Audio2BlendShape 现已改为真正的会话状态：worker 为每轮语音保�
 
 端到端复测表明，热链路从提交问题到首个可播放视频为 2.48–2.96 秒，其中 M3 首个可朗读短语约 1.67–1.86 秒，WebSocket TTS 加首个 400 ms DINet 片段约 0.61–1.10 秒。服务重启后的首次 M3 请求曾因上游建连达到 15.4 秒，因此启动流程现在同时预热 DINet 与 M3；DINet 预热完成后才监听端口，M3 预热则在后台执行并设置 8 秒上限，防止云端波动反过来阻塞页面启动。M3 预热使用与真实聊天相同的默认人物提示，而不是无关的极短提示。人物身份与固定回复规则放在系统提示前部，变化较频繁的记忆和连续状态放在尾部，以利用 MiniMax 的前缀 Prompt 缓存。服务端本机诊断记录增加 `contextMs`、`upstreamConnectedMs`、`firstSentenceMs` 和 `totalMs`，用于区分本地准备、上游连接与模型生成波动。预热能消除极端冷启动，但云端 M3 仍可能把总首段推到 3.3–5.6 秒，因此 3 秒是正常网络中位数目标，不是硬实时保证；不使用与语义无关的固定套话掩盖模型延迟。
 
+首响诊断进一步细分为 `firstTextDeltaMs`、`firstCleanTextMs`、`firstSentenceMs`、TTS `ttsFirstAudioMs` 和 DINet `firstSegmentMs`。页面人物容器同步记录 `data-chat-first-sentence-ms`、`data-tts-first-audio-ms`、`data-avatar-pipeline-ms` 与从提交到首个 segment 的 `data-avatar-first-segment-ms`，不用再从两套日志手工对表。MiniMax 三轮热测中，首个正文 token 与首个可朗读短语只差 0–2 毫秒，说明当前中文标点/逗号分段没有增加首响延迟；主要波动发生在模型输出任何正文之前，不能靠更激进地切碎文案解决。
+
 长时间聊天的短期上下文现采用双层预算：浏览器只上传最近 8 条、每条最多 900 字；服务端再次限制为最近 8 条、短期正文合计最多 3600 字，并确保裁剪后不以孤立的 assistant 消息开头。人物设定、长期偏好和连续状态仍走独立上下文，不因短期裁剪丢失。快速朗读的逗号分段最低从 3 个有效字提高到 6 个，避免把“辛苦了，”之类短开场单独启动一次 TTS；完整句号、问号和感叹号仍立即释放。
 
 当前验证版以 PCM 的 `AudioContext` 绝对时钟为主时钟，每个无声视频分段开始时按实际音频进度校正 `currentTime`，从而避免独立 AAC 解码器切换，同时约束分段漂移。最终 fMP4 版仍要求音视频由同一个编码时间轴产生：每 16,000 个 16 kHz PCM 采样严格对应 25 个视频帧；不足一帧的采样留到下个块继续累计。FFmpeg 输出一次初始化片段，之后按较短 GOP 输出 `moof/mdat` 媒体片段，浏览器只按连续序号追加到同一个 `SourceBuffer`。

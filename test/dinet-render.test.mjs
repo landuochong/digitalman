@@ -90,3 +90,10 @@ test("neural avatar keeps a persistent idle layer behind speech", async () => {
   assert.doesNotMatch(styles,/body\.loading #state/);
   assert.match(styles,/body\.needs-play #state\{opacity:1/);
 });
+
+test("stream endpoint reports TTS and first playable segment timing",async()=>{
+  const server=await readFile(new URL("../server.mjs",import.meta.url),"utf8");
+  assert.match(server,/ttsFirstAudioMs:firstAudioAt/);
+  assert.match(server,/firstSegmentMs:firstSegmentAt/);
+  assert.match(server,/pipelineStartedAt/);
+});

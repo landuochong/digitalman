@@ -124,6 +124,10 @@ test("streaming avatar experiment consumes ordered server segments and cancels s
   assert.match(app,/lingerMs/);
   assert.match(app,/idleTimeMs:realSpeechTimelineMs/);
   assert.match(app,/dataset\.audioMode/);
+  assert.match(app,/dataset\.chatFirstSentenceMs/);
+  assert.match(app,/dataset\.avatarFirstSegmentMs/);
+  assert.match(app,/dataset\.ttsFirstAudioMs/);
+  assert.match(app,/dataset\.avatarPipelineMs/);
   assert.match(app,/window\.__lumiAvatarAudioContext=avatarAudioContext/);
   assert.match(app,/document\.addEventListener\("pointerdown",\(\)=>void unlockAvatarAudio\(\),\{once:true,capture:true\}\)/);
   assert.match(app,/void unlockAvatarAudio\(\)/);

@@ -207,7 +207,11 @@ async function miniMaxChatStream(message, history, persona, memories, companionS
       try {
         const chunk = JSON.parse(data);
         const delta = chunk?.choices?.[0]?.delta?.content;
-        if (typeof delta === "string") rawText += delta;
+        if (typeof delta === "string") {
+          if(delta&&!trace.timings.firstTextDeltaMs)trace.timings.firstTextDeltaMs=Math.round(performance.now()-trace._startedMs);
+          rawText += delta;
+          if(!trace.timings.firstCleanTextMs&&sanitizeReplyText(rawText))trace.timings.firstCleanTextMs=Math.round(performance.now()-trace._startedMs);
+        }
       } catch {}
     }
     emitAvailable(false);
@@ -380,6 +384,7 @@ export const server = http.createServer(async (req, res) => {
       const data=await body(req),text=String(data.text||"").trim().slice(0,1800);
       if(!text)return json(res,400,{error:"语音内容不能为空"});
       const controller=new AbortController();let closed=false;
+      const pipelineStartedAt=performance.now();let firstAudioAt=null,firstSegmentAt=null;
       res.on("close",()=>{if(!closed)controller.abort();});
       res.writeHead(200,{"content-type":"text/event-stream; charset=utf-8","cache-control":"no-cache, no-transform","x-accel-buffering":"no"});
       const session=dinetStreams.start({action:String(data.action||"idle"),frameOffset:Number(data.frameOffset||0)});
@@ -387,6 +392,7 @@ export const server = http.createServer(async (req, res) => {
       let chunkSequence=0,renderChain=Promise.resolve(),firstSegmentSent=false;
       const emitSegments=async(final=false)=>{
         const segments=await dinetStreams.drain(session.id,{final,onSegment:segment=>{
+          firstSegmentAt??=performance.now();
           firstSegmentSent=true;sendEvent(res,"segment",segment);
         }});
         return segments.length;
@@ -396,6 +402,7 @@ export const server = http.createServer(async (req, res) => {
           apiKey,text,model:miniMaxTtsModel,voice:voiceCatalog.resolve(data.voice),emotion:data.emotion,
           url:miniMaxTtsWsUrl,signal:controller.signal,
           onAudio:pcm=>{
+            firstAudioAt??=performance.now();
             dinetStreams.append(session.id,chunkSequence++,pcm);
             renderChain=renderChain.then(()=>emitSegments(false));
           }
@@ -403,7 +410,11 @@ export const server = http.createServer(async (req, res) => {
         await renderChain;
         await emitSegments(true);
         const completed=dinetStreams.complete(session.id);
-        sendEvent(res,"done",{...completed,tts:ttsMetrics,firstSegmentSent});
+        sendEvent(res,"done",{...completed,tts:ttsMetrics,firstSegmentSent,pipeline:{
+          ttsFirstAudioMs:firstAudioAt?Math.round(firstAudioAt-pipelineStartedAt):null,
+          firstSegmentMs:firstSegmentAt?Math.round(firstSegmentAt-pipelineStartedAt):null,
+          totalMs:Math.round(performance.now()-pipelineStartedAt)
+        }});
         closed=true;res.end();
       }catch(error){
         dinetStreams.cancel(session.id);sendEvent(res,"error",{error:error.message||"流式人物生成失败"});closed=true;res.end();

@@ -99,7 +99,7 @@ function unlockAvatarAudio(){
 }
 document.addEventListener("pointerdown",()=>void unlockAvatarAudio(),{once:true,capture:true});
 let realSpeechTimelineMs=0;
-let speechQueue = Promise.resolve(), speechBatch = 0, activeReplyController,activeAvatarStreamTurn=null;
+let speechQueue = Promise.resolve(), speechBatch = 0, activeReplyController,activeAvatarStreamTurn=null,activeReplyStartedAt=0;
 const conversationActions=new ConversationActionScheduler();
 let voiceCallActive = false;
 const pendingActions = new Map();
@@ -339,7 +339,7 @@ async function prepareNeuralSpeech(text, emotion, batch, action="idle") {
 function prepareStreamingNeuralSpeech(text,emotion,batch,behavior={action:"idle"}){
   const action=typeof behavior==="string"?behavior:behavior?.action||"idle";
   const frameOffset=typeof behavior==="object"?Math.max(0,Number(behavior?.frameOffset)||0):0;
-  const queue=[],waiters=[];let ended=false,failure=null;
+  const queue=[],waiters=[];let ended=false,failure=null,firstSegmentObserved=false;
   const wake=()=>{while(waiters.length&&(queue.length||ended||failure))waiters.shift()();};
   const controller=new AbortController();
   const consume=(async()=>{
@@ -347,7 +347,11 @@ function prepareStreamingNeuralSpeech(text,emotion,batch,behavior={action:"idle"
     if(!response.ok||!response.body){const data=await response.json().catch(()=>({}));throw new Error(data.error||"流式回答准备失败");}
     await consumeEventStream(response,async(event,data)=>{
       if(batch!==speechBatch){controller.abort();return;}
-      if(event==="segment"){queue.push(data);wake();}
+      if(event==="segment"){
+        if(!firstSegmentObserved){firstSegmentObserved=true;if(!portrait.dataset.avatarFirstSegmentMs)portrait.dataset.avatarFirstSegmentMs=String(Math.round(performance.now()-activeReplyStartedAt));}
+        queue.push(data);wake();
+      }
+      if(event==="done"&&data.pipeline&&!portrait.dataset.avatarPipelineMs){portrait.dataset.ttsFirstAudioMs=String(data.pipeline.ttsFirstAudioMs??"");portrait.dataset.avatarPipelineMs=String(data.pipeline.firstSegmentMs??"");}
       if(event==="error")throw new Error(data.error||"流式回答准备失败");
       if(event==="done"){ended=true;wake();}
     });
@@ -466,7 +470,7 @@ async function consumeEventStream(response, onEvent) {
 async function reply(message) {
   sendButton.disabled = true; showTyping(); setEmotion("curious"); setVoiceState("thinking","正在理解你刚才说的话"); statusText.textContent = "正在想…";
   const controller = new AbortController(); activeReplyController = controller;
-  const batch = speechBatch; realSpeechTimelineMs=0; let article, streamedText = "", currentEmotion = "calm",currentAction="idle",spokenSentenceCount=0;
+  const batch = speechBatch; activeReplyStartedAt=performance.now();realSpeechTimelineMs=0;delete portrait.dataset.chatFirstSentenceMs;delete portrait.dataset.avatarFirstSegmentMs;delete portrait.dataset.ttsFirstAudioMs;delete portrait.dataset.avatarPipelineMs;let article, streamedText = "", currentEmotion = "calm",currentAction="idle",spokenSentenceCount=0;
   const streamTurn=streamingAvatarExperiment&&neuralAvatarProfile?new AvatarStreamTurn({
     isCurrent:()=>batch===speechBatch,
     onEnd:({audioMs,lingerMs})=>{
@@ -486,6 +490,7 @@ async function reply(message) {
         currentAction=plan.action;portrait.dataset.behavior=JSON.stringify(plan);
       }
       if (event === "sentence") {
+        if(!spokenSentenceCount)portrait.dataset.chatFirstSentenceMs=String(Math.round(performance.now()-activeReplyStartedAt));
         $("#typing")?.remove(); streamedText += data.text;
         article ||= addMessage("assistant", "", false);
         article.querySelector("p").textContent = streamedText;
