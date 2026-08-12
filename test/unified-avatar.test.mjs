@@ -15,9 +15,9 @@ test("main voice page offers real and anime modes in one conversation",async()=>
   assert.match(html,/id="personaVoice"/);
   assert.match(html,/人物设置/);
   assert.match(app,/lumi-avatar-mode/);
-  assert.match(html,/app\.js\?v=20260810-thumbs-up-v1/);
+  assert.match(html,/app\.js\?v=20260812-bedroom-v1/);
   assert.match(html,/aria-label="开始通话" aria-pressed="false"/);
-  assert.match(app,/avatarRuntimeVersion="20260810-thumbs-up-v1"/);
+  assert.match(app,/avatarRuntimeVersion="20260812-bedroom-v1"/);
   assert.match(app,/lumi-vrm-look/);
   assert.match(app,/lumi-vrm-persona/);
   assert.match(app,/lumi-voice-profile/);
@@ -25,14 +25,35 @@ test("main voice page offers real and anime modes in one conversation",async()=>
   assert.match(app,/voice:voiceProfile/);
   assert.match(app,/action=\$\{encodeURIComponent\(action\)\}/);
   assert.match(app,/conversationActions\.actionForSentence\(data\.text,sentenceIndex,data\.action\|\|currentAction\)/);
-  assert.match(app,/bow:"\/real-actions\/lakeside_bow_silent\.mp4"/);
-  assert.match(app,/surprise:"\/real-actions\/lakeside_surprise_silent\.mp4"/);
+  assert.match(app,/bow:"\/real-actions\/bedroom_bow_silent\.mp4"/);
+  assert.match(app,/surprise:"\/real-actions\/bedroom_surprise_silent\.mp4"/);
   assert.match(app,/if\(silentAction\)await playSilentNeuralAction/);
   assert.match(app,/\/wav2lip-avatar\/avatar\.html/);
   assert.match(app,/\/vrm-embed\.html/);
   assert.match(app,/history:history\.slice/);
-  assert.match(styles,/portrait\[data-avatar-mode="anime"\] \.realistic-avatar \{ display: none !important; \}/);
+  assert.doesNotMatch(html,/lumi-realistic-v2\.png|class="realistic-avatar"/);
   assert.match(styles,/\.avatar-panel \.portrait[\s\S]*position: absolute/);
+});
+
+test("user-facing pages hide provider and rendering implementation names",async()=>{
+  const [index,app,vrm,vrmApp,realAvatar,legacyAvatar]=await Promise.all([
+    readPublic("index.html"),readPublic("app.js"),readPublic("vrm.html"),readPublic("vrm-app.js"),
+    readPublic("wav2lip-avatar/avatar.html"),readPublic("dh-live/avatar.html")
+  ]);
+  const visibleCopy=[index,vrm,realAvatar,legacyAvatar].join("\n")
+    .replace(/<script\b[\s\S]*?<\/script>/gi,"")
+    .replace(/<style\b[\s\S]*?<\/style>/gi,"")
+    .replace(/<[^>]+>/g," ");
+  assert.doesNotMatch(visibleCopy,/MiniMax|OpenAI|DINet|Wav2Lip|DH_live|VRMA|神经口型|数字人实验/);
+  assert.doesNotMatch(app,/语音对话已连接`|MiniMax.*语音对话已连接|OpenAI.*语音对话已连接/);
+  assert.doesNotMatch(vrmApp,/MiniMax.*流式回答|VRMA 自然动作/);
+});
+
+test("real avatar video covers the complete left panel",async()=>{
+  const [html,css]=await Promise.all([readPublic("wav2lip-avatar/avatar.html"),readPublic("wav2lip-avatar/avatar.css")]);
+  assert.match(html,/avatar\.css\?v=20260812-bedroom-v1/);
+  assert.match(css,/\.avatar-layer\{[^}]*width:100%;height:100%;object-fit:cover;object-position:center center/);
+  assert.match(css,/#stage\{[^}]*lumi-bedroom-background-v1\.png[^}]*center\/cover/);
 });
 
 test("embedded anime view receives shared speech and behavior events",async()=>{

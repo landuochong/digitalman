@@ -7,14 +7,14 @@ import { createInterface } from "node:readline";
 import { inferAudioExtension } from "./wav2lip-render.mjs";
 import { listRealActionAssets, resolveRealActionAsset } from "./real-actions.mjs";
 
-const RENDER_PROFILE = "dinet-mini-25fps-source-lip-color-v9-single-pass-encode";
+const RENDER_PROFILE = "dinet-mini-25fps-bedroom-background-v10-single-pass-encode";
 
 export function buildDINetWorkerCommand(projectRoot) {
   return {
     executable:join(projectRoot, ".venv-dh-live", "bin", "python"),
     args:[
       join(projectRoot, "scripts", "dinet_worker.py"),
-      "--asset", join(projectRoot, "public", "dh-live", "actions", "lakeside_idle_test")
+      "--asset", join(projectRoot, "public", "dh-live", "actions", "bedroom_idle_test")
     ]
   };
 }

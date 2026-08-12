@@ -6,7 +6,7 @@ const input = $("#messageInput"), form = $("#chatForm"), sendButton = $("#sendBu
 const micButton = $("#micButton"), modeBanner = $("#modeBanner"), statusText = $("#statusText");
 const voiceButton = $("#voiceButton"), voicePrompt = $("#voicePrompt"), liveTranscript = $("#liveTranscript"), captionButton = $("#captionButton");
 const digitalHumanFrame = $("#digitalHumanFrame");
-const avatarRuntimeVersion="20260810-thumbs-up-v1";
+const avatarRuntimeVersion="20260812-bedroom-v1";
 const avatarRuntimeUrl=path=>`${path}?v=${avatarRuntimeVersion}`;
 const avatarProfile = new URLSearchParams(location.search).get("profile");
 const selfRecordedProfile = avatarProfile === "self";
@@ -24,8 +24,8 @@ if(!["real","anime","experiment"].includes(avatarMode))avatarMode="real";
 let neuralAvatarProfile = wav2LipAvatarProfile || (switchableAvatarProfile && avatarMode === "real");
 const neuralRenderEndpoint = wav2LipAvatarProfile ? "/api/wav2lip/render" : "/api/dinet/render";
 const silentNeuralActions={
-  bow:"/real-actions/lakeside_bow_silent.mp4",
-  surprise:"/real-actions/lakeside_surprise_silent.mp4"
+  bow:"/real-actions/bedroom_bow_silent.mp4",
+  surprise:"/real-actions/bedroom_surprise_silent.mp4"
 };
 const animeLooks={soft:"学院日常",vivid:"暗色潮流",nike1:"Nike-chan v1",nike2:"Nike-chan v2",classic:"简约短发"};
 const animeLookSchema="20260807-unified-look-v2";
@@ -70,15 +70,7 @@ if (switchableAvatarProfile && digitalHumanFrame) {
     ? `/clean-avatar/avatar.html?action=${initialAction}`
     : `/dh-live/avatar.html?action=${initialAction}`;
   const note = document.querySelector(".avatar-note");
-  if (note) note.textContent = neuralAvatarProfile
-    ? dinetAvatarProfile
-      ? "湖畔真人 · Audio2BlendShape + DINet 中文口型"
-      : "湖畔真人 · Wav2Lip256 中文神经口型"
-    : cleanAvatarProfile
-    ? "自研洁净口型实验 · 当前贴片方案未通过"
-    : lakesideGeneratedProfile
-    ? "湖畔可爱真人测试 · MiniMax H3 + DH_live 实时口型"
-    : minimaxGeneratedProfile ? "MiniMax H3 真人测试 · DH_live 实时口型" : "自录真人测试 · DH_live 实时口型";
+  if (note) note.textContent = "真人陪伴 · 自然表情与语音";
 }
 const avatarModeSwitch=$("#avatarModeSwitch");
 if(avatarModeSwitch)avatarModeSwitch.hidden=!switchableAvatarProfile;
@@ -260,7 +252,7 @@ async function playCloudSpeech(text, emotion) {
   if (!response.ok) return animateBrowserSpeech(text);
   const speechBuffer = await response.arrayBuffer();
   if (neuralAvatarProfile) {
-    statusText.textContent = "正在生成中文神经口型…";
+    statusText.textContent = "正在准备回答…";
     const renderResponse = await fetch(neuralRenderEndpoint, {
       method:"POST",
       headers:{ "content-type":response.headers.get("content-type") || "application/octet-stream" },
@@ -268,7 +260,7 @@ async function playCloudSpeech(text, emotion) {
     });
     if (!renderResponse.ok) {
       const error = await renderResponse.json().catch(() => ({}));
-      throw new Error(error.error || "神经口型生成失败");
+      throw new Error(error.error || "回答准备失败");
     }
     const rendered = await renderResponse.json();
     if (requestToken !== speakingToken) return;
@@ -319,7 +311,7 @@ async function prepareNeuralSpeech(text, emotion, batch, action="idle") {
   });
   if (!renderResponse.ok) {
     const error = await renderResponse.json().catch(() => ({}));
-    throw new Error(error.error || "神经口型生成失败");
+    throw new Error(error.error || "回答准备失败");
   }
   return renderResponse.json();
 }
@@ -365,8 +357,8 @@ function enqueueSpeech(text, emotion, batch, action="idle") {
       catch (error) {
         if (batch !== speechBatch) return;
         speaking(false);
-        statusText.textContent = error?.message || "神经口型生成失败";
-        liveTranscript.textContent = "口型生成失败，请重试";
+        statusText.textContent = error?.message || "回答准备失败";
+        liveTranscript.textContent = "回答准备失败，请重试";
       }
     });
     return speechQueue;
@@ -378,8 +370,8 @@ function enqueueSpeech(text, emotion, batch, action="idle") {
       if (batch !== speechBatch) return;
       if (!neuralAvatarProfile) return await animateBrowserSpeech(text);
       speaking(false);
-      statusText.textContent = error?.message || "神经口型生成失败";
-      liveTranscript.textContent = "口型生成失败，请重试";
+      statusText.textContent = error?.message || "回答准备失败";
+      liveTranscript.textContent = "回答准备失败，请重试";
     }
   });
   return speechQueue;
@@ -429,7 +421,7 @@ async function reply(message) {
         if(sentenceAction!=="idle")setDigitalHumanAction(sentenceAction,{force:true,hold:true}).catch(()=>{});
         enqueueSpeech(data.text,currentEmotion,batch,sentenceAction);
       }
-      if (event === "error") throw new Error(data.error || "流式回答中断");
+      if (event === "error") throw new Error(data.error || "回答中断");
       if (event === "done") {
         mode=data.mode; currentEmotion=data.emotion || currentEmotion; setEmotion(currentEmotion);
         const finalText=data.reply || streamedText || "我在听。";
@@ -518,6 +510,6 @@ async function boot(){
     personaVoice.disabled=!voiceData.voices.length;
     if(!voiceData.voices.length){const option=document.createElement("option");option.textContent="演示模式使用浏览器声音";personaVoice.append(option);}
   }
-  modeBanner.textContent=mode!=="demo"?`${mode === "minimax" ? "MiniMax" : "OpenAI"} 语音对话已连接`:"本地演示模式";statusText.textContent="在线 · 随时听你说";setTimeout(()=>modeBanner.style.opacity=".55",2800);
+  modeBanner.textContent=mode!=="demo"?"语音对话已连接":"体验模式已就绪";statusText.textContent="在线 · 随时听你说";setTimeout(()=>modeBanner.style.opacity=".55",2800);
 }
 boot();

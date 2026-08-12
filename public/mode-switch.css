@@ -46,14 +46,13 @@
   animation: none !important;
   transform: none !important;
 }
-.avatar-panel .dh-live-frame,.avatar-panel .realistic-avatar {
+.avatar-panel .dh-live-frame {
   width: 100%;
   height: 100%;
   aspect-ratio: auto;
   border-radius: 0;
   box-shadow: none;
 }
-.avatar-panel .portrait[data-avatar-mode="anime"] .realistic-avatar { display: none !important; }
 .avatar-panel .emotion-label { z-index: 9; bottom: 70px; }
 .avatar-panel .sound-wave { position: absolute; z-index: 9; bottom: 62px; margin: 0; }
 .avatar-panel .avatar-note { display: none; }

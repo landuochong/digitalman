@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>露米 · VRM 动漫数字人实验</title>
+  <title>露米 · 动漫好友</title>
   <link rel="stylesheet" href="/vrm.css" />
   <script type="importmap">
     {
@@ -18,9 +18,9 @@
 </head>
 <body>
   <main class="shell">
-    <section class="stage" aria-label="VRM 动漫数字人；拖动旋转，滚轮缩放，右键拖动平移，双击复位">
+    <section class="stage" aria-label="动漫人物；拖动旋转，滚轮缩放，右键拖动平移，双击复位">
       <canvas id="avatarCanvas"></canvas>
-      <div class="brand"><span id="brandInitial">L</span><strong id="brandName">露米 · VRM</strong></div>
+      <div class="brand"><span id="brandInitial">L</span><strong id="brandName">露米</strong></div>
       <div class="stage-status"><i></i><span id="avatarStatus">正在加载动漫人物…</span></div>
       <div class="view-controls" role="group" aria-label="调整人物观看角度">
         <button type="button" data-view-angle="-45" aria-label="人物向左转">左转</button>
@@ -31,7 +31,7 @@
     </section>
     <section class="conversation">
       <header>
-        <div><p>ANIME COMPANION LAB</p><h1>自然一点，少动一点</h1></div>
+        <div><p>ANIME COMPANION</p><h1>自然一点，少动一点</h1></div>
         <div class="header-actions">
           <details class="persona-settings" id="personaSettings">
             <summary>角色设定</summary>
@@ -50,18 +50,18 @@
               <button type="submit">保存角色</button>
             </form>
           </details>
-          <a href="/" title="返回真人实验">真人版</a>
+          <a href="/" title="切换到真人形象">真人版</a>
         </div>
       </header>
       <div class="principles">
-        <span>稳定注视</span><span>低幅表情</span><span>每轮最多一个动作</span>
+        <span>自然注视</span><span>轻柔表情</span><span>动作自然克制</span>
       </div>
       <div class="looks" role="group" aria-label="选择服饰与发型">
         <button type="button" data-look="classic" class="active"><b>简约</b><small>短发 · 黑白装</small></button>
         <button type="button" data-look="soft"><b>学院日常</b><small>齐肩短发 · 针织开衫</small></button>
         <button type="button" data-look="vivid"><b>暗色潮流</b><small>紫色长发 · 黑粉街头装</small></button>
-        <button type="button" data-look="nike1"><b>Nike-chan v1</b><small>AITuber Kit · 经典造型</small></button>
-        <button type="button" data-look="nike2"><b>Nike-chan v2</b><small>AITuber Kit · 新版造型</small></button>
+        <button type="button" data-look="nike1"><b>Nike-chan v1</b><small>经典学院造型</small></button>
+        <button type="button" data-look="nike2"><b>Nike-chan v2</b><small>清爽日常造型</small></button>
       </div>
       <div class="rest-poses" role="group" aria-label="选择默认手部姿势">
         <span>待机手势</span>
@@ -110,10 +110,10 @@
         <span class="mic-icon"></span><span class="pulse"></span>
       </button>
       <h2 id="voicePrompt">点击麦克风开始说话</h2>
-      <p class="detail" id="detailText">MiniMax 流式回答 · VRMA 自然动作与表情</p>
+      <p class="detail" id="detailText">自然语音 · 轻柔动作与表情</p>
       <div class="wave" id="wave" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></div>
     </section>
   </main>
-  <script type="module" src="/vrm-app.js?v=20260810-thumbs-up-v1"></script>
+  <script type="module" src="/vrm-app.js?v=20260812-clean-ui-v1"></script>
 </body>
 </html>

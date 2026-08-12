@@ -20,7 +20,7 @@ export function buildWav2LipCommand({ projectRoot, audioPath, outputPath }) {
     executable:join(projectRoot, ".venv-wav2lip", "bin", "python"),
     args:[
       join(projectRoot, "scripts", "render_wav2lip_offline.py"),
-      "--video", join(projectRoot, "public", "dh-live", "actions", "lakeside_idle_test", "01.mp4"),
+      "--video", join(projectRoot, "public", "dh-live", "actions", "bedroom_idle_test", "01.mp4"),
       "--audio", audioPath,
       "--output", outputPath,
       "--batch-size", "4",
@@ -36,7 +36,7 @@ export function buildWav2LipWorkerCommand(projectRoot) {
     executable:join(projectRoot, ".venv-wav2lip", "bin", "python"),
     args:[
       join(projectRoot, "scripts", "wav2lip_worker.py"),
-      "--video", join(projectRoot, "public", "dh-live", "actions", "lakeside_idle_test", "01.mp4"),
+      "--video", join(projectRoot, "public", "dh-live", "actions", "bedroom_idle_test", "01.mp4"),
       "--batch-size", "4", "--face-batch-size", "4", "--detect-stride", "5",
       "--output-fps", "15"
     ]
@@ -146,7 +146,7 @@ export class Wav2LipRenderStore {
       join(this.projectRoot, "scripts", "render_wav2lip_offline.py"),
       join(this.projectRoot, "experiments", "livetalking", "models", "wav2lip.pth"),
       join(this.projectRoot, "experiments", "livetalking", "avatars", "wav2lip", "face_detection", "detection", "sfd", "s3fd.pth"),
-      join(this.projectRoot, "public", "dh-live", "actions", "lakeside_idle_test", "01.mp4")
+      join(this.projectRoot, "public", "dh-live", "actions", "bedroom_idle_test", "01.mp4")
     ];
     const missing = [];
     for (const path of required) if (!(await exists(path))) missing.push(path);

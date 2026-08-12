@@ -4,26 +4,26 @@ import { readFile } from "node:fs/promises";
 import { buildDINetWorkerCommand, DINetRenderStore } from "../src/dinet-render.mjs";
 import { resolveRealActionAsset } from "../src/real-actions.mjs";
 
-test("preloads one persistent DINet worker with the lakeside asset", () => {
+test("preloads one persistent DINet worker with the bedroom asset", () => {
   const command = buildDINetWorkerCommand("/project");
   assert.equal(command.executable, "/project/.venv-dh-live/bin/python");
   assert.deepEqual(command.args, [
     "/project/scripts/dinet_worker.py",
     "--asset",
-    "/project/public/dh-live/actions/lakeside_idle_test"
+    "/project/public/dh-live/actions/bedroom_idle_test"
   ]);
 });
 
 test("maps anime action names onto same-character real video assets",()=>{
-  assert.equal(resolveRealActionAsset("wave_approval"),"lakeside_wave");
-  assert.equal(resolveRealActionAsset("nod"),"lakeside_agree_test");
-  assert.equal(resolveRealActionAsset("thumbs_up"),"lakeside_agree_test");
-  assert.equal(resolveRealActionAsset("clap"),"lakeside_clap");
-  assert.equal(resolveRealActionAsset("thinking"),"lakeside_thinking");
-  assert.equal(resolveRealActionAsset("surprise"),"lakeside_idle_test");
-  assert.equal(resolveRealActionAsset("cross"),"lakeside_cross");
-  assert.equal(resolveRealActionAsset("confident_arms_crossed"),"lakeside_arms_crossed");
-  assert.equal(resolveRealActionAsset("unknown"),"lakeside_idle_test");
+  assert.equal(resolveRealActionAsset("wave_approval"),"bedroom_wave");
+  assert.equal(resolveRealActionAsset("nod"),"bedroom_agree_test");
+  assert.equal(resolveRealActionAsset("thumbs_up"),"bedroom_agree_test");
+  assert.equal(resolveRealActionAsset("clap"),"bedroom_clap");
+  assert.equal(resolveRealActionAsset("thinking"),"bedroom_thinking");
+  assert.equal(resolveRealActionAsset("surprise"),"bedroom_idle_test");
+  assert.equal(resolveRealActionAsset("cross"),"bedroom_cross");
+  assert.equal(resolveRealActionAsset("confident_arms_crossed"),"bedroom_arms_crossed");
+  assert.equal(resolveRealActionAsset("unknown"),"bedroom_idle_test");
 });
 
 test("rejects compressed audio before starting the DINet worker", async () => {
@@ -63,6 +63,6 @@ test("neural avatar keeps a persistent idle layer behind speech", async () => {
   assert.match(script, /isSilentAction/);
   assert.match(script, /speechVideo\.muted = isSilentAction/);
   assert.doesNotMatch(script, /setTimeout\(playIdle,\s*250\)/);
-  assert.match(styles,/object-fit:contain/);
-  assert.match(styles,/lakeside_idle_test\/thumbnail\.jpg/);
+  assert.match(styles,/object-fit:cover/);
+  assert.match(styles,/lumi-bedroom-background-v1\.png/);
 });

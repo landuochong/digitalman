@@ -21,7 +21,7 @@ const personaForm=$("#personaForm"),personaPreset=$("#personaPreset"),personaNam
 function matchingPreset(){return Object.entries(personaPresets).find(([,value])=>value.name===persona.name&&value.relationship===persona.relationship&&value.style===persona.style)?.[0]||"custom";}
 function renderPersona(){
   personaName.value=persona.name;personaRelationship.value=persona.relationship;personaStyle.value=persona.style;personaPreset.value=matchingPreset();
-  $("#brandName").textContent=`${persona.name} · VRM`;$("#brandInitial").textContent=persona.name.slice(0,1).toUpperCase();document.title=`${persona.name} · VRM 动漫数字人实验`;
+  $("#brandName").textContent=persona.name;$("#brandInitial").textContent=persona.name.slice(0,1).toUpperCase();document.title=`${persona.name} · 动漫好友`;
 }
 personaPreset.addEventListener("change",()=>{const preset=personaPresets[personaPreset.value];if(!preset)return;persona={...preset};renderPersona();});
 [personaName,personaRelationship,personaStyle].forEach(field=>field.addEventListener("input",()=>{personaPreset.value="custom";}));
@@ -43,7 +43,7 @@ const avatar=new VrmCompanion($("#avatarCanvas"),{
   modelUrl:looks[activeLook].url,
   restPose:activeRest,
   onReady:()=>{$("#avatarStatus").textContent=`${looks[activeLook].label}已就绪`;document.querySelectorAll(".looks button").forEach(button=>button.disabled=false);},
-  onError:error=>{$("#avatarStatus").textContent=`模型加载失败：${error.message}`;document.querySelectorAll(".looks button").forEach(button=>button.disabled=false);}
+  onError:()=>{$("#avatarStatus").textContent="人物加载失败，请稍后重试";document.querySelectorAll(".looks button").forEach(button=>button.disabled=false);}
 });
 const canvas=$("#avatarCanvas"),viewButtons=[...document.querySelectorAll("[data-view-angle]")];
 function showViewAngle(angle){
@@ -159,4 +159,4 @@ if(Recognition){const recognition=new Recognition();recognition.lang="zh-CN";rec
   mic.onclick=()=>{try{recognition.start();}catch{caption.textContent="麦克风正在启动";}};
 }else{mic.disabled=true;prompt.textContent="当前浏览器不支持语音识别";detail.textContent="请使用最新版 Chrome 或 Edge";}
 
-fetch("/api/health").then(r=>r.json()).then(data=>{mode=data.mode;detail.textContent=`${mode==="minimax"?"MiniMax":"本地"} 流式回答 · VRMA 自然动作与表情`;}).catch(()=>{});
+fetch("/api/health").then(r=>r.json()).then(data=>{mode=data.mode;detail.textContent=mode==="demo"?"体验模式已就绪":"自然语音 · 轻柔动作与表情";}).catch(()=>{});

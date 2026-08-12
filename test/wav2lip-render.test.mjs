@@ -19,7 +19,7 @@ test("preloads one persistent wav2lip worker", () => {
 test("builds wav2lip invocation without a shell", () => {
   const command = buildWav2LipCommand({ projectRoot:"/project", audioPath:"/tmp/a.wav", outputPath:"/tmp/o.mp4" });
   assert.equal(command.executable, "/project/.venv-wav2lip/bin/python");
-  assert.deepEqual(command.args.slice(0, 3), ["/project/scripts/render_wav2lip_offline.py", "--video", "/project/public/dh-live/actions/lakeside_idle_test/01.mp4"]);
+  assert.deepEqual(command.args.slice(0, 3), ["/project/scripts/render_wav2lip_offline.py", "--video", "/project/public/dh-live/actions/bedroom_idle_test/01.mp4"]);
   assert.ok(command.args.includes("/tmp/a.wav"));
   assert.ok(command.args.includes("/tmp/o.mp4"));
   assert.deepEqual(command.args.slice(-2), ["--output-fps", "15"]);
