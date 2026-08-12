@@ -382,7 +382,7 @@ export const server = http.createServer(async (req, res) => {
       const controller=new AbortController();let closed=false;
       res.on("close",()=>{if(!closed)controller.abort();});
       res.writeHead(200,{"content-type":"text/event-stream; charset=utf-8","cache-control":"no-cache, no-transform","x-accel-buffering":"no"});
-      const session=dinetStreams.start({action:String(data.action||"idle")});
+      const session=dinetStreams.start({action:String(data.action||"idle"),frameOffset:Number(data.frameOffset||0)});
       sendEvent(res,"started",session);
       let chunkSequence=0,renderChain=Promise.resolve(),firstSegmentSent=false;
       const emitSegments=async(final=false)=>{

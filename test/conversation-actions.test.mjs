@@ -7,14 +7,14 @@ test("moves a subtle gesture after an unnaturally short spoken opener",()=>{
   assert.equal(scheduler.startTurn({message:"今天有点累",action:"caring"}).action,"caring");
   assert.equal(scheduler.actionForSentence("辛苦了，",0),"idle");
   assert.equal(scheduler.actionForSentence("今天早点休息吧。",1),"caring");
-  assert.equal(scheduler.actionForSentence("我会陪着你。",2),"idle");
+  assert.equal(scheduler.actionForSentence("我会陪着你。",2),"caring");
 });
 
 test("plays a complete first-sentence gesture immediately",()=>{
   const scheduler=new ConversationActionScheduler();
   scheduler.startTurn({message:"帮我分析一下",action:"thinking"});
   assert.equal(scheduler.actionForSentence("我先想想这件事。",0),"thinking");
-  assert.equal(scheduler.actionForSentence("重点有两个。",1),"idle");
+  assert.equal(scheduler.actionForSentence("重点有两个。",1),"thinking");
 });
 
 test("accepts one reply-derived micro gesture during a neutral turn",()=>{
@@ -45,6 +45,8 @@ test("builds an observable behavior timeline without another model call",()=>{
   const body=scheduler.planForSentence("慢慢来，我陪你。",1,"caring","caring");
   assert.equal(opener.action,"idle");assert.equal(opener.deferred,true);
   assert.equal(body.action,"caring");assert.equal(body.deferred,true);
-  assert.deepEqual(scheduler.getTimeline().map(item=>item.action),["caring","idle","caring"]);
+  const continuation=scheduler.planForSentence("我一直都在。",2,"idle","caring");
+  assert.equal(continuation.action,"caring");assert.equal(continuation.continuation,true);assert.ok(continuation.frameOffset>0);
+  assert.deepEqual(scheduler.getTimeline().map(item=>item.action),["caring","idle","caring","caring"]);
   assert.ok(conversationActionPolicy.behaviorActions.includes("nod"));
 });

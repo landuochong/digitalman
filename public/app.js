@@ -1,4 +1,4 @@
-import { ConversationActionScheduler } from "./conversation-actions.js?v=20260812-behavior-director-v1";
+import { ConversationActionScheduler } from "./conversation-actions.js?v=20260812-behavior-continuity-v2";
 
 const $ = (selector) => document.querySelector(selector);
 const portrait = $("#portrait"), wave = $("#soundWave"), messages = $("#messages");
@@ -6,7 +6,7 @@ const input = $("#messageInput"), form = $("#chatForm"), sendButton = $("#sendBu
 const micButton = $("#micButton"), modeBanner = $("#modeBanner"), statusText = $("#statusText");
 const voiceButton = $("#voiceButton"), voicePrompt = $("#voicePrompt"), liveTranscript = $("#liveTranscript"), captionButton = $("#captionButton");
 const digitalHumanFrame = $("#digitalHumanFrame");
-const avatarRuntimeVersion="20260812-behavior-director-v1";
+const avatarRuntimeVersion="20260812-behavior-continuity-v2";
 const avatarRuntimeUrl=path=>`${path}?v=${avatarRuntimeVersion}`;
 const avatarProfile = new URLSearchParams(location.search).get("profile");
 const selfRecordedProfile = avatarProfile === "self";
@@ -320,12 +320,14 @@ async function prepareNeuralSpeech(text, emotion, batch, action="idle") {
   return renderResponse.json();
 }
 
-function prepareStreamingNeuralSpeech(text,emotion,batch,action="idle"){
+function prepareStreamingNeuralSpeech(text,emotion,batch,behavior={action:"idle"}){
+  const action=typeof behavior==="string"?behavior:behavior?.action||"idle";
+  const frameOffset=typeof behavior==="object"?Math.max(0,Number(behavior?.frameOffset)||0):0;
   const queue=[],waiters=[];let ended=false,failure=null;
   const wake=()=>{while(waiters.length&&(queue.length||ended||failure))waiters.shift()();};
   const controller=new AbortController();
   const consume=(async()=>{
-    const response=await fetch("/api/dinet/speech-stream",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({text,emotion,voice:voiceProfile,action}),signal:controller.signal});
+    const response=await fetch("/api/dinet/speech-stream",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({text,emotion,voice:voiceProfile,action,frameOffset}),signal:controller.signal});
     if(!response.ok||!response.body){const data=await response.json().catch(()=>({}));throw new Error(data.error||"流式回答准备失败");}
     await consumeEventStream(response,async(event,data)=>{
       if(batch!==speechBatch){controller.abort();return;}
@@ -347,7 +349,7 @@ function prepareStreamingNeuralSpeech(text,emotion,batch,action="idle"){
   activeStreamingSpeech.add(stream);return stream;
 }
 
-async function playStreamingNeuralSpeech(stream,batch){
+async function playStreamingNeuralSpeech(stream,batch,behavior={action:"idle"}){
   const playbacks=[];
   try{
     while(batch===speechBatch){
@@ -355,7 +357,11 @@ async function playStreamingNeuralSpeech(stream,batch){
       playbacks.push(playPreparedNeuralSpeech(item.value,batch,{enqueue:true}));
     }
   }finally{
-    if(batch===speechBatch)digitalHumanFrame.contentWindow.postMessage({type:"wav2lip-stream-end"},location.origin);
+    if(batch===speechBatch){
+      const action=typeof behavior==="string"?behavior:behavior?.action||"idle";
+      const lingerMs=action==="idle"?120:Math.min(360,Math.max(180,Number(behavior?.holdMs||0)*.1));
+      digitalHumanFrame.contentWindow.postMessage({type:"wav2lip-stream-end",lingerMs},location.origin);
+    }
   }
   await Promise.all(playbacks);
   if(batch===speechBatch)speaking(false);
@@ -387,19 +393,20 @@ async function playSilentNeuralAction(url,batch){
   });
 }
 
-function enqueueSpeech(text, emotion, batch, action="idle") {
+function enqueueSpeech(text, emotion, batch, behavior={action:"idle"}) {
+  const action=typeof behavior==="string"?behavior:behavior?.action||"idle";
   if (neuralAvatarProfile) {
     // Start TTS and rendering immediately for every completed sentence. Playback
     // stays ordered, while later sentences prepare during the current sentence.
     const silentAction=silentNeuralActions[action];
     const preparation = streamingAvatarExperiment&&!silentAction
-      ? prepareStreamingNeuralSpeech(text,emotion,batch,action)
+      ? prepareStreamingNeuralSpeech(text,emotion,batch,behavior)
       : prepareNeuralSpeech(text, emotion, batch,silentAction?"idle":action);
     speechQueue = speechQueue.then(async () => {
       if (batch !== speechBatch) return;
       try {
         if(silentAction)await playSilentNeuralAction(silentAction,batch);
-        if(streamingAvatarExperiment&&!silentAction)await playStreamingNeuralSpeech(preparation,batch);
+        if(streamingAvatarExperiment&&!silentAction)await playStreamingNeuralSpeech(preparation,batch,behavior);
         else await playPreparedNeuralSpeech(await preparation, batch);
       }
       catch (error) {
@@ -467,8 +474,8 @@ async function reply(message) {
         const sentenceIndex=spokenSentenceCount++;
         const sentencePlan=conversationActions.planForSentence(data.text,sentenceIndex,data.action||currentAction,currentEmotion);
         const sentenceAction=sentencePlan.action;portrait.dataset.behavior=JSON.stringify(sentencePlan);
-        if(sentenceAction!=="idle")setDigitalHumanAction(sentenceAction,{force:true,hold:true,behavior:sentencePlan}).catch(()=>{});
-        enqueueSpeech(data.text,currentEmotion,batch,sentenceAction);
+        if(sentenceAction!=="idle"&&!sentencePlan.continuation)setDigitalHumanAction(sentenceAction,{force:true,hold:true,behavior:sentencePlan}).catch(()=>{});
+        enqueueSpeech(data.text,currentEmotion,batch,sentencePlan);
       }
       if (event === "error") throw new Error(data.error || "回答中断");
       if (event === "done") {

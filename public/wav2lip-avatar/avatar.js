@@ -54,7 +54,7 @@ async function playQueuedSegment(){
   }
 }
 
-function scheduleIdleReveal(){
+function scheduleIdleReveal(delayMs=120){
   clearTimeout(idleRevealTimer);
   idleRevealTimer=setTimeout(()=>{
     if(segmentPlaying||segmentQueue.length||!streamEnded)return;
@@ -64,7 +64,7 @@ function scheduleIdleReveal(){
       previous?.classList.remove("active");previous?.pause();previous?.remove();
       document.body.classList.remove("loading");
     });
-  },120);
+  },Math.min(400,Math.max(80,Number(delayMs)||120)));
 }
 
 function reflectedIdleTime(speechTime) {
@@ -114,7 +114,7 @@ window.addEventListener("message", async event => {
     clearTimeout(idleRevealTimer);idleRevealTimer=0;streamEnded=false;
     document.body.classList.add("loading");segmentQueue.push(preloadSegment(event.data));playQueuedSegment();return;
   }
-  if(event.data?.type==="wav2lip-stream-end"){streamEnded=true;if(!segmentPlaying&&!segmentQueue.length)scheduleIdleReveal();return;}
+  if(event.data?.type==="wav2lip-stream-end"){streamEnded=true;if(!segmentPlaying&&!segmentQueue.length)scheduleIdleReveal(event.data.lingerMs);return;}
   const isSilentAction=event.data?.type==="wav2lip-action";
   if ((event.data?.type !== "wav2lip-play"&&!isSilentAction) || !event.data.url) return;
   const token = ++playToken;

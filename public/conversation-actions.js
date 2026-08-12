@@ -1,5 +1,6 @@
 const HIGH_ENERGY_ACTIONS=new Set(["wave_approval","clap","cheer","surprise","bow","shrug","cross","confident_arms_crossed","shy"]);
 const DEFER_ON_SHORT_OPENER=new Set(["caring","thinking","shy","confident_arms_crossed"]);
+const HOLD_ACROSS_SENTENCES=new Set(["happy","caring","thinking"]);
 const FALLBACK_ACTIONS={
   wave_approval:"happy",clap:"happy",cheer:"happy",surprise:"idle",bow:"idle",
   shrug:"thinking",cross:"idle",confident_arms_crossed:"idle",shy:"happy"
@@ -24,12 +25,13 @@ const ACTION_BEHAVIOR={
 };
 
 function spokenLength(text){return String(text||"").replace(/[，,、。！？!?；;\s]/g,"").length;}
+function estimatedSpeechMs(text){return Math.max(650,Math.min(5200,spokenLength(text)*180));}
 
 export class ConversationActionScheduler{
   constructor({cooldownMs=3000,clock=()=>Date.now()}={}){
     this.cooldownMs=cooldownMs;this.clock=clock;this.lastHighEnergyAt=-Infinity;this.reset();
   }
-  reset(){this.primary="idle";this.requestedPrimary="idle";this.deferPrimary=false;this.secondaryUsed=false;this.explicit=false;this.started=false;this.emotion="calm";this.timeline=[];}
+  reset(){this.primary="idle";this.requestedPrimary="idle";this.deferPrimary=false;this.secondaryUsed=false;this.explicit=false;this.started=false;this.emotion="calm";this.timeline=[];this.cursorMs=0;this.activeAction="idle";this.activeStartedAtMs=0;this.activeUntilMs=0;}
   resolveBudget(action,explicit=this.explicit){
     const now=this.clock();let resolved=String(action||"idle");
     if(HIGH_ENERGY_ACTIONS.has(resolved)&&!explicit&&now-this.lastHighEnergyAt<this.cooldownMs)resolved=FALLBACK_ACTIONS[resolved]||"idle";
@@ -39,11 +41,16 @@ export class ConversationActionScheduler{
   startTurn({message="",action="idle",emotion="calm"}={}){
     this.explicit=EXPLICIT_ACTION_WORDS.test(String(message));this.requestedPrimary=String(action||"idle");
     this.primary=this.resolveBudget(this.requestedPrimary,this.explicit);this.deferPrimary=false;this.secondaryUsed=false;this.started=true;this.emotion=emotion;this.timeline=[];
-    return this.plan(this.primary,{emotion,explicit:this.explicit});
+    return this.plan(this.primary,{emotion,explicit:this.explicit,preview:true});
   }
-  plan(action,{emotion=this.emotion,index=0,text="",explicit=this.explicit,deferred=false}={}){
+  plan(action,{emotion=this.emotion,index=0,text="",explicit=this.explicit,deferred=false,preview=false,continuation=false}={}){
     const resolved=ACTION_BEHAVIOR[action]?action:"idle",behavior=ACTION_BEHAVIOR[resolved];
-    const plan={action:resolved,emotion,intensity:behavior.intensity,gaze:behavior.gaze,head:behavior.head,startAtMs:index*650,holdMs:Math.max(behavior.holdMs,Math.min(5200,spokenLength(text)*115)),explicit:Boolean(explicit),deferred:Boolean(deferred)};
+    const startAtMs=this.cursorMs,durationMs=estimatedSpeechMs(text);
+    const continuing=continuation&&resolved===this.activeAction&&startAtMs<this.activeUntilMs;
+    if(!preview&&resolved!=="idle"&&!continuing){this.activeAction=resolved;this.activeStartedAtMs=startAtMs;this.activeUntilMs=startAtMs+Math.max(behavior.holdMs,durationMs);}
+    const frameOffset=continuing?Math.max(0,Math.round((startAtMs-this.activeStartedAtMs)/40)):0;
+    const plan={action:resolved,emotion,intensity:behavior.intensity,gaze:behavior.gaze,head:behavior.head,startAtMs,holdMs:Math.max(behavior.holdMs,durationMs),durationMs,frameOffset,continuation:continuing,explicit:Boolean(explicit),deferred:Boolean(deferred)};
+    if(!preview)this.cursorMs+=durationMs;
     this.timeline.push(plan);return plan;
   }
   planForSentence(text,index=0,candidateAction=this.requestedPrimary,emotion=this.emotion){
@@ -59,6 +66,9 @@ export class ConversationActionScheduler{
     if(!this.secondaryUsed&&proposed!=="idle"&&proposed!==this.primary){
       this.secondaryUsed=true;return this.plan(this.resolveBudget(proposed),{emotion,index,text});
     }
+    if(HOLD_ACROSS_SENTENCES.has(this.activeAction)&&this.cursorMs<this.activeUntilMs){
+      return this.plan(this.activeAction,{emotion,index,text,continuation:true});
+    }
     return this.plan("idle",{emotion,index,text});
   }
   actionForSentence(text,index=0,candidateAction=this.requestedPrimary){return this.planForSentence(text,index,candidateAction).action;}
@@ -66,4 +76,4 @@ export class ConversationActionScheduler{
   finishTurn(){this.reset();return "idle";}
 }
 
-export const conversationActionPolicy=Object.freeze({cooldownMs:3000,shortOpenerCharacters:6,behaviorActions:Object.keys(ACTION_BEHAVIOR)});
+export const conversationActionPolicy=Object.freeze({cooldownMs:3000,shortOpenerCharacters:6,holdAcrossSentences:[...HOLD_ACROSS_SENTENCES],behaviorActions:Object.keys(ACTION_BEHAVIOR)});

@@ -41,18 +41,20 @@ export class DINetStreamSessionStore {
     this.sessions = new Map();
   }
 
-  start({ action = "idle", sampleRate = DEFAULT_SAMPLE_RATE, channels = DEFAULT_CHANNELS } = {}) {
+  start({ action = "idle", sampleRate = DEFAULT_SAMPLE_RATE, channels = DEFAULT_CHANNELS, frameOffset = 0 } = {}) {
     if (sampleRate !== DEFAULT_SAMPLE_RATE || channels !== DEFAULT_CHANNELS) {
       throw streamError("流式 DINet 当前只接受 16 kHz、单声道 PCM16", 415);
     }
+    frameOffset=Number(frameOffset);
+    if(!Number.isSafeInteger(frameOffset)||frameOffset<0)throw streamError("动作起始帧无效",400);
     const id = randomUUID();
     const startedAt = this.now();
     this.sessions.set(id, {
       id, action, sampleRate, channels, startedAt,
       firstChunkAt:null, nextSequence:0, bytes:0, chunks:[], state:"open",
-      segmentSequence:0, frameOffset:0, renderedAudioMs:0
+      segmentSequence:0, frameOffset, renderedAudioMs:0
     });
-    return { id, action, sampleRate, channels, nextSequence:0, mode:"stateful-segments" };
+    return { id, action, sampleRate, channels, frameOffset, nextSequence:0, mode:"stateful-segments" };
   }
 
   append(id, sequence, chunk) {

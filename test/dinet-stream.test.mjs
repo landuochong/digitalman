@@ -108,3 +108,14 @@ test("defaults to a 400 ms opener and longer steady segments",async()=>{
   await store.drain(session.id);
   assert.deepEqual(durations,[400,1200]);
 });
+
+test("can continue an action from a later source frame across spoken sentences",async()=>{
+  const calls=[];
+  const store=new DINetStreamSessionStore({firstSegmentMs:400,renderer:{render:async(_wav,_action,options)=>{calls.push(options);return{url:"/part.mp4",metrics:{frames:options.outputFrames}};}}});
+  const session=store.start({action:"caring",frameOffset:37});
+  assert.equal(session.frameOffset,37);
+  store.append(session.id,0,Buffer.alloc(20_480));
+  await store.drain(session.id);
+  assert.equal(calls[0].frameOffset,37);
+  assert.throws(()=>store.start({frameOffset:-1}),error=>error.status===400);
+});
