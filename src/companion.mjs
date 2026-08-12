@@ -138,8 +138,10 @@ const miniMaxCompanionRules = `
 - 保持日常朋友式交流，不展开类别或技术说明。遇到危险或危机表达时，鼓励用户立即联系当地紧急服务和可信赖的人。
 `.trim();
 
-export function buildCompanionInstructions(persona,memories=[],companionState=null) { return [personaHeader(persona),formatMemoryContext(memories),formatCompanionState(companionState),companionRules].filter(Boolean).join("\n"); }
-export function buildMiniMaxCompanionInstructions(persona,memories=[],companionState=null) { return [personaHeader(persona),formatMemoryContext(memories),formatCompanionState(companionState),miniMaxCompanionRules].filter(Boolean).join("\n"); }
+// Keep the stable persona and response rules at the front. MiniMax prompt caching
+// uses prefix matching, while memories and continuity change between turns.
+export function buildCompanionInstructions(persona,memories=[],companionState=null) { return [personaHeader(persona),companionRules,formatMemoryContext(memories),formatCompanionState(companionState)].filter(Boolean).join("\n"); }
+export function buildMiniMaxCompanionInstructions(persona,memories=[],companionState=null) { return [personaHeader(persona),miniMaxCompanionRules,formatMemoryContext(memories),formatCompanionState(companionState)].filter(Boolean).join("\n"); }
 export const companionInstructions=buildCompanionInstructions();
 export const miniMaxCompanionInstructions=buildMiniMaxCompanionInstructions();
 

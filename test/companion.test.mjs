@@ -104,6 +104,7 @@ test("builds MiniMax chat history with a system persona", () => {
   assert.doesNotMatch(payload.messages[0].content,/AI|模型|程序|数字角色|虚拟/);
   assert.match(payload.messages[0].content,/用户喜欢爵士乐/); assert.match(payload.messages[0].content,/不要逐条复述/);
   assert.match(payload.messages[0].content,/熟悉/); assert.match(payload.messages[0].content,/关切/);
+  assert.ok(payload.messages[0].content.indexOf("直接回答用户") < payload.messages[0].content.indexOf("用户喜欢爵士乐"));
 });
 test("builds streaming MiniMax payload and segments complete spoken sentences", () => {
   assert.equal(buildMiniMaxChatPayload({model:"m",message:"你好",stream:true}).stream, true);

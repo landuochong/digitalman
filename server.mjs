@@ -48,6 +48,7 @@ const miniMaxTextModel = process.env.MINIMAX_TEXT_MODEL || "MiniMax-M3";
 const miniMaxTtsModel = process.env.MINIMAX_TTS_MODEL || "speech-2.8-turbo";
 const miniMaxTtsVoice = process.env.MINIMAX_TTS_VOICE || "female-tianmei";
 const miniMaxTtsWsUrl = process.env.MINIMAX_TTS_WS_URL || "wss://api.minimaxi.com/ws/v1/t2a_v2";
+const miniMaxChatWarmup = process.env.MINIMAX_CHAT_WARMUP !== "0";
 const voiceCatalog=buildVoiceCatalog({
   provider:apiKey?provider:"demo",
   defaultVoice:provider==="minimax"?miniMaxTtsVoice:ttsVoice,
@@ -59,12 +60,14 @@ const miniMaxSpeechCache=new BoundedAsyncCache(64);
 let chatTraceSequence=0;
 
 function startChatTrace(endpoint,{ message,history,userId,persona,fastSpeech }){
+  const startedMs=performance.now();
   const trace={
     id:`chat-${Date.now()}-${++chatTraceSequence}`,
     startedAt:new Date().toISOString(),endpoint,provider:apiKey?provider:"demo",
     input:{message,userId:String(userId||"").slice(0,24),history,persona,fastSpeech:Boolean(fastSpeech)},
-    memories:[],companionState:null,status:"started"
+    memories:[],companionState:null,status:"started",timings:{}
   };
+  Object.defineProperty(trace,"_startedMs",{value:startedMs});
   recentChatTraces.push(trace);
   if(recentChatTraces.length>20)recentChatTraces.splice(0,recentChatTraces.length-20);
   return trace;
@@ -72,6 +75,7 @@ function startChatTrace(endpoint,{ message,history,userId,persona,fastSpeech }){
 
 function finishChatTrace(trace,result,source){
   trace.finishedAt=new Date().toISOString();trace.status="done";trace.source=source;trace.final=result;
+  trace.timings.totalMs=Math.round(performance.now()-trace._startedMs);
 }
 
 function json(res, status, body) {
@@ -120,6 +124,7 @@ async function miniMaxChat(message, history, persona, memories, companionState, 
     headers:{ authorization:`Bearer ${apiKey}`, "content-type":"application/json" },
     body:JSON.stringify(requestPayload)
   });
+  trace.timings.upstreamConnectedMs=Math.round(performance.now()-trace._startedMs);
   const payload = await response.json().catch(() => ({}));
   trace.providerResponse=payload;
   if (!response.ok || payload?.base_resp?.status_code > 0) throw new Error(payload?.base_resp?.status_msg || `MiniMax 文案接口失败 (${response.status})`);
@@ -131,6 +136,23 @@ function sendEvent(res, event, data) {
   res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
 }
 
+async function warmupMiniMaxChat() {
+  if (provider !== "minimax" || !apiKey || !miniMaxChatWarmup) return;
+  const payload=buildMiniMaxChatPayload({model:miniMaxTextModel,message:"你好",stream:true});
+  payload.max_completion_tokens=16;
+  payload.temperature=0.1;
+  const response = await fetch(`${miniMaxBaseUrl}/chat/completions`, {
+    method:"POST",
+    headers:{ authorization:`Bearer ${apiKey}`, "content-type":"application/json" },
+    body:JSON.stringify(payload),
+    signal:AbortSignal.timeout(8_000)
+  });
+  if (!response.ok || !response.body) throw new Error(`MiniMax 文案预热失败 (${response.status})`);
+  const reader=response.body.getReader();
+  await reader.read();
+  await reader.cancel();
+}
+
 async function miniMaxChatStream(message, history, persona, memories, companionState, userId, res, fastSpeech = false, trace) {
   const requestPayload=buildMiniMaxChatPayload({ model:miniMaxTextModel, message, history, stream:true, persona, memories, companionState });
   trace.providerRequest={url:`${miniMaxBaseUrl}/chat/completions`,payload:requestPayload};
@@ -139,6 +161,7 @@ async function miniMaxChatStream(message, history, persona, memories, companionS
     headers:{ authorization:`Bearer ${apiKey}`, "content-type":"application/json" },
     body:JSON.stringify(requestPayload)
   });
+  trace.timings.upstreamConnectedMs=Math.round(performance.now()-trace._startedMs);
   if (!response.ok || !response.body) throw new Error(`MiniMax 流式文案接口失败 (${response.status})`);
 
   res.writeHead(200, {
@@ -166,6 +189,7 @@ async function miniMaxChatStream(message, history, persona, memories, companionS
       const sentenceResult=buildMiniMaxReply(sentence,message,companionState,history);
       const safeSentence=sentenceResult.reply;
       if(trace.emittedSentences.at(-1)===safeSentence&&safeSentence!==sentence)continue;
+      trace.timings.firstSentenceMs??=Math.round(performance.now()-trace._startedMs);
       trace.emittedSentences.push(safeSentence);sendEvent(res, "sentence", { text:safeSentence, emotion:sentenceResult.emotion, action:sentenceResult.action });
     }
     sentenceBuffer = remainder;
@@ -208,8 +232,11 @@ async function chat(req, res) {
   const history = Array.isArray(data.history) ? data.history : [];
   const persona = normalizePersona(data.persona);
   const trace=startChatTrace("/api/chat",{message,history,userId:data.userId,persona,fastSpeech:false});
-  const memories = await memoryStore.recall(data.userId,message);
-  const companionState = await memoryStore.getCompanionState(data.userId);
+  const [memories,companionState] = await Promise.all([
+    memoryStore.recall(data.userId,message),
+    memoryStore.getCompanionState(data.userId)
+  ]);
+  trace.timings.contextMs=Math.round(performance.now()-trace._startedMs);
   trace.memories=memories;trace.companionState=companionState;
   const groundedResult=companionIdentityReply(message,persona) || companionPresenceReply(message,persona);
   const result = groundedResult
@@ -230,8 +257,11 @@ async function chatStream(req, res) {
   const history = Array.isArray(data.history) ? data.history : [];
   const persona = normalizePersona(data.persona);
   const trace=startChatTrace("/api/chat/stream",{message,history,userId:data.userId,persona,fastSpeech:data.fastSpeech});
-  const memories = await memoryStore.recall(data.userId,message);
-  const companionState = await memoryStore.getCompanionState(data.userId);
+  const [memories,companionState] = await Promise.all([
+    memoryStore.recall(data.userId,message),
+    memoryStore.getCompanionState(data.userId)
+  ]);
+  trace.timings.contextMs=Math.round(performance.now()-trace._startedMs);
   trace.memories=memories;trace.companionState=companionState;
   const groundedResult = companionIdentityReply(message,persona) || companionPresenceReply(message,persona);
   if(groundedResult){
@@ -422,6 +452,7 @@ export const server = http.createServer(async (req, res) => {
 });
 
 if (process.env.NODE_ENV !== "test") {
+  void warmupMiniMaxChat().catch(error=>console.warn(`文案连接预热失败，将在首次请求时重试：${error.message}`));
   dinetRenders.warmup()
     .catch(error=>console.warn(`真人口型预热失败，将在首次请求时重试：${error.message}`))
     .finally(()=>server.listen(port, () => console.log(`露米已上线：http://localhost:${port} (${apiKey ? provider : "demo"}模式)`)));
