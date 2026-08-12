@@ -46,6 +46,7 @@ test("DINet streams raw frames into the final H.264 encode",async()=>{
   assert.match(source,/subprocess\.Popen/);
   assert.match(source,/"-f", "rawvideo"/);
   assert.match(source,/"-preset", "veryfast"/);
+  assert.match(source,/audio_offset_ms/);
   assert.doesNotMatch(source,/cv2\.VideoWriter/);
   assert.doesNotMatch(source,/silent_path/);
 });
@@ -62,6 +63,10 @@ test("neural avatar keeps a persistent idle layer behind speech", async () => {
   assert.match(script, /revealAlignedIdle/);
   assert.match(script, /isSilentAction/);
   assert.match(script, /speechVideo\.muted = isSilentAction/);
+  assert.match(script,/wav2lip-enqueue/);
+  assert.match(script,/segmentQueue/);
+  assert.match(script,/createElement\("video"\)/);
+  assert.match(script,/speech-segment/);
   assert.doesNotMatch(script, /setTimeout\(playIdle,\s*250\)/);
   assert.match(styles,/object-fit:cover/);
   assert.match(styles,/lumi-bedroom-background-v1\.png/);

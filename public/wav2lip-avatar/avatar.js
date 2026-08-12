@@ -1,14 +1,45 @@
 const idleVideo = document.querySelector("#avatar-idle");
 const speechVideo = document.querySelector("#avatar-speech");
+const stage = document.querySelector("#stage");
 const state = document.querySelector("#state");
 let playToken = 0;
+let segmentPlaying=false;
+const segmentQueue=[];
 
 function notify(type, data = {}) { parent.postMessage({ type, ...data }, location.origin); }
 function playIdle() {
   document.body.classList.remove("needs-play"); state.onclick = null;
   speechVideo.classList.remove("active");
   speechVideo.pause();
+  for(const video of stage.querySelectorAll(".speech-segment")){video.pause();video.remove();}
+  segmentQueue.length=0;segmentPlaying=false;
   idleVideo.play().catch(() => {});
+}
+
+function preloadSegment(item){
+  const video=document.createElement("video");
+  video.className="avatar-layer speech-segment";video.playsInline=true;
+  video.preload="auto";video.src=item.url;video.load();
+  stage.append(video);
+  return {...item,video};
+}
+
+async function playQueuedSegment(){
+  if(segmentPlaying||!segmentQueue.length)return;
+  segmentPlaying=true;const item=segmentQueue.shift(),video=item.video;
+  const token=playToken;
+  try{
+    await video.play();if(token!==playToken)return;
+    video.classList.add("active");
+    notify("wav2lip-started",{requestId:item.requestId});
+    await new Promise((resolve,reject)=>{video.onended=resolve;video.onerror=reject;});
+    notify("wav2lip-ended",{requestId:item.requestId});
+  }catch{notify("wav2lip-error",{requestId:item.requestId});}
+  finally{
+    video.classList.remove("active");video.pause();video.remove();
+    segmentPlaying=false;
+    if(segmentQueue.length)playQueuedSegment();else if(token===playToken){idleVideo.play().catch(()=>{});document.body.classList.remove("loading");}
+  }
 }
 
 function reflectedIdleTime(speechTime) {
@@ -54,6 +85,9 @@ async function revealAlignedIdle(token) {
 window.addEventListener("message", async event => {
   if (event.origin !== location.origin || event.source !== parent) return;
   if (event.data?.type === "wav2lip-clear") { playToken++; document.body.classList.remove("loading"); playIdle(); return; }
+  if(event.data?.type==="wav2lip-enqueue"&&event.data.url){
+    document.body.classList.add("loading");segmentQueue.push(preloadSegment(event.data));playQueuedSegment();return;
+  }
   const isSilentAction=event.data?.type==="wav2lip-action";
   if ((event.data?.type !== "wav2lip-play"&&!isSilentAction) || !event.data.url) return;
   const token = ++playToken;

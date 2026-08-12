@@ -23,6 +23,7 @@ let avatarMode = switchableAvatarProfile
 if(!["real","anime","experiment"].includes(avatarMode))avatarMode="real";
 let neuralAvatarProfile = wav2LipAvatarProfile || (switchableAvatarProfile && avatarMode === "real");
 const neuralRenderEndpoint = wav2LipAvatarProfile ? "/api/wav2lip/render" : "/api/dinet/render";
+const streamingAvatarExperiment = new URLSearchParams(location.search).get("streaming") !== "0";
 const silentNeuralActions={
   bow:"/real-actions/bedroom_bow_silent.mp4",
   surprise:"/real-actions/bedroom_surprise_silent.mp4"
@@ -83,6 +84,7 @@ const historySchema="20260807-user-reset-v6";
 if(localStorage.getItem("lumi-history-schema")!==historySchema){localStorage.removeItem("lumi-history");localStorage.removeItem("lumi-vrm-history");localStorage.setItem("lumi-history-schema",historySchema);}
 let history = JSON.parse(localStorage.getItem("lumi-history") || "[]");
 let mode = "demo", speakingToken = 0, audioContext, activeAudio, activeSpeechResolve, speechTimer, actionRequestId = 0;
+const activeStreamingSpeech=new Set();
 let speechQueue = Promise.resolve(), speechBatch = 0, activeReplyController;
 const conversationActions=new ConversationActionScheduler();
 let voiceCallActive = false;
@@ -207,9 +209,11 @@ function stopSpeech() {
   speechBatch++;
   speechQueue = Promise.resolve();
   activeReplyController?.abort(); activeReplyController = null;
+  for(const stream of activeStreamingSpeech)stream.cancel();activeStreamingSpeech.clear();
   clearInterval(speechTimer);
   window.speechSynthesis?.cancel();
   if (activeAudio) { activeAudio.pause(); activeAudio.removeAttribute("src"); activeAudio = null; }
+  for(const finish of [...pendingWav2LipPlaybacks.values()])finish();pendingWav2LipPlaybacks.clear();
   activeSpeechResolve?.(); activeSpeechResolve = null;
   digitalHumanFrame?.contentWindow?.postMessage({ type:"dh-live-clear" }, location.origin);
   digitalHumanFrame?.contentWindow?.postMessage({ type:"wav2lip-clear" }, location.origin);
@@ -316,14 +320,51 @@ async function prepareNeuralSpeech(text, emotion, batch, action="idle") {
   return renderResponse.json();
 }
 
-async function playPreparedNeuralSpeech(rendered, batch) {
+function prepareStreamingNeuralSpeech(text,emotion,batch,action="idle"){
+  const queue=[],waiters=[];let ended=false,failure=null;
+  const wake=()=>{while(waiters.length&&(queue.length||ended||failure))waiters.shift()();};
+  const controller=new AbortController();
+  const consume=(async()=>{
+    const response=await fetch("/api/dinet/speech-stream",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({text,emotion,voice:voiceProfile,action}),signal:controller.signal});
+    if(!response.ok||!response.body){const data=await response.json().catch(()=>({}));throw new Error(data.error||"流式回答准备失败");}
+    await consumeEventStream(response,async(event,data)=>{
+      if(batch!==speechBatch){controller.abort();return;}
+      if(event==="segment"){queue.push(data);wake();}
+      if(event==="error")throw new Error(data.error||"流式回答准备失败");
+      if(event==="done"){ended=true;wake();}
+    });
+    ended=true;wake();
+  })().catch(error=>{failure=error;ended=true;wake();});
+  const stream={
+    cancel(){controller.abort();activeStreamingSpeech.delete(stream);},
+    async next(){
+      while(!queue.length&&!ended&&!failure)await new Promise(resolve=>waiters.push(resolve));
+      if(failure)throw failure;
+      if(queue.length)return{value:queue.shift(),done:false};
+      await consume;activeStreamingSpeech.delete(stream);return{done:true};
+    }
+  };
+  activeStreamingSpeech.add(stream);return stream;
+}
+
+async function playStreamingNeuralSpeech(stream,batch){
+  const playbacks=[];
+  while(batch===speechBatch){
+    const item=await stream.next();if(item.done)break;
+    playbacks.push(playPreparedNeuralSpeech(item.value,batch,{enqueue:true}));
+  }
+  await Promise.all(playbacks);
+  if(batch===speechBatch)speaking(false);
+}
+
+async function playPreparedNeuralSpeech(rendered, batch, {enqueue=false}={}) {
   if (!rendered || batch !== speechBatch) return;
   const requestId = crypto.randomUUID();
   speaking(true);
-  digitalHumanFrame.contentWindow.postMessage({ type:"wav2lip-play", url:rendered.url, requestId }, location.origin);
+  digitalHumanFrame.contentWindow.postMessage({ type:enqueue?"wav2lip-enqueue":"wav2lip-play", url:rendered.url, requestId }, location.origin);
   await new Promise(resolve => {
     const timer = setTimeout(() => { pendingWav2LipPlaybacks.delete(requestId); speaking(false); resolve(); }, 180_000);
-    const finish = () => { clearTimeout(timer); pendingWav2LipPlaybacks.delete(requestId); if(batch===speechBatch)speaking(false); activeSpeechResolve=null; resolve(); };
+    const finish = () => { clearTimeout(timer); pendingWav2LipPlaybacks.delete(requestId); if(!enqueue&&batch===speechBatch)speaking(false); activeSpeechResolve=null; resolve(); };
     pendingWav2LipPlaybacks.set(requestId, finish);
     activeSpeechResolve = finish;
   });
@@ -347,12 +388,15 @@ function enqueueSpeech(text, emotion, batch, action="idle") {
     // Start TTS and rendering immediately for every completed sentence. Playback
     // stays ordered, while later sentences prepare during the current sentence.
     const silentAction=silentNeuralActions[action];
-    const preparation = prepareNeuralSpeech(text, emotion, batch,silentAction?"idle":action);
+    const preparation = streamingAvatarExperiment&&!silentAction
+      ? prepareStreamingNeuralSpeech(text,emotion,batch,action)
+      : prepareNeuralSpeech(text, emotion, batch,silentAction?"idle":action);
     speechQueue = speechQueue.then(async () => {
       if (batch !== speechBatch) return;
       try {
         if(silentAction)await playSilentNeuralAction(silentAction,batch);
-        await playPreparedNeuralSpeech(await preparation, batch);
+        if(streamingAvatarExperiment&&!silentAction)await playStreamingNeuralSpeech(preparation,batch);
+        else await playPreparedNeuralSpeech(await preparation, batch);
       }
       catch (error) {
         if (batch !== speechBatch) return;

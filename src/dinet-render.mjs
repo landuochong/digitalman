@@ -72,7 +72,7 @@ class PersistentDINetWorker {
     clearTimeout(this.active.timer); this.active.reject(error); this.active = null;
   }
 
-  render(audioPath, outputPath, asset) {
+  render(audioPath, outputPath, asset, frameOffset=0, audioOffsetMs=0, outputFrames=0) {
     const task = this.chain.then(async () => {
       await this.start();
       return new Promise((resolve, reject) => {
@@ -86,6 +86,9 @@ class PersistentDINetWorker {
           id,
           audio:audioPath,
           output:outputPath,
+          frameOffset,
+          audioOffsetMs,
+          outputFrames,
           asset:join(this.projectRoot, "public", "dh-live", "actions", asset)
         })}\n`);
       });
@@ -121,7 +124,9 @@ export class DINetRenderStore {
     return { ready:missing.length === 0, missing };
   }
 
-  async render(audioBuffer, action="idle") {
+  warmup(){return this.worker.start();}
+
+  async render(audioBuffer, action="idle", { frameOffset=0, audioOffsetMs=0, outputFrames=0 }={}) {
     const extension = inferAudioExtension(audioBuffer);
     if (extension !== "wav") {
       throw Object.assign(new Error("DINet 当前仅接受 PCM WAV 音频"), { status:415 });
@@ -138,6 +143,9 @@ export class DINetRenderStore {
     const hash = createHash("sha256")
       .update(RENDER_PROFILE)
       .update(asset)
+      .update(`frame-offset:${frameOffset}`)
+      .update(`audio-offset-ms:${audioOffsetMs}`)
+      .update(`output-frames:${outputFrames}`)
       .update(`${videoInfo.size}:${videoInfo.mtimeMs}:${dataInfo.size}:${dataInfo.mtimeMs}`)
       .update(audioBuffer)
       .digest("hex")
@@ -150,27 +158,27 @@ export class DINetRenderStore {
     }
     if (this.pending.has(hash)) return this.pending.get(hash);
 
-    const task = this.#render(hash, audioBuffer, outputPath, outputName,asset,action)
+    const task = this.#render(hash, audioBuffer, outputPath, outputName,asset,action,frameOffset,audioOffsetMs,outputFrames)
       .finally(() => this.pending.delete(hash));
     this.pending.set(hash, task);
     return task;
   }
 
-  async #render(hash, audioBuffer, outputPath, outputName,asset,action) {
+  async #render(hash, audioBuffer, outputPath, outputName,asset,action,frameOffset,audioOffsetMs,outputFrames) {
     await mkdir(this.workDir, { recursive:true });
     await mkdir(this.outputDir, { recursive:true });
     const audioPath = join(this.workDir, `${hash}.wav`);
     const stagingPath = join(this.workDir, `${hash}.partial.mp4`);
     await writeFile(audioPath, audioBuffer, { mode:0o600 });
     try {
-      const metrics = await this.worker.render(audioPath, stagingPath, asset);
+      const metrics = await this.worker.render(audioPath, stagingPath, asset, frameOffset, audioOffsetMs, outputFrames);
       await rename(stagingPath, outputPath);
       const info = await stat(outputPath);
       return {
         url:`/dinet-avatar/generated/${outputName}`,
         bytes:info.size,
         cached:false,
-        action,asset,
+        action,asset,frameOffset,
         metrics:{
           frames:metrics.frames,
           audioMs:metrics.audioMs,

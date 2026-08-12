@@ -9,6 +9,8 @@ import { buildVoiceCatalog } from "./src/voices.mjs";
 import { DhActionTaskStore, isLoopbackAddress, saveActionVideo } from "./src/dh-action-studio.mjs";
 import { Wav2LipRenderStore } from "./src/wav2lip-render.mjs";
 import { DINetRenderStore } from "./src/dinet-render.mjs";
+import { DINetStreamSessionStore } from "./src/dinet-stream.mjs";
+import { streamMiniMaxPcm } from "./src/minimax-stream-tts.mjs";
 import { BoundedAsyncCache } from "./src/audio-cache.mjs";
 
 function loadLocalEnv() {
@@ -33,6 +35,7 @@ const actionUploadDir = fileURLToPath(new URL("./data/dh-action-uploads", import
 const actionTasks = new DhActionTaskStore({ projectRoot });
 const wav2lipRenders = new Wav2LipRenderStore({ projectRoot });
 const dinetRenders = new DINetRenderStore({ projectRoot });
+const dinetStreams = new DINetStreamSessionStore({ renderer:dinetRenders });
 const port = Number(process.env.PORT || 3000);
 const provider = process.env.AI_PROVIDER || (process.env.OPENAI_API_KEY ? "openai" : process.env.MINIMAX_API_KEY ? "minimax" : "demo");
 const apiKey = provider === "minimax" ? process.env.MINIMAX_API_KEY : process.env.OPENAI_API_KEY;
@@ -44,6 +47,7 @@ const miniMaxTtsBaseUrl = (process.env.MINIMAX_TTS_BASE_URL || "https://api-bj.m
 const miniMaxTextModel = process.env.MINIMAX_TEXT_MODEL || "MiniMax-M3";
 const miniMaxTtsModel = process.env.MINIMAX_TTS_MODEL || "speech-2.8-turbo";
 const miniMaxTtsVoice = process.env.MINIMAX_TTS_VOICE || "female-tianmei";
+const miniMaxTtsWsUrl = process.env.MINIMAX_TTS_WS_URL || "wss://api.minimaxi.com/ws/v1/t2a_v2";
 const voiceCatalog=buildVoiceCatalog({
   provider:apiKey?provider:"demo",
   defaultVoice:provider==="minimax"?miniMaxTtsVoice:ttsVoice,
@@ -340,6 +344,57 @@ export const server = http.createServer(async (req, res) => {
       const result = await dinetRenders.render(await binaryBody(req),requestUrl.searchParams.get("action")||"idle");
       return json(res, 200, result);
     }
+    if (pathname === "/api/dinet/speech-stream" && req.method === "POST") {
+      if (!isLoopbackAddress(req.socket.remoteAddress)) return json(res, 403, { error:"本地流式人物接口仅允许本机访问" });
+      if(provider!=="minimax"||!apiKey)return json(res,503,{error:"流式人物当前需要 MiniMax 语音服务"});
+      const data=await body(req),text=String(data.text||"").trim().slice(0,1800);
+      if(!text)return json(res,400,{error:"语音内容不能为空"});
+      const controller=new AbortController();let closed=false;
+      res.on("close",()=>{if(!closed)controller.abort();});
+      res.writeHead(200,{"content-type":"text/event-stream; charset=utf-8","cache-control":"no-cache, no-transform","x-accel-buffering":"no"});
+      const session=dinetStreams.start({action:String(data.action||"idle")});
+      sendEvent(res,"started",session);
+      let chunkSequence=0,renderChain=Promise.resolve(),firstSegmentSent=false;
+      const emitSegments=async(final=false)=>{
+        const segments=await dinetStreams.drain(session.id,{final,onSegment:segment=>{
+          firstSegmentSent=true;sendEvent(res,"segment",segment);
+        }});
+        return segments.length;
+      };
+      try{
+        const ttsMetrics=await streamMiniMaxPcm({
+          apiKey,text,model:miniMaxTtsModel,voice:voiceCatalog.resolve(data.voice),emotion:data.emotion,
+          url:miniMaxTtsWsUrl,signal:controller.signal,
+          onAudio:pcm=>{
+            dinetStreams.append(session.id,chunkSequence++,pcm);
+            renderChain=renderChain.then(()=>emitSegments(false));
+          }
+        });
+        await renderChain;
+        await emitSegments(true);
+        const completed=dinetStreams.complete(session.id);
+        sendEvent(res,"done",{...completed,tts:ttsMetrics,firstSegmentSent});
+        closed=true;res.end();
+      }catch(error){
+        dinetStreams.cancel(session.id);sendEvent(res,"error",{error:error.message||"流式人物生成失败"});closed=true;res.end();
+      }
+      return;
+    }
+    if (pathname === "/api/dinet/stream/start" && req.method === "POST") {
+      if (!isLoopbackAddress(req.socket.remoteAddress)) return json(res, 403, { error:"本地 DINet 流式接口仅允许本机访问" });
+      return json(res, 201, dinetStreams.start(await body(req)));
+    }
+    const dinetStreamMatch = pathname.match(/^\/api\/dinet\/stream\/([0-9a-f-]+)\/(audio-chunk|finish|cancel)$/i);
+    if (dinetStreamMatch && req.method === "POST") {
+      if (!isLoopbackAddress(req.socket.remoteAddress)) return json(res, 403, { error:"本地 DINet 流式接口仅允许本机访问" });
+      const [, sessionId, command] = dinetStreamMatch;
+      if (command === "audio-chunk") {
+        const sequence = Number(req.headers["x-chunk-sequence"]);
+        return json(res, 202, dinetStreams.append(sessionId, sequence, await binaryBody(req, 512_000)));
+      }
+      if (command === "finish") return json(res, 200, await dinetStreams.finish(sessionId));
+      return json(res, 200, dinetStreams.cancel(sessionId));
+    }
     if (req.method === "GET" && pathname === "/api/health") return json(res, 200, { ok:true, mode:apiKey ? provider : "demo", memory:true, continuity:true, textModel:provider === "minimax" ? miniMaxTextModel : textModel, ttsModel:provider === "minimax" ? miniMaxTtsModel : ttsModel });
     if (req.method === "GET" && pathname === "/api/voices") return json(res,200,{provider:voiceCatalog.provider,defaultKey:voiceCatalog.defaultKey,voices:voiceCatalog.voices});
     if (req.method === "GET" && pathname === "/api/chat/debug/recent") {
@@ -366,4 +421,8 @@ export const server = http.createServer(async (req, res) => {
   }
 });
 
-if (process.env.NODE_ENV !== "test") server.listen(port, () => console.log(`露米已上线：http://localhost:${port} (${apiKey ? provider : "demo"}模式)`));
+if (process.env.NODE_ENV !== "test") {
+  dinetRenders.warmup()
+    .catch(error=>console.warn(`真人口型预热失败，将在首次请求时重试：${error.message}`))
+    .finally(()=>server.listen(port, () => console.log(`露米已上线：http://localhost:${port} (${apiKey ? provider : "demo"}模式)`)));
+}

@@ -97,6 +97,17 @@ test("voice button toggles one continuous call instead of each utterance",async(
   assert.doesNotMatch(app,/voiceButton\.onclick=startListening/);
 });
 
+test("streaming avatar experiment consumes ordered server segments and cancels stale sessions",async()=>{
+  const app=await readPublic("app.js");
+  assert.match(app,/streamingAvatarExperiment/);
+  assert.match(app,/get\("streaming"\) !== "0"/);
+  assert.match(app,/\/api\/dinet\/speech-stream/);
+  assert.match(app,/event==="segment"/);
+  assert.match(app,/playPreparedNeuralSpeech\(item\.value,batch,\{enqueue:true\}\)/);
+  assert.match(app,/await Promise\.all\(playbacks\)/);
+  assert.match(app,/for\(const stream of activeStreamingSpeech\)stream\.cancel\(\)/);
+});
+
 test("captions stay inside the right panel without hiding the avatar",async()=>{
   const [html,app,voice,style]=await Promise.all([readPublic("index.html"),readPublic("app.js"),readPublic("voice.css"),readPublic("style.css")]);
   assert.match(html,/aria-controls="messages"/);

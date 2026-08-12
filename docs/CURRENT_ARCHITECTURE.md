@@ -102,7 +102,7 @@ MiniMax 只生成可朗读正文。`emotion` 和 `action` 在本地推断，不�
 
 DINet 当前采用“LLM 流式分句 → 每句 TTS WAV 与 DINet 提前生成 → 按原顺序播放”的流水线。后续句会在当前句播放期间准备，但首句仍需等待模型首个可读分句、TTS 和首个 MP4。DINet 帧不再先编码临时 mp4v 后二次转码，而是通过 rawvideo 管道直接送入最终 H.264 编码器，使神经推理和视频编码并行。若继续降低首句等待，主要方向是无 thinking 的低首字延迟文本模型，或 fMP4/WebM/WebRTC 视频增量传输，而不是降低帧率和分辨率。
 
-### 下一阶段：流式音频与分段口型渲染（设计中，尚未实现）
+### 下一阶段：流式音频与分段口型渲染（第一阶段开发中）
 
 目标是把当前串行关键路径：
 
@@ -123,6 +123,8 @@ DINet 当前采用“LLM 流式分句 → 每句 TTS WAV 与 DINet 提前生成 
 
 MiniMax WebSocket TTS 支持在一个会话中按顺序发送多个 `task_continue`，适合直接承接 M3 的流式正文。HTTP 流式 TTS 当前仅支持 MP3，因此无论选择 HTTP 或 WebSocket，服务端都需要用常驻解码器把返回数据连续转换成 DINet 所需的 PCM；不能把每个 MP3 数据块当成独立音频文件解码。官方接口参考：<https://platform.minimaxi.com/docs/api-reference/speech-t2a-websocket>。
 
+WALL-E 的非微信主链路已验证了可借鉴的音频半链路：终端把 16 kHz 单声道音频编码成连续 Opus 小包，通过一个长连接按序上行；服务端维护 VAD、ASR、LLM、TTS 队列和打断状态；下行音频由常驻解码器按序播放。这里吸收的是它的**长连接会话、严格序号、有界队列、连续解码、阶段事件和取消语义**，不移植微信桥，也不把当前 M3 换成 WALL-E 的 Kimi。WALL-E 当前配置的 Sherpa 是离线识别，不能直接消除停顿后的 ASR 等待；它也不包含 DINet，因此不能代替下面的视频增量渲染工作。
+
 实施分为两期：
 
 1. **分段 MP4 验证版**：以约 0.8–1.2 秒 PCM 为一个口型窗口，生成带音频的小 MP4。浏览器使用当前段/下一段双缓冲，严格按序号播放。相邻窗口保留约 160–240 ms 声学上下文，后一段生成时使用重叠区，但播放和封装时丢弃重复音频与重复帧。该阶段优先验证首段速度、接缝、动作连续性与中断，不立即引入 MediaSource。
@@ -135,6 +137,17 @@ DINet worker 需要增加 `start`、`audio_chunk`、`finish`、`cancel` 四类�
 - Audio2BlendShape LSTM 的 `hidden/cell`，不能像当前 `Audio2bs()` 一样为每块重置为零；
 - 当前动作素材、ping-pong 视频帧索引和已输出帧数；
 - 音频采样数、视频时间戳、分片序号和取消状态。
+
+第一阶段已经增加本机专用的 DINet 流式会话 API：
+
+- `POST /api/dinet/stream/start`：建立 16 kHz、单声道 PCM16 会话并固定本轮动作；
+- `POST /api/dinet/stream/:id/audio-chunk`：通过 `X-Chunk-Sequence` 严格按序提交 PCM；
+- `POST /api/dinet/stream/:id/finish`：结束输入并返回渲染结果和分阶段计时；
+- `POST /api/dinet/stream/:id/cancel`：立即释放缓冲，迟到分片不再进入新一轮。
+
+第一阶段现已继续推进到可运行的分段链路。`/api/dinet/speech-stream` 使用一个 MiniMax WebSocket 请求 16 kHz 单声道 PCM，音频累计约 800 ms 便立即送入 DINet，不再等待完整 WAV；真人页面默认按服务端序号预加载并逐段播放，`?streaming=0` 可一键回退现有整句路径。服务启动前会完成 DINet 模型预热，避免第一轮用户请求承担约 5 秒模型加载。
+
+分段推理保留前一段末尾 400 ms PCM 作为只读声学上下文，以补偿 Audio2BlendShape 每次推理丢弃的初始稳定帧；只输出与当前 800 ms 音频对应的最后 20 帧，FFmpeg 从音轨裁掉这 400 ms，避免重复声音。流输入始终预留至少 240 ms 尾音，避免产生无法稳定封装的几十毫秒碎片。动作底片使用跨段 `frameOffset`，不会每段从首帧重新开始。目前输出仍是有声小 MP4 和预加载队列式顺序切换，下一步才是保持 LSTM hidden/cell 与单个 FFmpeg 的状态化 fMP4 版本。
 
 音视频必须由同一个编码时间轴产生，不能让浏览器分别播放 PCM 与无声视频，否则长回答会逐渐漂移。每 16,000 个 16 kHz PCM 采样严格对应 25 个视频帧；不足一帧的采样留到下个块继续累计。FFmpeg 采用 fragmented MP4 时输出一次初始化片段，之后按较短 GOP 输出 `moof/mdat` 媒体片段，浏览器只按连续序号追加到同一个 `SourceBuffer`。
 

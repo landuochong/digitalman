@@ -272,12 +272,17 @@ class PersistentDINetRenderer:
                 values.extend(float(value) for value in line[2:].split())
         return np.asarray(values, dtype=np.float32).reshape(-1, 5)
 
-    def render(self, audio_path: Path, output_path: Path) -> dict:
+    def render(
+        self, audio_path: Path, output_path: Path, frame_offset: int = 0,
+        audio_offset_ms: int = 0, output_frames: int = 0,
+    ) -> dict:
         started = time.perf_counter()
         coefficients = Audio2bs(str(audio_path), self.audio_model)[5:] * 0.5
         audio_ready = time.perf_counter()
         if not len(coefficients):
             raise ValueError("音频过短，无法生成口型")
+        if output_frames > 0:
+            coefficients = coefficients[-output_frames:]
 
         output_path.parent.mkdir(parents=True, exist_ok=True)
         height, width = self.frames[0].shape[:2]
@@ -286,17 +291,23 @@ class PersistentDINetRenderer:
         # encoded the whole video again during muxing.  Keeping ffmpeg alive
         # while DINet renders lets encoding overlap inference and removes that
         # complete second video pass.
-        encoder = subprocess.Popen(
-            [
+        command = [
                 "ffmpeg", "-loglevel", "error", "-y",
                 "-f", "rawvideo", "-pix_fmt", "bgr24",
                 "-video_size", f"{width}x{height}", "-framerate", "25",
-                "-i", "pipe:0", "-i", str(audio_path),
+                "-i", "pipe:0",
+        ]
+        if audio_offset_ms > 0:
+            command.extend(["-ss", f"{audio_offset_ms / 1000:.3f}"])
+        command.extend([
+                "-i", str(audio_path),
                 "-c:v", "libx264", "-preset", "veryfast",
                 "-pix_fmt", "yuv420p", "-crf", "18",
                 "-c:a", "aac", "-shortest", "-movflags", "+faststart",
                 str(output_path),
-            ],
+        ])
+        encoder = subprocess.Popen(
+            command,
             stdin=subprocess.PIPE,
             stderr=subprocess.PIPE,
         )
@@ -308,7 +319,7 @@ class PersistentDINetRenderer:
         try:
             with torch.inference_mode():
                 for audio_index, values in enumerate(coefficients):
-                    frame_index = audio_index % len(self.frames)
+                    frame_index = (frame_offset + audio_index) % len(self.frames)
                     blendshape = np.zeros(12, dtype=np.float32)
                     blendshape[:6] = values[:6] * self.mouth_motion_scale
                     deformation = (
@@ -402,7 +413,13 @@ def main() -> None:
             with contextlib.redirect_stdout(sys.stderr):
                 if request.get("asset"):
                     renderer.set_asset(Path(request["asset"]))
-                metrics = renderer.render(Path(request["audio"]), Path(request["output"]))
+                metrics = renderer.render(
+                    Path(request["audio"]),
+                    Path(request["output"]),
+                    max(0, int(request.get("frameOffset", 0))),
+                    max(0, int(request.get("audioOffsetMs", 0))),
+                    max(0, int(request.get("outputFrames", 0))),
+                )
             send({"type": "done", "id": request_id, **metrics})
         except Exception as error:
             send({"type": "error", "id": request_id, "error": str(error)})
