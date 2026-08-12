@@ -47,6 +47,9 @@ test("DINet streams raw frames into the final H.264 encode",async()=>{
   assert.match(source,/"-f", "rawvideo"/);
   assert.match(source,/"-preset", "veryfast"/);
   assert.match(source,/audio_offset_ms/);
+  assert.match(source,/StreamingAudio2BlendShape/);
+  assert.match(source,/stream_id/);
+  assert.match(source,/cancel_stream/);
   assert.doesNotMatch(source,/cv2\.VideoWriter/);
   assert.doesNotMatch(source,/silent_path/);
 });

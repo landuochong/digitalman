@@ -4,8 +4,8 @@ const DEFAULT_SAMPLE_RATE = 16_000;
 const DEFAULT_CHANNELS = 1;
 const DEFAULT_MAX_AUDIO_MS = 60_000;
 const DEFAULT_SEGMENT_MS = 800;
+const DEFAULT_FIRST_SEGMENT_MS = 400;
 const MIN_TAIL_MS = 240;
-const INFERENCE_CONTEXT_MS = 400;
 
 function streamError(message, status) {
   return Object.assign(new Error(message), { status });
@@ -32,10 +32,11 @@ export function encodePcm16Wav(pcm, sampleRate = DEFAULT_SAMPLE_RATE, channels =
 }
 
 export class DINetStreamSessionStore {
-  constructor({ renderer, maxAudioMs = DEFAULT_MAX_AUDIO_MS, segmentMs = DEFAULT_SEGMENT_MS, now = () => performance.now() }) {
+  constructor({ renderer, maxAudioMs = DEFAULT_MAX_AUDIO_MS, segmentMs = DEFAULT_SEGMENT_MS, firstSegmentMs = DEFAULT_FIRST_SEGMENT_MS, now = () => performance.now() }) {
     this.renderer = renderer;
     this.maxAudioMs = maxAudioMs;
     this.segmentMs = segmentMs;
+    this.firstSegmentMs = firstSegmentMs;
     this.now = now;
     this.sessions = new Map();
   }
@@ -50,9 +51,8 @@ export class DINetStreamSessionStore {
       id, action, sampleRate, channels, startedAt,
       firstChunkAt:null, nextSequence:0, bytes:0, chunks:[], state:"open",
       segmentSequence:0, frameOffset:0, renderedAudioMs:0
-      ,inferenceContext:Buffer.alloc(Math.round(INFERENCE_CONTEXT_MS * sampleRate * channels * 2 / 1000))
     });
-    return { id, action, sampleRate, channels, nextSequence:0, fallback:"whole-wav" };
+    return { id, action, sampleRate, channels, nextSequence:0, mode:"stateful-segments" };
   }
 
   append(id, sequence, chunk) {
@@ -110,36 +110,33 @@ export class DINetStreamSessionStore {
   async drain(id, { final=false, onSegment }={}) {
     const session = this.#open(id);
     const bytesPerMs = session.sampleRate * session.channels * 2 / 1000;
-    const segmentBytes = Math.round(this.segmentMs * bytesPerMs);
     const minimumTailBytes = Math.round(MIN_TAIL_MS * bytesPerMs);
     const results=[];
     while (true) {
       const available = session.chunks.reduce((total, chunk) => total + chunk.length, 0);
+      const targetMs = session.segmentSequence === 0 ? this.firstSegmentMs : this.segmentMs;
+      const segmentBytes = Math.round(targetMs * bytesPerMs);
       const take = final
         ? available
         : available >= segmentBytes + minimumTailBytes ? segmentBytes : 0;
       if (!take) break;
       if (final && take < minimumTailBytes) break;
       const pcm=this.#takeBytes(session,take);
-      const inferencePcm=Buffer.concat([session.inferenceContext,pcm]);
-      session.inferenceContext=pcm.length>=session.inferenceContext.length
-        ? Buffer.from(pcm.subarray(pcm.length-session.inferenceContext.length))
-        : Buffer.concat([session.inferenceContext.subarray(pcm.length),pcm]);
       const sequence=session.segmentSequence++;
       const frameOffset=session.frameOffset;
       const outputFrames=Math.max(1,Math.round(take/bytesPerMs/40));
       const renderStartedAt=this.now();
       const rendered=await this.renderer.render(
-        encodePcm16Wav(inferencePcm,session.sampleRate,session.channels),
+        encodePcm16Wav(pcm,session.sampleRate,session.channels),
         session.action,
-        {frameOffset,audioOffsetMs:INFERENCE_CONTEXT_MS,outputFrames}
+        {frameOffset,outputFrames,streamId:id,streamFinal:final}
       );
       const frames=Number(rendered?.metrics?.frames)||outputFrames;
       session.frameOffset+=frames;
       session.renderedAudioMs+=Math.round(take/bytesPerMs);
       const result={
         ...rendered,
-        segment:{id,sequence,frameOffset,audioMs:Math.round(take/bytesPerMs),renderMs:Math.round(this.now()-renderStartedAt)}
+        segment:{id,sequence,frameOffset,audioMs:Math.round(take/bytesPerMs),renderMs:Math.round(this.now()-renderStartedAt),audioMode:"stateful"}
       };
       results.push(result);
       await onSegment?.(result);
@@ -153,6 +150,7 @@ export class DINetStreamSessionStore {
     if(!session)return {id,completed:false};
     const result={id,completed:true,segments:session.segmentSequence,audioMs:session.renderedAudioMs};
     this.sessions.delete(id);
+    void this.renderer.cancelStream?.(id).catch?.(()=>{});
     return result;
   }
 
@@ -162,6 +160,7 @@ export class DINetStreamSessionStore {
     session.state = "cancelled";
     session.chunks.length = 0;
     this.sessions.delete(id);
+    void this.renderer.cancelStream?.(id).catch?.(()=>{});
     return { id, cancelled:true };
   }
 

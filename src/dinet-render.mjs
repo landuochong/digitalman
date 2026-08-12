@@ -72,7 +72,7 @@ class PersistentDINetWorker {
     clearTimeout(this.active.timer); this.active.reject(error); this.active = null;
   }
 
-  render(audioPath, outputPath, asset, frameOffset=0, audioOffsetMs=0, outputFrames=0) {
+  render(audioPath, outputPath, asset, frameOffset=0, audioOffsetMs=0, outputFrames=0, streamId="", streamFinal=false) {
     const task = this.chain.then(async () => {
       await this.start();
       return new Promise((resolve, reject) => {
@@ -89,12 +89,28 @@ class PersistentDINetWorker {
           frameOffset,
           audioOffsetMs,
           outputFrames,
+          streamId,
+          streamFinal,
           asset:join(this.projectRoot, "public", "dh-live", "actions", asset)
         })}\n`);
       });
     });
     this.chain = task.catch(() => {});
     return task;
+  }
+
+  cancelStream(streamId) {
+    if(!streamId)return Promise.resolve({cancelled:false});
+    const task=this.chain.then(async()=>{
+      await this.start();
+      return new Promise((resolve,reject)=>{
+        const id=createHash("sha256").update(`cancel:${streamId}:${Date.now()}`).digest("hex").slice(0,16);
+        const timer=setTimeout(()=>this.#fail(Object.assign(new Error("DINet 流式状态清理超时"),{status:504})),10_000);
+        this.active={id,resolve,reject,timer};
+        this.child.stdin.write(`${JSON.stringify({id,op:"cancel_stream",streamId})}\n`);
+      });
+    });
+    this.chain=task.catch(()=>{});return task;
   }
 }
 
@@ -125,8 +141,9 @@ export class DINetRenderStore {
   }
 
   warmup(){return this.worker.start();}
+  cancelStream(streamId){return this.worker.cancelStream(streamId);}
 
-  async render(audioBuffer, action="idle", { frameOffset=0, audioOffsetMs=0, outputFrames=0 }={}) {
+  async render(audioBuffer, action="idle", { frameOffset=0, audioOffsetMs=0, outputFrames=0, streamId="", streamFinal=false }={}) {
     const extension = inferAudioExtension(audioBuffer);
     if (extension !== "wav") {
       throw Object.assign(new Error("DINet 当前仅接受 PCM WAV 音频"), { status:415 });
@@ -146,6 +163,7 @@ export class DINetRenderStore {
       .update(`frame-offset:${frameOffset}`)
       .update(`audio-offset-ms:${audioOffsetMs}`)
       .update(`output-frames:${outputFrames}`)
+      .update(`stream-id:${streamId}`)
       .update(`${videoInfo.size}:${videoInfo.mtimeMs}:${dataInfo.size}:${dataInfo.mtimeMs}`)
       .update(audioBuffer)
       .digest("hex")
@@ -158,20 +176,20 @@ export class DINetRenderStore {
     }
     if (this.pending.has(hash)) return this.pending.get(hash);
 
-    const task = this.#render(hash, audioBuffer, outputPath, outputName,asset,action,frameOffset,audioOffsetMs,outputFrames)
+    const task = this.#render(hash, audioBuffer, outputPath, outputName,asset,action,frameOffset,audioOffsetMs,outputFrames,streamId,streamFinal)
       .finally(() => this.pending.delete(hash));
     this.pending.set(hash, task);
     return task;
   }
 
-  async #render(hash, audioBuffer, outputPath, outputName,asset,action,frameOffset,audioOffsetMs,outputFrames) {
+  async #render(hash, audioBuffer, outputPath, outputName,asset,action,frameOffset,audioOffsetMs,outputFrames,streamId,streamFinal) {
     await mkdir(this.workDir, { recursive:true });
     await mkdir(this.outputDir, { recursive:true });
     const audioPath = join(this.workDir, `${hash}.wav`);
     const stagingPath = join(this.workDir, `${hash}.partial.mp4`);
     await writeFile(audioPath, audioBuffer, { mode:0o600 });
     try {
-      const metrics = await this.worker.render(audioPath, stagingPath, asset, frameOffset, audioOffsetMs, outputFrames);
+      const metrics = await this.worker.render(audioPath, stagingPath, asset, frameOffset, audioOffsetMs, outputFrames, streamId, streamFinal);
       await rename(stagingPath, outputPath);
       const info = await stat(outputPath);
       return {
@@ -181,6 +199,7 @@ export class DINetRenderStore {
         action,asset,frameOffset,
         metrics:{
           frames:metrics.frames,
+          audioMode:metrics.audioMode,
           audioMs:metrics.audioMs,
           framesMs:metrics.framesMs,
           muxMs:metrics.muxMs,

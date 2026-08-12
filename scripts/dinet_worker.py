@@ -13,8 +13,11 @@ import time
 from pathlib import Path
 
 import cv2
+import kaldi_native_fbank as knf
 import numpy as np
 import torch
+from scipy.io import wavfile
+from scipy.signal import resample
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -26,6 +29,63 @@ from talkingface.data.few_shot_dataset import get_image  # noqa: E402
 from talkingface.model_utils import Audio2bs, LoadAudioModel, device  # noqa: E402
 from talkingface.models.DINet_mini import model_size as network_model_size  # noqa: E402
 from talkingface.render_model_mini import RenderModel_Mini  # noqa: E402
+
+
+class StreamingAudio2BlendShape:
+    """Keep OnlineFbank and LSTM state across consecutive PCM windows."""
+
+    def __init__(self, model):
+        self.model = model
+        opts = knf.FbankOptions()
+        opts.frame_opts.dither = 0
+        opts.frame_opts.samp_freq = 8000
+        opts.frame_opts.frame_length_ms = 50
+        opts.frame_opts.frame_shift_ms = 20
+        opts.frame_opts.snip_edges = False
+        opts.mel_opts.num_bins = 80
+        opts.mel_opts.debug_mel = False
+        self.fbank = knf.OnlineFbank(opts)
+        self.processed_features = 0
+        self.h = torch.zeros(2, 1, 192).to(device)
+        self.c = torch.zeros(2, 1, 192).to(device)
+        # Match the former 400 ms overlapping context once per session. It
+        # stabilizes the first visible mouth frame without recomputing it for
+        # every following segment.
+        self._accept_8k(np.zeros(3200, dtype=np.float32), output=False)
+
+    def _accept_8k(self, samples: np.ndarray, output: bool = True) -> np.ndarray:
+        self.fbank.accept_waveform(8000, samples.astype(np.float32).tolist())
+        ready = self.fbank.num_frames_ready - self.processed_features
+        usable = ready - (ready % 2)
+        if usable < 2:
+            return np.empty((0, 6), dtype=np.float32)
+        features = np.zeros((usable, 80), dtype=np.float32)
+        for index in range(usable):
+            features[index] = self.fbank.get_frame(self.processed_features + index)
+        self.processed_features += usable
+        tensor = torch.from_numpy(features).unsqueeze(0).float().to(device)
+        with torch.inference_mode():
+            values, self.h, self.c = self.model(tensor, self.h, self.c)
+        self.h = self.h.detach()
+        self.c = self.c.detach()
+        coefficients = values[0].detach().cpu().float().numpy() * 0.5
+        return coefficients if output else np.empty((0, 6), dtype=np.float32)
+
+    def process_wav(self, audio_path: Path, expected_frames: int) -> np.ndarray:
+        rate, pcm = wavfile.read(audio_path, mmap=False)
+        if rate != 16000:
+            raise ValueError(f"流式口型需要 16 kHz PCM，收到 {rate} Hz")
+        if pcm.ndim != 1:
+            pcm = pcm[:, 0]
+        downsampled = resample(pcm, len(pcm) // 2).astype(np.float32) / 32768.0
+        coefficients = self._accept_8k(downsampled)
+        if expected_frames > 0:
+            if len(coefficients) < expected_frames:
+                raise ValueError(
+                    f"流式声学帧不足：期望 {expected_frames}，得到 {len(coefficients)}"
+                )
+            coefficients = coefficients[-expected_frames:]
+        return coefficients
 
 
 def parse_args() -> argparse.Namespace:
@@ -82,6 +142,7 @@ class PersistentDINetRenderer:
         self.lip_color_strength = float(np.clip(lip_color_strength, 0.0, 1.0))
         self.mouth_width_scale = float(np.clip(mouth_width_scale, 0.65, 1.0))
         self.audio_model = LoadAudioModel(str(audio_checkpoint))
+        self.audio_streams = {}
         self.render_model = RenderModel_Mini()
         self.render_model.loadModel(str(render_checkpoint))
 
@@ -275,9 +336,17 @@ class PersistentDINetRenderer:
     def render(
         self, audio_path: Path, output_path: Path, frame_offset: int = 0,
         audio_offset_ms: int = 0, output_frames: int = 0,
+        stream_id: str | None = None, stream_final: bool = False,
     ) -> dict:
         started = time.perf_counter()
-        coefficients = Audio2bs(str(audio_path), self.audio_model)[5:] * 0.5
+        if stream_id:
+            stream = self.audio_streams.get(stream_id)
+            if stream is None:
+                stream = StreamingAudio2BlendShape(self.audio_model)
+                self.audio_streams[stream_id] = stream
+            coefficients = stream.process_wav(audio_path, output_frames)
+        else:
+            coefficients = Audio2bs(str(audio_path), self.audio_model)[5:] * 0.5
         audio_ready = time.perf_counter()
         if not len(coefficients):
             raise ValueError("音频过短，无法生成口型")
@@ -383,8 +452,11 @@ class PersistentDINetRenderer:
             output_path.unlink(missing_ok=True)
             raise RuntimeError(f"ffmpeg 视频编码失败：{stderr[-800:]}")
         finished = time.perf_counter()
+        if stream_id and stream_final:
+            self.audio_streams.pop(stream_id, None)
         return {
             "frames": len(coefficients),
+            "audioMode": "stateful" if stream_id else "whole-wav",
             "audioMs": round((audio_ready - started) * 1000),
             "framesMs": round((frames_ready - audio_ready) * 1000),
             "muxMs": round((finished - frames_ready) * 1000),
@@ -410,6 +482,10 @@ def main() -> None:
         try:
             request = json.loads(line)
             request_id = request["id"]
+            if request.get("op") == "cancel_stream":
+                removed = renderer.audio_streams.pop(str(request.get("streamId") or ""), None)
+                send({"type": "done", "id": request_id, "cancelled": removed is not None})
+                continue
             with contextlib.redirect_stdout(sys.stderr):
                 if request.get("asset"):
                     renderer.set_asset(Path(request["asset"]))
@@ -419,6 +495,8 @@ def main() -> None:
                     max(0, int(request.get("frameOffset", 0))),
                     max(0, int(request.get("audioOffsetMs", 0))),
                     max(0, int(request.get("outputFrames", 0))),
+                    str(request.get("streamId") or "") or None,
+                    bool(request.get("streamFinal", False)),
                 )
             send({"type": "done", "id": request_id, **metrics})
         except Exception as error:

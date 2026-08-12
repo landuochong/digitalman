@@ -147,7 +147,7 @@ DINet worker 需要增加 `start`、`audio_chunk`、`finish`、`cancel` 四类�
 
 第一阶段现已继续推进到可运行的分段链路。`/api/dinet/speech-stream` 使用一个 MiniMax WebSocket 请求 16 kHz 单声道 PCM，音频累计约 800 ms 便立即送入 DINet，不再等待完整 WAV；真人页面默认按服务端序号预加载并逐段播放，`?streaming=0` 可一键回退现有整句路径。服务启动前会完成 DINet 模型预热，避免第一轮用户请求承担约 5 秒模型加载。
 
-分段推理保留前一段末尾 400 ms PCM 作为只读声学上下文，以补偿 Audio2BlendShape 每次推理丢弃的初始稳定帧；只输出与当前 800 ms 音频对应的最后 20 帧，FFmpeg 从音轨裁掉这 400 ms，避免重复声音。流输入始终预留至少 240 ms 尾音，避免产生无法稳定封装的几十毫秒碎片。动作底片使用跨段 `frameOffset`，不会每段从首帧重新开始。目前输出仍是有声小 MP4 和预加载队列式顺序切换，下一步才是保持 LSTM hidden/cell 与单个 FFmpeg 的状态化 fMP4 版本。
+Audio2BlendShape 现已改为真正的会话状态：worker 为每轮语音保存一个 `OnlineFbank`、已消费特征位置和 LSTM `hidden/cell`，开始时只用一次 400 ms 静音预热，后续 PCM 不再重叠、不再重复重采样既有音频。首段窗口为 400 ms/10 帧，用于尽快开口；后续使用 800 ms/20 帧降低切换次数，流输入始终预留至少 240 ms 尾音，避免产生无法稳定封装的几十毫秒碎片。动作底片使用跨段 `frameOffset`，不会每段从首帧重新开始；完成和取消都会显式释放 worker 会话状态。目前输出仍是有声小 MP4 和预加载队列式顺序切换，下一步是单个 FFmpeg 的状态化 fMP4 版本。
 
 音视频必须由同一个编码时间轴产生，不能让浏览器分别播放 PCM 与无声视频，否则长回答会逐渐漂移。每 16,000 个 16 kHz PCM 采样严格对应 25 个视频帧；不足一帧的采样留到下个块继续累计。FFmpeg 采用 fragmented MP4 时输出一次初始化片段，之后按较短 GOP 输出 `moof/mdat` 媒体片段，浏览器只按连续序号追加到同一个 `SourceBuffer`。
 

@@ -42,10 +42,12 @@ test("rejects out-of-order chunks without advancing the session", () => {
 });
 
 test("cancel releases buffered audio and makes late chunks harmless", () => {
-  const store = new DINetStreamSessionStore({ renderer:{ render:async()=>({}) } });
+  const cancelled=[];
+  const store = new DINetStreamSessionStore({ renderer:{ render:async()=>({}),cancelStream:async id=>cancelled.push(id) } });
   const session = store.start();
   store.append(session.id, 0, Buffer.alloc(320));
   assert.deepEqual(store.cancel(session.id), { id:session.id, cancelled:true });
+  assert.deepEqual(cancelled,[session.id]);
   assert.throws(() => store.append(session.id, 1, Buffer.alloc(320)), error => error.status === 404);
   assert.deepEqual(store.cancel(session.id), { id:session.id, cancelled:false });
 });
@@ -61,7 +63,7 @@ test("enforces the configured audio duration and PCM16 alignment", () => {
 test("drains one-second segments early and keeps the action frame clock continuous",async()=>{
   const calls=[];
   const store=new DINetStreamSessionStore({
-    segmentMs:800,
+    segmentMs:800,firstSegmentMs:800,
     renderer:{render:async(wav,action,options)=>{
       calls.push({bytes:wav.readUInt32LE(40),action,...options});
       return{url:`/${calls.length}.mp4`,metrics:{frames:25}};
@@ -75,8 +77,23 @@ test("drains one-second segments early and keeps the action frame clock continuo
   const tail=await store.drain(session.id,{final:true});
   assert.equal(tail.length,1);assert.equal(tail[0].segment.audioMs,700);
   assert.deepEqual(calls,[
-    {bytes:38_400,action:"wave_approval",frameOffset:0,audioOffsetMs:400,outputFrames:20},
-    {bytes:35_200,action:"wave_approval",frameOffset:25,audioOffsetMs:400,outputFrames:18},
+    {bytes:25_600,action:"wave_approval",frameOffset:0,outputFrames:20,streamId:session.id,streamFinal:false},
+    {bytes:22_400,action:"wave_approval",frameOffset:25,outputFrames:18,streamId:session.id,streamFinal:true},
   ]);
   assert.deepEqual(store.complete(session.id),{id:session.id,completed:true,segments:2,audioMs:1500});
+});
+
+test("emits a shorter first segment before returning to the steady window",async()=>{
+  const calls=[];
+  const store=new DINetStreamSessionStore({
+    firstSegmentMs:400,segmentMs:800,
+    renderer:{render:async(wav,_action,options)=>{calls.push({bytes:wav.readUInt32LE(40),...options});return{url:`/${calls.length}.mp4`,metrics:{frames:options.outputFrames}};}}
+  });
+  const session=store.start();
+  store.append(session.id,0,Buffer.alloc(46_080));
+  const segments=await store.drain(session.id);
+  assert.deepEqual(segments.map(item=>item.segment.audioMs),[400,800]);
+  assert.deepEqual(segments.map(item=>item.segment.frameOffset),[0,10]);
+  assert.deepEqual(segments.map(item=>item.segment.audioMode),["stateful","stateful"]);
+  assert.deepEqual(calls.map(item=>item.outputFrames),[10,20]);
 });
