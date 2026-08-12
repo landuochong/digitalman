@@ -227,8 +227,23 @@ export function companionPresenceReply(message,persona){
   return {reply:`我就在这里陪你呀。你想说话的时候，${role.name}会认真听着。`,emotion:"caring",action:"caring"};
 }
 
+const RECENT_HISTORY_ITEMS=8;
+const RECENT_HISTORY_CHAR_BUDGET=3600;
+const RECENT_HISTORY_ITEM_CHARS=900;
+
 function recentConversation(history,message){
-  const filtered=[...history.slice(-10).filter(({role,content})=>!isCompanionIdentityQuestion(content)&&!isCompanionPresenceQuestion(content)&&(role!=="assistant"||(!staleIdentityReply.test(String(content))&&!staleDeviceReply.test(String(content))))),{role:"user",content:message}];
+  const current=String(message??"").trim().slice(-2000);
+  let remaining=Math.max(0,RECENT_HISTORY_CHAR_BUDGET-current.length);
+  const eligible=history.filter(({role,content})=>!isCompanionIdentityQuestion(content)&&!isCompanionPresenceQuestion(content)&&(role!=="assistant"||(!staleIdentityReply.test(String(content))&&!staleDeviceReply.test(String(content)))));
+  const selected=[];
+  let selectedStart=eligible.length;
+  for(let index=eligible.length-1;index>=0&&selected.length<RECENT_HISTORY_ITEMS&&remaining>0;index--){
+    const item=eligible[index],raw=String(item.content??"").trim();if(!raw)continue;
+    const limit=Math.min(RECENT_HISTORY_ITEM_CHARS,remaining),content=raw.slice(-limit);
+    selected.unshift({...item,content});selectedStart=index;remaining-=content.length;
+  }
+  if(selectedStart>0&&eligible[selectedStart-1]?.role==="user"&&selected[0]?.role==="assistant")selected.shift();
+  const filtered=[...selected,{role:"user",content:current}];
   const compact=[];
   for(const item of filtered){
     const role=item.role==="assistant"?"assistant":"user",content=String(item.content??"").trim();if(!content)continue;
@@ -243,7 +258,7 @@ export function buildChatPayload({ model, message, history = [], userId = "anony
   const conversation = recentConversation(history,message)
     .map(({ role, content }) => ({
       role: role === "assistant" ? "assistant" : "user",
-      content: (role === "assistant" ? sanitizeReplyText(content) : String(content)).slice(0, 2000)
+      content: (role === "assistant" ? sanitizeReplyText(content) : String(content)).slice(-2000)
     }));
   return {
     model,
@@ -264,7 +279,7 @@ export function buildMiniMaxChatPayload({ model, message, history = [], stream =
   const conversation = recentConversation(history,message)
     .map(({ role, content }) => ({
       role:role === "assistant" ? "assistant" : "user",
-      content:(role === "assistant" ? sanitizeReplyText(content) : String(content)).slice(0, 2000)
+      content:(role === "assistant" ? sanitizeReplyText(content) : String(content)).slice(-2000)
     }));
   const payload = {
     model,
@@ -287,7 +302,7 @@ export function takeCompleteSentences(text, flush = false, includeClauses = fals
     const sentence = source.slice(start, end).trim();
     const terminal = /[。！？!?；;\n]/.test(match[0]);
     const spokenLength = sentence.replace(/[，,、。！？!?；;\s]/g, "").length;
-    if (includeClauses && !terminal && spokenLength < 3) continue;
+    if (includeClauses && !terminal && spokenLength < 6) continue;
     if (sentence) sentences.push(sentence);
     start = end;
   }
@@ -295,6 +310,8 @@ export function takeCompleteSentences(text, flush = false, includeClauses = fals
   if (flush && remainder.trim()) return { sentences:[...sentences, remainder.trim()], remainder:"" };
   return { sentences, remainder };
 }
+
+export const companionContextPolicy=Object.freeze({recentHistoryItems:RECENT_HISTORY_ITEMS,recentHistoryCharBudget:RECENT_HISTORY_CHAR_BUDGET,recentHistoryItemChars:RECENT_HISTORY_ITEM_CHARS,minSpokenClauseCharacters:6});
 
 export function extractMiniMaxChatText(payload) {
   const text = payload?.choices?.[0]?.message?.content;

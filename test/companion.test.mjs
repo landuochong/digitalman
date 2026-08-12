@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { buildChatPayload, buildMiniMaxChatPayload, buildMiniMaxReply, buildMiniMaxSpeechPayload, buildSpeechPayload, companionIdentityReply, companionPresenceReply, decodeMiniMaxAudio, demoReply, extractMiniMaxChatText, extractResponseText, inferCompanionState, isCompanionIdentityQuestion, isCompanionPresenceQuestion, normalizeAction, normalizeEmotion, normalizePersona, parseCompanionReply, sanitizeReplyText, takeCompleteSentences } from "../src/companion.mjs";
+import { buildChatPayload, buildMiniMaxChatPayload, buildMiniMaxReply, buildMiniMaxSpeechPayload, buildSpeechPayload, companionContextPolicy, companionIdentityReply, companionPresenceReply, decodeMiniMaxAudio, demoReply, extractMiniMaxChatText, extractResponseText, inferCompanionState, isCompanionIdentityQuestion, isCompanionPresenceQuestion, normalizeAction, normalizeEmotion, normalizePersona, parseCompanionReply, sanitizeReplyText, takeCompleteSentences } from "../src/companion.mjs";
 
 test("extracts Responses API output text", () => {
   assert.equal(extractResponseText({ output:[{ type:"message", content:[{ type:"output_text", text:"你好" }] }] }), "你好");
@@ -35,10 +35,10 @@ test("persona changes the demo name and is safely normalized", () => {
 test("demo escalates self-harm language to immediate real-world support", () => {
   const result = demoReply("我不想活了"); assert.equal(result.emotion, "caring"); assert.match(result.reply, /紧急服务|信任的人/);
 });
-test("chat payload keeps only the latest ten history messages plus current input", () => {
+test("chat payload keeps the bounded latest history plus current input", () => {
   const history = Array.from({ length:12 }, (_,i) => ({ role:i%2 ? "assistant" : "user", content:`消息${i}` }));
   const payload = buildChatPayload({ model:"gpt-test", message:"现在", history, userId:"u-1" });
-  assert.equal(payload.input.length, 11); assert.equal(payload.input[0].content, "消息2"); assert.equal(payload.input.at(-1).content, "现在");
+  assert.equal(payload.input.length, companionContextPolicy.recentHistoryItems+1); assert.equal(payload.input[0].content, "消息4"); assert.equal(payload.input.at(-1).content, "现在");
   assert.equal(payload.model, "gpt-test"); assert.equal(payload.safety_identifier, "u-1");
 });
 test("does not feed stale technical identity replies back into chat", () => {
@@ -111,7 +111,28 @@ test("builds streaming MiniMax payload and segments complete spoken sentences", 
   assert.deepEqual(takeCompleteSentences("第一句。第二句还没完"), { sentences:["第一句。"], remainder:"第二句还没完" });
   assert.deepEqual(takeCompleteSentences("最后一句", true), { sentences:["最后一句"], remainder:"" });
   assert.deepEqual(takeCompleteSentences("嗯，累了就说累，没什么的。", false, true), { sentences:["嗯，累了就说累，", "没什么的。"], remainder:"" });
-  assert.deepEqual(takeCompleteSentences("辛苦了，今天先休息一下", false, true), { sentences:["辛苦了，"], remainder:"今天先休息一下" });
+  assert.deepEqual(takeCompleteSentences("辛苦了，今天先休息一下", false, true), { sentences:[], remainder:"辛苦了，今天先休息一下" });
+  assert.deepEqual(takeCompleteSentences("辛苦了，今天先休息一下。", false, true), { sentences:["辛苦了，今天先休息一下。"], remainder:"" });
+  assert.equal(companionContextPolicy.minSpokenClauseCharacters,6);
+});
+
+test("bounds short-term chat context while preserving the latest user request",()=>{
+  const history=Array.from({length:14},(_,index)=>({role:index%2?"assistant":"user",content:`${index}-`+"旧".repeat(1100)}));
+  const current="当前问题："+"新".repeat(1200);
+  const payload=buildMiniMaxChatPayload({model:"m",message:current,history});
+  const conversation=payload.messages.slice(1);
+  assert.ok(conversation.length<=companionContextPolicy.recentHistoryItems+1);
+  assert.ok(conversation.reduce((total,item)=>total+item.content.length,0)<=companionContextPolicy.recentHistoryCharBudget);
+  assert.match(conversation.at(-1).content,/当前问题/);
+  assert.ok(conversation.at(-1).content.endsWith("新".repeat(50)));
+});
+
+test("does not start a budget-trimmed conversation with an orphan assistant reply",()=>{
+  const history=Array.from({length:11},(_,index)=>({role:index%2?"assistant":"user",content:`消息${index}`}));
+  const payload=buildMiniMaxChatPayload({model:"m",message:"继续",history});
+  assert.equal(payload.messages[1].role,"user");
+  assert.equal(payload.messages[1].content,"消息4");
+  assert.ok(payload.messages.at(-1).content.endsWith("继续"));
 });
 test("MiniMax speaks only the reply while state is inferred locally", () => {
   assert.deepEqual(buildMiniMaxReply("慢慢来，我陪着你。", "我今天很焦虑"), { reply:"慢慢来，我陪着你。", emotion:"caring", action:"caring" });

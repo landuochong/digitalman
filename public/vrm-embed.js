@@ -1,4 +1,4 @@
-import { VrmCompanion } from "./vrm-avatar.js?v=20260812-idle-continuity-v3";
+import { VrmCompanion } from "./vrm-avatar.js?v=20260812-context-budget-v4";
 
 const looks={classic:"/vrm/models/lumi-cc0.vrm",soft:"/vrm/models/avatar-sample-a.vrm",vivid:"/vrm/models/avatar-sample-b.vrm",nike1:"/vrm/models/nikechan_v1.vrm",nike2:"/vrm/models/nikechan_v2.vrm"};
 let activeLook=localStorage.getItem("lumi-vrm-look")||"nike1";

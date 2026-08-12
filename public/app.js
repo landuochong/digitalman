@@ -1,4 +1,4 @@
-import { ConversationActionScheduler } from "./conversation-actions.js?v=20260812-idle-continuity-v3";
+import { ConversationActionScheduler } from "./conversation-actions.js?v=20260812-context-budget-v4";
 
 const $ = (selector) => document.querySelector(selector);
 const portrait = $("#portrait"), wave = $("#soundWave"), messages = $("#messages");
@@ -6,7 +6,7 @@ const input = $("#messageInput"), form = $("#chatForm"), sendButton = $("#sendBu
 const micButton = $("#micButton"), modeBanner = $("#modeBanner"), statusText = $("#statusText");
 const voiceButton = $("#voiceButton"), voicePrompt = $("#voicePrompt"), liveTranscript = $("#liveTranscript"), captionButton = $("#captionButton");
 const digitalHumanFrame = $("#digitalHumanFrame");
-const avatarRuntimeVersion="20260812-idle-continuity-v3";
+const avatarRuntimeVersion="20260812-context-budget-v4";
 const avatarRuntimeUrl=path=>`${path}?v=${avatarRuntimeVersion}`;
 const avatarProfile = new URLSearchParams(location.search).get("profile");
 const selfRecordedProfile = avatarProfile === "self";
@@ -461,7 +461,7 @@ async function reply(message) {
   const controller = new AbortController(); activeReplyController = controller;
   const batch = speechBatch; realSpeechTimelineMs=0; let article, streamedText = "", currentEmotion = "calm",currentAction="idle",spokenSentenceCount=0;
   try {
-    const response = await fetch("/api/chat/stream", { method:"POST", headers:{"content-type":"application/json"}, body:JSON.stringify({ message, history:history.slice(0,-1), userId, persona, fastSpeech:neuralAvatarProfile }), signal:controller.signal });
+    const response = await fetch("/api/chat/stream", { method:"POST", headers:{"content-type":"application/json"}, body:JSON.stringify({ message, history:history.slice(0,-1).slice(-8).map(item=>({...item,content:String(item.content||"").slice(-900)})), userId, persona, fastSpeech:neuralAvatarProfile }), signal:controller.signal });
     if (!response.ok || !response.body) { const data=await response.json().catch(()=>({})); throw new Error(data.error || "连接失败"); }
     await consumeEventStream(response, async (event, data) => {
       if (controller.signal.aborted) return;
