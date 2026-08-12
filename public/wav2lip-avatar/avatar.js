@@ -1,10 +1,16 @@
+import { videoBoundaryDelayMs,videoCatchupSeconds,videoPrestartDelayMs } from "../avatar-video-timing.js?v=20260813-video-handoff-v11";
+
 const idleVideo = document.querySelector("#avatar-idle");
 const speechVideo = document.querySelector("#avatar-speech");
 const stage = document.querySelector("#stage");
 const state = document.querySelector("#state");
 let playToken = 0;
 let segmentPlaying=false;
+let externalSegmentsPending=0;
+let segmentsPreparing=0;
 let activeSegment=null;
+let activeSegmentSequence=-1;
+let nextPlaybackSequence=0;
 let streamEnded=true;
 let idleRevealTimer=0;
 let pendingIdleTimeMs=null;
@@ -26,7 +32,7 @@ function playIdle() {
   speechVideo.classList.remove("active");
   speechVideo.pause();
   for(const video of stage.querySelectorAll(".speech-segment")){video.pause();video.remove();}
-  segmentQueue.length=0;segmentPlaying=false;activeSegment=null;streamEnded=true;
+  segmentQueue.length=0;segmentPlaying=false;externalSegmentsPending=0;segmentsPreparing=0;activeSegment=null;activeSegmentSequence=-1;nextPlaybackSequence=0;streamEnded=true;
   pendingIdleTimeMs=null;pendingIdleLingerMs=120;
   stopStreamAudio();
   idleVideo.play().catch(() => {});
@@ -67,11 +73,78 @@ function preloadSegment(item){
   video.preload="auto";video.src=item.url;
   const videoReady=new Promise(resolve=>{
     let settled=false;const done=()=>{if(settled)return;settled=true;clearTimeout(timer);resolve();};
-    const timer=setTimeout(done,2500);video.addEventListener("loadedmetadata",done,{once:true});video.addEventListener("error",done,{once:true});
+    const timer=setTimeout(done,2500);video.addEventListener("loadeddata",done,{once:true});video.addEventListener("error",done,{once:true});
   });
   video.load();
   stage.append(video);
   return {...item,video,videoReady};
+}
+
+async function waitForFirstVideoFrame(video){
+  await new Promise(resolve=>{
+    let settled=false;const done=()=>{if(settled)return;settled=true;clearTimeout(timer);resolve();};
+    const timer=setTimeout(done,80);
+    if(typeof video.requestVideoFrameCallback==="function")video.requestVideoFrameCallback(done);
+    else requestAnimationFrame(done);
+  });
+}
+
+function revealSegment(item,video){
+  const sequence=item.playbackSequence;
+  if(sequence<activeSegmentSequence)return false;
+  const previous=activeSegment;activeSegment=video;activeSegmentSequence=sequence;
+  video.classList.add("active");
+  requestAnimationFrame(()=>{if(previous&&previous!==video){previous.classList.remove("active");previous.pause();previous.remove();}});
+  return true;
+}
+
+async function playExternalSegment(item,token){
+  externalSegmentsPending++;
+  const video=item.video,sequence=item.playbackSequence;
+  try{
+    const waitMs=videoPrestartDelayMs(item.audioStart,streamAudioContext.currentTime);
+    if(waitMs)await new Promise(resolve=>setTimeout(resolve,waitMs));
+    if(token!==playToken)return;
+    video.muted=true;
+    const playRequestedAt=performance.now();await video.play();
+    await waitForFirstVideoFrame(video);if(token!==playToken)return;
+    video.pause();
+    const firstFrameMs=Math.round(performance.now()-playRequestedAt);
+    const boundaryWaitMs=videoBoundaryDelayMs(item.audioStart,streamAudioContext.currentTime);
+    if(boundaryWaitMs)await new Promise(resolve=>setTimeout(resolve,boundaryWaitMs));
+    if(token!==playToken)return;
+    const catchup=videoCatchupSeconds(item.audioStart,streamAudioContext.currentTime,Number(video.duration)||item.segment?.audioMs/1000||0);
+    if(catchup)try{video.currentTime=catchup;}catch{}
+    await video.play();if(token!==playToken)return;
+    const handoffLateMs=Math.round(Math.max(0,(streamAudioContext.currentTime-item.audioStart)*1000));
+    if(revealSegment(item,video))notify("wav2lip-started",{requestId:item.requestId,sequence,firstFrameMs,handoffLateMs});
+    const remainingMs=Math.max(0,(item.audioEnd-streamAudioContext.currentTime)*1000);
+    if(remainingMs)await new Promise(resolve=>setTimeout(resolve,remainingMs));
+    if(token===playToken)notify("wav2lip-ended",{requestId:item.requestId,sequence});
+  }catch{if(token===playToken)notify("wav2lip-error",{requestId:item.requestId,sequence});}
+  finally{
+    externalSegmentsPending=Math.max(0,externalSegmentsPending-1);
+    if(token!==playToken){video.pause();video.remove();return;}
+    if(!video.classList.contains("active")){video.pause();video.remove();}
+    if(!externalSegmentsPending&&!segmentsPreparing&&!segmentPlaying&&!segmentQueue.length&&streamEnded)scheduleIdleReveal(pendingIdleLingerMs,pendingIdleTimeMs);
+  }
+}
+
+async function dispatchSegment(item){
+  const token=playToken;
+  segmentsPreparing++;
+  try{
+    await item.videoReady;
+    const externalAudio=await item.audioReady;
+    if(token!==playToken)return;
+    if(item.videoOnly&&!externalAudio){notify("wav2lip-error",{requestId:item.requestId,sequence:item.playbackSequence,error:"external-audio-unavailable"});item.video.remove();return;}
+    item.video.muted=externalAudio;
+    if(externalAudio){void playExternalSegment(item,token);return;}
+    segmentQueue.push(item);playQueuedSegment();
+  }finally{
+    segmentsPreparing=Math.max(0,segmentsPreparing-1);
+    if(token===playToken&&!segmentsPreparing&&!externalSegmentsPending&&!segmentPlaying&&!segmentQueue.length&&streamEnded)scheduleIdleReveal(pendingIdleLingerMs,pendingIdleTimeMs);
+  }
 }
 
 async function playQueuedSegment(){
@@ -80,36 +153,18 @@ async function playQueuedSegment(){
   segmentPlaying=true;const item=segmentQueue.shift(),video=item.video,previous=activeSegment;
   const token=playToken;
   try{
-    await item.videoReady;
-    const externalAudio=await item.audioReady;
-    video.muted=externalAudio;
-    if(externalAudio&&item.audioStart>streamAudioContext.currentTime+.02){
-      await new Promise(resolve=>setTimeout(resolve,Math.max(0,(item.audioStart-streamAudioContext.currentTime)*1000-18)));
-    }
-    if(externalAudio&&streamAudioContext.currentTime>item.audioStart+.025){
-      const elapsed=Math.min(Math.max(0,streamAudioContext.currentTime-item.audioStart),Math.max(0,(Number(video.duration)||item.segment?.audioMs/1000||0)-.04));
-      if(elapsed>.025)try{video.currentTime=elapsed;}catch{}
-    }
+    await item.videoReady;video.muted=false;
     await video.play();if(token!==playToken)return;
-    await new Promise(resolve=>{
-      if(typeof video.requestVideoFrameCallback==="function")video.requestVideoFrameCallback(()=>resolve());
-      else requestAnimationFrame(()=>resolve());
-    });
-    video.classList.add("active");
-    await new Promise(resolve=>requestAnimationFrame(resolve));
-    if(previous&&previous!==video){previous.classList.remove("active");previous.pause();previous.remove();}
-    activeSegment=video;
+    await waitForFirstVideoFrame(video);
+    revealSegment(item,video);
     notify("wav2lip-started",{requestId:item.requestId});
     await new Promise((resolve,reject)=>{video.onended=resolve;video.onerror=reject;});
-    if(externalAudio&&item.audioEnd>streamAudioContext.currentTime){
-      await new Promise(resolve=>setTimeout(resolve,(item.audioEnd-streamAudioContext.currentTime)*1000));
-    }
     notify("wav2lip-ended",{requestId:item.requestId});
   }catch{notify("wav2lip-error",{requestId:item.requestId});}
   finally{
     segmentPlaying=false;
     if(segmentQueue.length)playQueuedSegment();
-    else if(token===playToken&&streamEnded)scheduleIdleReveal(pendingIdleLingerMs,pendingIdleTimeMs);
+    else if(token===playToken&&!externalSegmentsPending&&streamEnded)scheduleIdleReveal(pendingIdleLingerMs,pendingIdleTimeMs);
   }
 }
 
@@ -131,7 +186,7 @@ function scheduleIdleReveal(delayMs=120,idleTimeMs=null){
   if(Number.isFinite(Number(idleTimeMs)))void alignIdleToTime(Number(idleTimeMs)/1000);
   const audioRemainingMs=streamAudioContext?Math.max(0,(streamAudioTail-streamAudioContext.currentTime)*1000):0;
   idleRevealTimer=setTimeout(async()=>{
-    if(segmentPlaying||segmentQueue.length||!streamEnded)return;
+    if(segmentPlaying||externalSegmentsPending||segmentsPreparing||segmentQueue.length||!streamEnded)return;
     if(Number.isFinite(Number(idleTimeMs)))await alignIdleToTime(Number(idleTimeMs)/1000);
     const previous=activeSegment;activeSegment=null;
     idleVideo.play().catch(()=>{});
@@ -165,13 +220,13 @@ window.addEventListener("message", async event => {
   if (event.data?.type === "wav2lip-clear") { playToken++; document.body.classList.remove("loading"); playIdle(); return; }
   if(event.data?.type==="wav2lip-enqueue"&&event.data.url){
     clearTimeout(idleRevealTimer);idleRevealTimer=0;streamEnded=false;
-    document.body.classList.add("loading");const item=preloadSegment(event.data);
-    item.audioReady=audioScheduleChain=audioScheduleChain.then(async()=>{await item.videoReady;return scheduleSegmentAudio(item);}).catch(()=>false);
-    segmentQueue.push(item);playQueuedSegment();return;
+    document.body.classList.add("loading");const item=preloadSegment({...event.data,playbackSequence:nextPlaybackSequence++});
+    item.audioReady=audioScheduleChain=audioScheduleChain.then(()=>scheduleSegmentAudio(item)).catch(()=>false);
+    void dispatchSegment(item);return;
   }
   if(event.data?.type==="wav2lip-stream-end"){
     streamEnded=true;pendingIdleLingerMs=event.data.lingerMs;pendingIdleTimeMs=event.data.idleTimeMs;
-    if(!segmentPlaying&&!segmentQueue.length)scheduleIdleReveal(pendingIdleLingerMs,pendingIdleTimeMs);return;
+    if(!segmentPlaying&&!externalSegmentsPending&&!segmentsPreparing&&!segmentQueue.length)scheduleIdleReveal(pendingIdleLingerMs,pendingIdleTimeMs);return;
   }
   const isSilentAction=event.data?.type==="wav2lip-action";
   if ((event.data?.type !== "wav2lip-play"&&!isSilentAction) || !event.data.url) return;

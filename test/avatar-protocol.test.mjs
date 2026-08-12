@@ -14,3 +14,9 @@ test("keeps whole-video playback messages free of absent stream metadata",()=>{
     type:"wav2lip-play",url:"/whole.mp4",requestId:"request-2"
   });
 });
+
+test("marks a video-only segment so audio failure cannot become silent playback",()=>{
+  assert.deepEqual(buildWav2LipPlaybackMessage({url:"/silent.mp4",videoOnly:true,segment:{sequence:0}},"request-3",{enqueue:true}),{
+    type:"wav2lip-enqueue",url:"/silent.mp4",requestId:"request-3",videoOnly:true,segment:{sequence:0}
+  });
+});

@@ -1,7 +1,7 @@
-import { ConversationActionScheduler } from "./conversation-actions.js?v=20260813-video-only-stream-v10";
-import { buildWav2LipPlaybackMessage } from "./avatar-protocol.js?v=20260813-video-only-stream-v10";
-import { AvatarStreamTurn } from "./avatar-stream-turn.js?v=20260813-video-only-stream-v10";
-import { RecognitionTurnGate,recognitionSilenceMs } from "./recognition-turn-gate.js?v=20260813-video-only-stream-v10";
+import { ConversationActionScheduler } from "./conversation-actions.js?v=20260813-video-handoff-v11";
+import { buildWav2LipPlaybackMessage } from "./avatar-protocol.js?v=20260813-video-handoff-v11";
+import { AvatarStreamTurn } from "./avatar-stream-turn.js?v=20260813-video-handoff-v11";
+import { RecognitionTurnGate,recognitionSilenceMs } from "./recognition-turn-gate.js?v=20260813-video-handoff-v11";
 
 const $ = (selector) => document.querySelector(selector);
 const portrait = $("#portrait"), wave = $("#soundWave"), messages = $("#messages");
@@ -9,7 +9,7 @@ const input = $("#messageInput"), form = $("#chatForm"), sendButton = $("#sendBu
 const micButton = $("#micButton"), modeBanner = $("#modeBanner"), statusText = $("#statusText");
 const voiceButton = $("#voiceButton"), voicePrompt = $("#voicePrompt"), liveTranscript = $("#liveTranscript"), captionButton = $("#captionButton");
 const digitalHumanFrame = $("#digitalHumanFrame");
-const avatarRuntimeVersion="20260813-video-only-stream-v10";
+const avatarRuntimeVersion="20260813-video-handoff-v11";
 const avatarRuntimeUrl=path=>`${path}?v=${avatarRuntimeVersion}`;
 const avatarProfile = new URLSearchParams(location.search).get("profile");
 const selfRecordedProfile = avatarProfile === "self";
@@ -546,6 +546,7 @@ window.addEventListener("message",event=>{
   if(event.data?.type==="vrm-behavior-accepted"){portrait.dataset.vrmAction=event.data.action;portrait.dataset.vrmActionStarted=String(Boolean(event.data.started));}
   if(event.data?.type==="dh-live-audio-accepted") portrait.dataset.dhAudioBytes=String(event.data.bytes||0);
   if(event.data?.type==="wav2lip-audio-mode"){portrait.dataset.audioMode=event.data.mode;portrait.dataset.audioGapMs=String(event.data.gapMs||0);avatarPcmReady=event.data.mode==="pcm-ready"||event.data.mode==="pcm";}
+  if(event.data?.type==="wav2lip-started"&&Number.isFinite(Number(event.data.handoffLateMs))){portrait.dataset.videoFirstFrameMs=String(event.data.firstFrameMs||0);portrait.dataset.videoHandoffLateMs=String(event.data.handoffLateMs||0);}
   if(event.data?.type==="wav2lip-ended"||event.data?.type==="wav2lip-error") pendingWav2LipPlaybacks.get(event.data.requestId)?.();
   if(event.data?.type==="dh-live-action-ready"||event.data?.type==="dh-live-action-error"){
     pendingActions.get(event.data.requestId)?.(); pendingActions.delete(event.data.requestId);
