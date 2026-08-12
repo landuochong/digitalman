@@ -60,7 +60,7 @@ test("enforces the configured audio duration and PCM16 alignment", () => {
   assert.throws(() => store.append(second.id, 0, Buffer.alloc(322)), error => error.status === 413);
 });
 
-test("drains one-second segments early and keeps the action frame clock continuous",async()=>{
+test("drains 800 ms segments early and keeps the action frame clock continuous",async()=>{
   const calls=[];
   const store=new DINetStreamSessionStore({
     segmentMs:800,firstSegmentMs:800,
@@ -101,15 +101,15 @@ test("emits a shorter first segment before returning to the steady window",async
   assert.deepEqual(calls.map(item=>item.outputFrames),[10,20]);
 });
 
-test("defaults to an 800 ms opener that covers steady-segment rendering",async()=>{
+test("defaults to uniform 800 ms segments that preserve playback headroom",async()=>{
   const durations=[];
   const store=new DINetStreamSessionStore({
     renderer:{render:async(wav,_action,options)=>{durations.push(wav.readUInt32LE(40)/32);return{url:"/part.mp4",metrics:{frames:options.outputFrames}};}}
   });
   const session=store.start();
-  store.append(session.id,0,Buffer.alloc(78_080));
+  store.append(session.id,0,Buffer.alloc(84_480));
   await store.drain(session.id);
-  assert.deepEqual(durations,[800,1200]);
+  assert.deepEqual(durations,[800,800,800]);
 });
 
 test("can continue an action from a later source frame across spoken sentences",async()=>{
