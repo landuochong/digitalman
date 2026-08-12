@@ -50,6 +50,8 @@ test("DINet streams raw frames into the final H.264 encode",async()=>{
   assert.match(source,/StreamingAudio2BlendShape/);
   assert.match(source,/stream_id/);
   assert.match(source,/cancel_stream/);
+  assert.match(source,/prepare_asset/);
+  assert.match(source,/"loadMs"/);
   assert.doesNotMatch(source,/cv2\.VideoWriter/);
   assert.doesNotMatch(source,/silent_path/);
 });
@@ -96,4 +98,21 @@ test("stream endpoint reports TTS and first playable segment timing",async()=>{
   assert.match(server,/ttsFirstAudioMs:firstAudioAt/);
   assert.match(server,/firstSegmentMs:firstSegmentAt/);
   assert.match(server,/pipelineStartedAt/);
+  assert.match(server,/prepareAvatarAction\(initialState\.action,trace\)/);
+  assert.match(server,/prepareAvatarAction\(groundedResult\.action,trace\)/);
+  assert.match(server,/assetPrepareMs/);
+});
+
+test("prepares a resolved action through the serialized persistent worker",async()=>{
+  const source=await readFile(new URL("../src/dinet-render.mjs",import.meta.url),"utf8");
+  assert.match(source,/prepareAction\(action="idle"\)\{return this\.worker\.prepare\(resolveRealActionAsset\(action\)\);\}/);
+  assert.match(source,/op:"prepare_asset"/);
+  assert.match(source,/this\.chain\.then/);
+});
+
+test("action preparation diagnostic endpoint stays loopback-only",async()=>{
+  const server=await readFile(new URL("../server.mjs",import.meta.url),"utf8");
+  assert.match(server,/pathname==="\/api\/dinet\/prepare-action"/);
+  assert.match(server,/isLoopbackAddress\(req\.socket\.remoteAddress\)/);
+  assert.match(server,/dinetRenders\.prepareAction/);
 });

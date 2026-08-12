@@ -78,6 +78,14 @@ function finishChatTrace(trace,result,source){
   trace.timings.totalMs=Math.round(performance.now()-trace._startedMs);
 }
 
+function prepareAvatarAction(action,trace){
+  const prepareStartedAt=performance.now();
+  void dinetRenders.prepareAction(action).then(result=>{
+    trace.timings.assetPrepareMs=Math.round(performance.now()-prepareStartedAt);
+    trace.assetPreparation={action,changed:Boolean(result.changed),loadMs:Number(result.loadMs)||0};
+  }).catch(error=>{trace.assetPreparation={action,error:error.message};});
+}
+
 function json(res, status, body) {
   res.writeHead(status, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" });
   res.end(JSON.stringify(body));
@@ -154,6 +162,8 @@ async function warmupMiniMaxChat() {
 }
 
 async function miniMaxChatStream(message, history, persona, memories, companionState, userId, res, fastSpeech = false, trace) {
+  const initialState=inferCompanionState(message,"",companionState);
+  if(fastSpeech)prepareAvatarAction(initialState.action,trace);
   const requestPayload=buildMiniMaxChatPayload({ model:miniMaxTextModel, message, history, stream:true, persona, memories, companionState });
   trace.providerRequest={url:`${miniMaxBaseUrl}/chat/completions`,payload:requestPayload};
   const response = await fetch(`${miniMaxBaseUrl}/chat/completions`, {
@@ -169,7 +179,7 @@ async function miniMaxChatStream(message, history, persona, memories, companionS
     "cache-control":"no-cache, no-transform",
     connection:"keep-alive"
   });
-  sendEvent(res, "meta", { ...inferCompanionState(message,"",companionState), mode:"minimax" });
+  sendEvent(res, "meta", { ...initialState, mode:"minimax" });
 
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
@@ -269,6 +279,7 @@ async function chatStream(req, res) {
   trace.memories=memories;trace.companionState=companionState;
   const groundedResult = companionIdentityReply(message,persona) || companionPresenceReply(message,persona);
   if(groundedResult){
+    if(data.fastSpeech)prepareAvatarAction(groundedResult.action,trace);
     res.writeHead(200, { "content-type":"text/event-stream; charset=utf-8", "cache-control":"no-cache, no-transform" });
     sendEvent(res,"meta",{emotion:groundedResult.emotion,action:groundedResult.action,mode:apiKey?provider:"demo"});
     sendEvent(res,"sentence",{text:groundedResult.reply});
@@ -282,6 +293,7 @@ async function chatStream(req, res) {
   const result = provider === "openai" && apiKey
     ? await openAIChat(message, history, data.userId, persona, memories,companionState)
     : demoReply(message, persona);
+  if(data.fastSpeech)prepareAvatarAction(result.action,trace);
   res.writeHead(200, { "content-type":"text/event-stream; charset=utf-8", "cache-control":"no-cache, no-transform" });
   sendEvent(res, "meta", { emotion:result.emotion, action:result.action, mode:apiKey ? provider : "demo" });
   for (const sentence of takeCompleteSentences(result.reply, true, Boolean(data.fastSpeech)).sentences) sendEvent(res, "sentence", { text:sentence });
@@ -372,6 +384,11 @@ export const server = http.createServer(async (req, res) => {
     if (pathname === "/api/dinet/status" && req.method === "GET") {
       if (!isLoopbackAddress(req.socket.remoteAddress)) return json(res, 403, { error:"本地 DINet 口型接口仅允许本机访问" });
       return json(res, 200, await dinetRenders.readiness());
+    }
+    if(pathname==="/api/dinet/prepare-action"&&req.method==="POST"){
+      if(!isLoopbackAddress(req.socket.remoteAddress))return json(res,403,{error:"本地 DINet 动作预热仅允许本机访问"});
+      const data=await body(req);
+      return json(res,200,await dinetRenders.prepareAction(String(data.action||"idle")));
     }
     if (pathname === "/api/dinet/render" && req.method === "POST") {
       if (!isLoopbackAddress(req.socket.remoteAddress)) return json(res, 403, { error:"本地 DINet 口型接口仅允许本机访问" });

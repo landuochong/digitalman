@@ -151,7 +151,7 @@ class PersistentDINetRenderer:
         self.blendshape = texture[:6, :209].astype(np.float32) / 255.0 * 2.0 - 1.0
         self.set_asset(asset)
 
-    def set_asset(self, asset: Path) -> None:
+    def set_asset(self, asset: Path) -> bool:
         """Switch video motion while retaining the loaded neural/audio models."""
         resolved = asset.resolve()
         signature = tuple(
@@ -159,7 +159,7 @@ class PersistentDINetRenderer:
             for item in (resolved / "01.mp4", resolved / "combined_data.json.gz")
         )
         if resolved == self.asset and signature == self.asset_signature:
-            return
+            return False
         self.asset = resolved
         self.asset_signature = signature
 
@@ -184,6 +184,7 @@ class PersistentDINetRenderer:
         ][: len(self.frames)]
         self._make_ping_pong_loop()
         self.opengl.GenVBO(self._parse_face_vertices(combined["face3D_obj"]))
+        return True
 
     def _restore_source_lip_color(self, face: np.ndarray, source: np.ndarray) -> np.ndarray:
         """Keep DINet geometry but move lip chroma back toward the source video.
@@ -482,6 +483,16 @@ def main() -> None:
         try:
             request = json.loads(line)
             request_id = request["id"]
+            if request.get("op") == "prepare_asset":
+                started = time.perf_counter()
+                with contextlib.redirect_stdout(sys.stderr):
+                    changed = renderer.set_asset(Path(request["asset"]))
+                send({
+                    "type": "done", "id": request_id, "prepared": True,
+                    "changed": changed,
+                    "loadMs": round((time.perf_counter() - started) * 1000),
+                })
+                continue
             if request.get("op") == "cancel_stream":
                 removed = renderer.audio_streams.pop(str(request.get("streamId") or ""), None)
                 send({"type": "done", "id": request_id, "cancelled": removed is not None})

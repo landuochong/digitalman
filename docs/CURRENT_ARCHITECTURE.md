@@ -159,6 +159,8 @@ Audio2BlendShape 现已改为真正的会话状态：worker 为每轮语音保�
 
 首响诊断进一步细分为 `firstTextDeltaMs`、`firstCleanTextMs`、`firstSentenceMs`、TTS `ttsFirstAudioMs` 和 DINet `firstSegmentMs`。页面人物容器同步记录 `data-chat-first-sentence-ms`、`data-tts-first-audio-ms`、`data-avatar-pipeline-ms` 与从提交到首个 segment 的 `data-avatar-first-segment-ms`，不用再从两套日志手工对表。MiniMax 三轮热测中，首个正文 token 与首个可朗读短语只差 0–2 毫秒，说明当前中文标点/逗号分段没有增加首响延迟；主要波动发生在模型输出任何正文之前，不能靠更激进地切碎文案解决。
 
+DINet 动作素材采用“提前切换、单套常驻”，不缓存多套完整视频帧。单套 768×1152 RGBA 动作解码后内存很大，多动作 LRU 会带来不可控内存压力；而本地探针表明关心/待机切换只需 283–331 毫秒，同动作命中为 0 毫秒。服务在 M3 请求开始时用用户语义推断首动作，并把 `prepare_asset` 排入同一个常驻 worker；该切换与 M3 的 1.5–6 秒正文前等待并行，真正 TTS/DINet 渲染仍重新核对动作。身份、位置等本地直接回复也走同一预热入口。`/api/dinet/prepare-action` 只允许回环地址访问，用于不调用外部 AI 的冷热诊断。
+
 长时间聊天的短期上下文现采用双层预算：浏览器只上传最近 8 条、每条最多 900 字；服务端再次限制为最近 8 条、短期正文合计最多 3600 字，并确保裁剪后不以孤立的 assistant 消息开头。人物设定、长期偏好和连续状态仍走独立上下文，不因短期裁剪丢失。快速朗读的逗号分段最低从 3 个有效字提高到 6 个，避免把“辛苦了，”之类短开场单独启动一次 TTS；完整句号、问号和感叹号仍立即释放。
 
 当前验证版以 PCM 的 `AudioContext` 绝对时钟为主时钟，每个无声视频分段开始时按实际音频进度校正 `currentTime`，从而避免独立 AAC 解码器切换，同时约束分段漂移。最终 fMP4 版仍要求音视频由同一个编码时间轴产生：每 16,000 个 16 kHz PCM 采样严格对应 25 个视频帧；不足一帧的采样留到下个块继续累计。FFmpeg 输出一次初始化片段，之后按较短 GOP 输出 `moof/mdat` 媒体片段，浏览器只按连续序号追加到同一个 `SourceBuffer`。

@@ -99,6 +99,21 @@ class PersistentDINetWorker {
     return task;
   }
 
+  prepare(asset) {
+    const task=this.chain.then(async()=>{
+      await this.start();
+      return new Promise((resolve,reject)=>{
+        const id=createHash("sha256").update(`prepare:${asset}:${Date.now()}`).digest("hex").slice(0,16);
+        const timer=setTimeout(()=>this.#fail(Object.assign(new Error("DINet 动作素材预热超时"),{status:504})),30_000);
+        this.active={id,resolve,reject,timer};
+        this.child.stdin.write(`${JSON.stringify({
+          id,op:"prepare_asset",asset:join(this.projectRoot,"public","dh-live","actions",asset)
+        })}\n`);
+      });
+    });
+    this.chain=task.catch(()=>{});return task;
+  }
+
   cancelStream(streamId) {
     if(!streamId)return Promise.resolve({cancelled:false});
     const task=this.chain.then(async()=>{
@@ -112,6 +127,7 @@ class PersistentDINetWorker {
     });
     this.chain=task.catch(()=>{});return task;
   }
+
 }
 
 export class DINetRenderStore {
@@ -141,6 +157,7 @@ export class DINetRenderStore {
   }
 
   warmup(){return this.worker.start();}
+  prepareAction(action="idle"){return this.worker.prepare(resolveRealActionAsset(action));}
   cancelStream(streamId){return this.worker.cancelStream(streamId);}
 
   async render(audioBuffer, action="idle", { frameOffset=0, audioOffsetMs=0, outputFrames=0, streamId="", streamFinal=false }={}) {
