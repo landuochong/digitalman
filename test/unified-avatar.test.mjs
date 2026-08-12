@@ -15,9 +15,9 @@ test("main voice page offers real and anime modes in one conversation",async()=>
   assert.match(html,/id="personaVoice"/);
   assert.match(html,/人物设置/);
   assert.match(app,/lumi-avatar-mode/);
-  assert.match(html,/app\.js\?v=20260812-context-budget-v4/);
+  assert.match(html,/app\.js\?v=20260812-continuous-pcm-v5/);
   assert.match(html,/aria-label="开始通话" aria-pressed="false"/);
-  assert.match(app,/avatarRuntimeVersion="20260812-context-budget-v4"/);
+  assert.match(app,/avatarRuntimeVersion="20260812-continuous-pcm-v5"/);
   assert.match(app,/lumi-vrm-look/);
   assert.match(app,/lumi-vrm-persona/);
   assert.match(app,/lumi-voice-profile/);
@@ -29,7 +29,7 @@ test("main voice page offers real and anime modes in one conversation",async()=>
   assert.match(app,/frameOffset/);
   assert.match(app,/portrait\.dataset\.behavior=JSON\.stringify\(sentencePlan\)/);
   assert.match(app,/behavior:sentencePlan/);
-  assert.match(app,/conversation-actions\.js\?v=20260812-context-budget-v4/);
+  assert.match(app,/conversation-actions\.js\?v=20260812-continuous-pcm-v5/);
   assert.match(app,/bow:"\/real-actions\/bedroom_bow_silent\.mp4"/);
   assert.match(app,/surprise:"\/real-actions\/bedroom_surprise_silent\.mp4"/);
   assert.match(app,/if\(silentAction\)await playSilentNeuralAction/);
@@ -57,7 +57,7 @@ test("user-facing pages hide provider and rendering implementation names",async(
 
 test("real avatar video covers the complete left panel",async()=>{
   const [html,css]=await Promise.all([readPublic("wav2lip-avatar/avatar.html"),readPublic("wav2lip-avatar/avatar.css")]);
-  assert.match(html,/avatar\.css\?v=20260812-context-budget-v4/);
+  assert.match(html,/avatar\.css\?v=20260812-continuous-pcm-v5/);
   assert.match(css,/\.avatar-layer\{[^}]*width:100%;height:100%;object-fit:cover;object-position:center center/);
   assert.match(css,/#stage\{[^}]*lumi-bedroom-background-v1\.png[^}]*center\/cover/);
 });
@@ -116,6 +116,8 @@ test("streaming avatar experiment consumes ordered server segments and cancels s
   assert.match(app,/wav2lip-stream-end/);
   assert.match(app,/lingerMs/);
   assert.match(app,/idleTimeMs:realSpeechTimelineMs/);
+  assert.match(app,/dataset\.audioMode/);
+  assert.match(app,/type:"wav2lip-audio-unlock"/);
   assert.match(await readPublic("wav2lip-avatar/avatar.js"),/scheduleIdleReveal\(pendingIdleLingerMs,pendingIdleTimeMs\)/);
   assert.match(app,/for\(const stream of activeStreamingSpeech\)stream\.cancel\(\)/);
   assert.doesNotMatch(app,/liveTranscript\.textContent=recognizedText/);
@@ -124,8 +126,8 @@ test("streaming avatar experiment consumes ordered server segments and cancels s
 test("captions stay inside the right panel without hiding the avatar",async()=>{
   const [html,app,voice,style]=await Promise.all([readPublic("index.html"),readPublic("app.js"),readPublic("voice.css"),readPublic("style.css")]);
   assert.match(html,/aria-controls="messages"/);
-  assert.match(html,/voice\.css\?v=20260812-context-budget-v4/);
-  assert.match(html,/style\.css\?v=20260812-context-budget-v4/);
+  assert.match(html,/voice\.css\?v=20260812-continuous-pcm-v5/);
+  assert.match(html,/style\.css\?v=20260812-continuous-pcm-v5/);
   assert.match(html,/id="liveTranscript" aria-live="off" hidden/);
   assert.match(app,/if\(visible\)messages\.scrollTop=messages\.scrollHeight/);
   assert.match(voice,/\.voice-panel \{[^}]*overflow: hidden/);

@@ -1,4 +1,4 @@
-import { ConversationActionScheduler } from "./conversation-actions.js?v=20260812-context-budget-v4";
+import { ConversationActionScheduler } from "./conversation-actions.js?v=20260812-continuous-pcm-v5";
 
 const $ = (selector) => document.querySelector(selector);
 const portrait = $("#portrait"), wave = $("#soundWave"), messages = $("#messages");
@@ -6,7 +6,7 @@ const input = $("#messageInput"), form = $("#chatForm"), sendButton = $("#sendBu
 const micButton = $("#micButton"), modeBanner = $("#modeBanner"), statusText = $("#statusText");
 const voiceButton = $("#voiceButton"), voicePrompt = $("#voicePrompt"), liveTranscript = $("#liveTranscript"), captionButton = $("#captionButton");
 const digitalHumanFrame = $("#digitalHumanFrame");
-const avatarRuntimeVersion="20260812-context-budget-v4";
+const avatarRuntimeVersion="20260812-continuous-pcm-v5";
 const avatarRuntimeUrl=path=>`${path}?v=${avatarRuntimeVersion}`;
 const avatarProfile = new URLSearchParams(location.search).get("profile");
 const selfRecordedProfile = avatarProfile === "self";
@@ -521,6 +521,7 @@ window.addEventListener("message",event=>{
   }
   if(event.data?.type==="vrm-behavior-accepted"){portrait.dataset.vrmAction=event.data.action;portrait.dataset.vrmActionStarted=String(Boolean(event.data.started));}
   if(event.data?.type==="dh-live-audio-accepted") portrait.dataset.dhAudioBytes=String(event.data.bytes||0);
+  if(event.data?.type==="wav2lip-audio-mode"){portrait.dataset.audioMode=event.data.mode;portrait.dataset.audioGapMs=String(event.data.gapMs||0);}
   if(event.data?.type==="wav2lip-ended"||event.data?.type==="wav2lip-error") pendingWav2LipPlaybacks.get(event.data.requestId)?.();
   if(event.data?.type==="dh-live-action-ready"||event.data?.type==="dh-live-action-error"){
     pendingActions.get(event.data.requestId)?.(); pendingActions.delete(event.data.requestId);
@@ -541,7 +542,7 @@ if (Recognition) { const recognition = new Recognition(); recognition.lang="zh-C
   const clearListeningGesture=()=>{clearTimeout(listeningGestureTimer);listeningGestureTimer=0;};
   const scheduleListeningGesture=()=>{if(listeningGestureTimer||avatarMode!=="anime")return;listeningGestureTimer=setTimeout(()=>{listeningGestureTimer=0;if(voiceCallActive&&recognitionRunning&&recognizedText)setDigitalHumanAction("nod",{force:true,hold:false}).catch(()=>{});},1400+Math.random()*700);};
   const endCall=()=>{voiceCallActive=false;clearTimeout(restartListeningTimer);clearListeningGesture();if(recognitionRunning)recognition.abort();releaseVad();stopSpeech();micButton.classList.remove("listening");voiceButton.classList.remove("listening","thinking","speaking");updateCallButton();setVoiceState("idle","通话已结束");statusText.textContent="在线 · 随时听你说";};
-  const beginCall=async()=>{if(voiceCallActive)return;voiceCallActive=true;stopSpeech();updateCallButton();setVoiceState("idle","正在准备麦克风…");try{await ensureVad();}catch{}if(voiceCallActive){setVoiceState("idle","通话已开始，请自然说话");scheduleListening(80);}};
+  const beginCall=async()=>{if(voiceCallActive)return;voiceCallActive=true;stopSpeech();digitalHumanFrame?.contentWindow?.postMessage({type:"wav2lip-audio-unlock"},location.origin);updateCallButton();setVoiceState("idle","正在准备麦克风…");try{await ensureVad();}catch{}if(voiceCallActive){setVoiceState("idle","通话已开始，请自然说话");scheduleListening(80);}};
   const toggleCall=()=>voiceCallActive?endCall():beginCall();
   recognition.onstart=()=>{recognitionRunning=true;recognizedText="";recognitionFailed=false;clearListeningGesture();conversationActions.finishTurn();digitalHumanFrame?.contentWindow?.postMessage({type:"vrm-finish-gesture"},location.origin);micButton.classList.add("listening");setVoiceState("listening","请自然说话，停顿后我会立即回答");setEmotion("curious");statusText.textContent="我在听…";startVadLoop();};
   recognition.onresult=e=>{recognizedText=Array.from(e.results).map(r=>r[0].transcript).join("").trim();if(recognizedText)scheduleListeningGesture();};

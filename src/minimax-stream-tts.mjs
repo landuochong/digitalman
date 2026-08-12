@@ -1,5 +1,8 @@
 import WebSocket from "ws";
 
+const SUPPORTED_TTS_EMOTIONS=new Set(["happy","sad","angry","fearful","disgusted","surprised","neutral"]);
+export function normalizeMiniMaxTtsEmotion(emotion){return SUPPORTED_TTS_EMOTIONS.has(String(emotion||"").toLowerCase())?String(emotion).toLowerCase():"";}
+
 function decodeAudio(value) {
   const text=String(value||"");
   return /^[0-9a-f]+$/i.test(text)&&text.length%2===0 ? Buffer.from(text,"hex") : Buffer.from(text,"base64");
@@ -33,6 +36,7 @@ export async function streamMiniMaxPcm({
   const abort=()=>socket.close(1000,"cancelled");
   signal?.addEventListener("abort",abort,{once:true});
   try{
+    const speechEmotion=normalizeMiniMaxTtsEmotion(emotion);
     for await(const raw of messages(socket)){
       const message=JSON.parse(String(raw));
       const code=message?.base_resp?.status_code;
@@ -41,7 +45,7 @@ export async function streamMiniMaxPcm({
       if(message.event==="connected_success"){
         socket.send(JSON.stringify({
           event:"task_start",model,language_boost:"Chinese",
-          voice_setting:{voice_id:voice,speed:1,vol:1,pitch:0,...(emotion?{emotion}: {})},
+          voice_setting:{voice_id:voice,speed:1,vol:1,pitch:0,...(speechEmotion?{emotion:speechEmotion}: {})},
           audio_setting:{sample_rate:16000,bitrate:256000,format:"pcm",channel:1}
         }));
       }else if(message.event==="task_started"){

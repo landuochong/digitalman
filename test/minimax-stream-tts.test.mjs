@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { streamMiniMaxPcm } from "../src/minimax-stream-tts.mjs";
+import { normalizeMiniMaxTtsEmotion, streamMiniMaxPcm } from "../src/minimax-stream-tts.mjs";
 
 class FakeWebSocket {
   static OPEN=1;
@@ -24,6 +24,15 @@ test("MiniMax websocket TTS requests PCM and yields audio before task completion
   const metrics=await streamMiniMaxPcm({apiKey:"secret",text:"你好",voice:"voice",WebSocketImpl:FakeWebSocket,onAudio:pcm=>chunks.push(pcm)});
   assert.equal(chunks.length,1);assert.equal(chunks[0].length,3200);
   assert.equal(metrics.audioMs,100);assert.ok(metrics.firstAudioMs>=0);
+});
+
+test("only sends MiniMax-supported speech emotions",async()=>{
+  assert.equal(normalizeMiniMaxTtsEmotion("happy"),"happy");
+  assert.equal(normalizeMiniMaxTtsEmotion("caring"),"");
+  const sockets=[];
+  class InspectSocket extends FakeWebSocket{constructor(...args){super(...args);sockets.push(this);}}
+  await streamMiniMaxPcm({apiKey:"secret",text:"慢慢来",voice:"voice",emotion:"caring",WebSocketImpl:InspectSocket,onAudio:()=>{}});
+  assert.equal("emotion" in sockets[0].sent.find(item=>item.event==="task_start").voice_setting,false);
 });
 
 class EventWebSocket {

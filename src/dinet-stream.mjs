@@ -4,7 +4,7 @@ const DEFAULT_SAMPLE_RATE = 16_000;
 const DEFAULT_CHANNELS = 1;
 const DEFAULT_MAX_AUDIO_MS = 60_000;
 const DEFAULT_SEGMENT_MS = 1200;
-const DEFAULT_FIRST_SEGMENT_MS = 400;
+const DEFAULT_FIRST_SEGMENT_MS = 800;
 const MIN_TAIL_MS = 240;
 
 function streamError(message, status) {
@@ -138,7 +138,10 @@ export class DINetStreamSessionStore {
       session.renderedAudioMs+=Math.round(take/bytesPerMs);
       const result={
         ...rendered,
-        segment:{id,sequence,frameOffset,audioMs:Math.round(take/bytesPerMs),renderMs:Math.round(this.now()-renderStartedAt),audioMode:"stateful"}
+        segment:{
+          id,sequence,frameOffset,audioMs:Math.round(take/bytesPerMs),renderMs:Math.round(this.now()-renderStartedAt),audioMode:"stateful",
+          audio:{encoding:"pcm_s16le",sampleRate:session.sampleRate,channels:session.channels,data:pcm.toString("base64")}
+        }
       };
       results.push(result);
       await onSegment?.(result);

@@ -73,6 +73,17 @@ test("neural avatar keeps a persistent idle layer behind speech", async () => {
   assert.match(script,/requestVideoFrameCallback/);
   assert.match(script,/wav2lip-stream-end/);
   assert.match(script,/activeSegment/);
+  assert.match(script,/createBufferSource/);
+  assert.match(script,/pcm_s16le/);
+  assert.match(script,/video\.muted=externalAudio/);
+  assert.match(script,/streamAudioTail/);
+  assert.match(script,/stopStreamAudio/);
+  assert.match(script,/video\.currentTime=elapsed/);
+  assert.match(script,/wav2lip-audio-mode/);
+  assert.match(script,/loadedmetadata/);
+  assert.match(script,/setTimeout\(done,2500\)/);
+  assert.match(script,/wav2lip-audio-unlock/);
+  assert.match(script,/mode:context\?"pcm-ready":"mp4"/);
   assert.doesNotMatch(script, /setTimeout\(playIdle,\s*250\)/);
   assert.match(styles,/object-fit:cover/);
   assert.match(styles,/lumi-bedroom-background-v1\.png/);

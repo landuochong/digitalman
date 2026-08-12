@@ -73,6 +73,9 @@ test("drains one-second segments early and keeps the action frame clock continuo
   store.append(session.id,0,Buffer.alloc(33_280));
   const first=await store.drain(session.id);
   assert.equal(first.length,1);assert.equal(first[0].segment.sequence,0);
+  assert.equal(first[0].segment.audio.encoding,"pcm_s16le");
+  assert.equal(first[0].segment.audio.sampleRate,16000);
+  assert.equal(Buffer.from(first[0].segment.audio.data,"base64").length,25_600);
   store.append(session.id,1,Buffer.alloc(14_720));
   const tail=await store.drain(session.id,{final:true});
   assert.equal(tail.length,1);assert.equal(tail[0].segment.audioMs,700);
@@ -98,15 +101,15 @@ test("emits a shorter first segment before returning to the steady window",async
   assert.deepEqual(calls.map(item=>item.outputFrames),[10,20]);
 });
 
-test("defaults to a 400 ms opener and longer steady segments",async()=>{
+test("defaults to an 800 ms opener that covers steady-segment rendering",async()=>{
   const durations=[];
   const store=new DINetStreamSessionStore({
     renderer:{render:async(wav,_action,options)=>{durations.push(wav.readUInt32LE(40)/32);return{url:"/part.mp4",metrics:{frames:options.outputFrames}};}}
   });
   const session=store.start();
-  store.append(session.id,0,Buffer.alloc(65_280));
+  store.append(session.id,0,Buffer.alloc(78_080));
   await store.drain(session.id);
-  assert.deepEqual(durations,[400,1200]);
+  assert.deepEqual(durations,[800,1200]);
 });
 
 test("can continue an action from a later source frame across spoken sentences",async()=>{
