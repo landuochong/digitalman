@@ -15,9 +15,9 @@ test("main voice page offers real and anime modes in one conversation",async()=>
   assert.match(html,/id="personaVoice"/);
   assert.match(html,/人物设置/);
   assert.match(app,/lumi-avatar-mode/);
-  assert.match(html,/app\.js\?v=20260812-continuous-pcm-v7/);
+  assert.match(html,/app\.js\?v=20260812-cross-sentence-v8/);
   assert.match(html,/aria-label="开始通话" aria-pressed="false"/);
-  assert.match(app,/avatarRuntimeVersion="20260812-continuous-pcm-v7"/);
+  assert.match(app,/avatarRuntimeVersion="20260812-cross-sentence-v8"/);
   assert.match(app,/lumi-vrm-look/);
   assert.match(app,/lumi-vrm-persona/);
   assert.match(app,/lumi-voice-profile/);
@@ -25,14 +25,14 @@ test("main voice page offers real and anime modes in one conversation",async()=>
   assert.match(app,/voice:voiceProfile/);
   assert.match(app,/action=\$\{encodeURIComponent\(action\)\}/);
   assert.match(app,/conversationActions\.planForSentence\(data\.text,sentenceIndex,data\.action\|\|currentAction,currentEmotion\)/);
-  assert.match(app,/enqueueSpeech\(data\.text,currentEmotion,batch,sentencePlan\)/);
+  assert.match(app,/enqueueSpeech\(data\.text,currentEmotion,batch,sentencePlan,streamTurn\)/);
   assert.match(app,/frameOffset/);
   assert.match(app,/portrait\.dataset\.behavior=JSON\.stringify\(sentencePlan\)/);
   assert.match(app,/behavior:sentencePlan/);
-  assert.match(app,/conversation-actions\.js\?v=20260812-continuous-pcm-v7/);
+  assert.match(app,/conversation-actions\.js\?v=20260812-cross-sentence-v8/);
   assert.match(app,/bow:"\/real-actions\/bedroom_bow_silent\.mp4"/);
   assert.match(app,/surprise:"\/real-actions\/bedroom_surprise_silent\.mp4"/);
-  assert.match(app,/if\(silentAction\)await playSilentNeuralAction/);
+  assert.match(app,/if\(silentAction\)\{if\(streamTurn\)await streamTurn\.waitForPlayback\(\);await playSilentNeuralAction/);
   assert.match(app,/\/wav2lip-avatar\/avatar\.html/);
   assert.match(app,/\/vrm-embed\.html/);
   assert.match(app,/history:history\.slice\(0,-1\)\.slice\(-8\)/);
@@ -57,7 +57,7 @@ test("user-facing pages hide provider and rendering implementation names",async(
 
 test("real avatar video covers the complete left panel",async()=>{
   const [html,css]=await Promise.all([readPublic("wav2lip-avatar/avatar.html"),readPublic("wav2lip-avatar/avatar.css")]);
-  assert.match(html,/avatar\.css\?v=20260812-continuous-pcm-v7/);
+  assert.match(html,/avatar\.css\?v=20260812-cross-sentence-v8/);
   assert.match(css,/\.avatar-layer\{[^}]*width:100%;height:100%;object-fit:cover;object-position:center center/);
   assert.match(css,/#stage\{[^}]*lumi-bedroom-background-v1\.png[^}]*center\/cover/);
 });
@@ -112,9 +112,15 @@ test("streaming avatar experiment consumes ordered server segments and cancels s
   assert.match(app,/\/api\/dinet\/speech-stream/);
   assert.match(app,/event==="segment"/);
   assert.match(app,/playPreparedNeuralSpeech\(item\.value,batch,\{enqueue:true\}\)/);
+  assert.match(app,/new AvatarStreamTurn/);
+  assert.match(app,/task=>streamTurn\.enqueue\(task\)/);
+  assert.match(app,/streamTurn\?streamTurn\.finish\(\):speechQueue/);
+  assert.match(app,/turn\.trackSegment\(/);
+  assert.match(app,/await streamTurn\.waitForPlayback\(\)/);
   assert.match(app,/buildWav2LipPlaybackMessage\(rendered,requestId,\{enqueue\}\)/);
-  assert.match(app,/await Promise\.all\(playbacks\)/);
+  assert.match(await readPublic("avatar-stream-turn.js"),/await Promise\.all\(this\.playbacks\)/);
   assert.match(app,/wav2lip-stream-end/);
+  assert.equal(app.match(/type:"wav2lip-stream-end"/g)?.length,1);
   assert.match(app,/lingerMs/);
   assert.match(app,/idleTimeMs:realSpeechTimelineMs/);
   assert.match(app,/dataset\.audioMode/);
@@ -132,8 +138,8 @@ test("streaming avatar experiment consumes ordered server segments and cancels s
 test("captions stay inside the right panel without hiding the avatar",async()=>{
   const [html,app,voice,style]=await Promise.all([readPublic("index.html"),readPublic("app.js"),readPublic("voice.css"),readPublic("style.css")]);
   assert.match(html,/aria-controls="messages"/);
-  assert.match(html,/voice\.css\?v=20260812-continuous-pcm-v7/);
-  assert.match(html,/style\.css\?v=20260812-continuous-pcm-v7/);
+  assert.match(html,/voice\.css\?v=20260812-cross-sentence-v8/);
+  assert.match(html,/style\.css\?v=20260812-cross-sentence-v8/);
   assert.match(html,/id="liveTranscript" aria-live="off" hidden/);
   assert.match(app,/if\(visible\)messages\.scrollTop=messages\.scrollHeight/);
   assert.match(voice,/\.voice-panel \{[^}]*overflow: hidden/);

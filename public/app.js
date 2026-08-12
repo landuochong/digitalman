@@ -1,5 +1,6 @@
-import { ConversationActionScheduler } from "./conversation-actions.js?v=20260812-continuous-pcm-v7";
-import { buildWav2LipPlaybackMessage } from "./avatar-protocol.js?v=20260812-continuous-pcm-v7";
+import { ConversationActionScheduler } from "./conversation-actions.js?v=20260812-cross-sentence-v8";
+import { buildWav2LipPlaybackMessage } from "./avatar-protocol.js?v=20260812-cross-sentence-v8";
+import { AvatarStreamTurn } from "./avatar-stream-turn.js?v=20260812-cross-sentence-v8";
 
 const $ = (selector) => document.querySelector(selector);
 const portrait = $("#portrait"), wave = $("#soundWave"), messages = $("#messages");
@@ -7,7 +8,7 @@ const input = $("#messageInput"), form = $("#chatForm"), sendButton = $("#sendBu
 const micButton = $("#micButton"), modeBanner = $("#modeBanner"), statusText = $("#statusText");
 const voiceButton = $("#voiceButton"), voicePrompt = $("#voicePrompt"), liveTranscript = $("#liveTranscript"), captionButton = $("#captionButton");
 const digitalHumanFrame = $("#digitalHumanFrame");
-const avatarRuntimeVersion="20260812-continuous-pcm-v7";
+const avatarRuntimeVersion="20260812-cross-sentence-v8";
 const avatarRuntimeUrl=path=>`${path}?v=${avatarRuntimeVersion}`;
 const avatarProfile = new URLSearchParams(location.search).get("profile");
 const selfRecordedProfile = avatarProfile === "self";
@@ -98,7 +99,7 @@ function unlockAvatarAudio(){
 }
 document.addEventListener("pointerdown",()=>void unlockAvatarAudio(),{once:true,capture:true});
 let realSpeechTimelineMs=0;
-let speechQueue = Promise.resolve(), speechBatch = 0, activeReplyController;
+let speechQueue = Promise.resolve(), speechBatch = 0, activeReplyController,activeAvatarStreamTurn=null;
 const conversationActions=new ConversationActionScheduler();
 let voiceCallActive = false;
 const pendingActions = new Map();
@@ -221,6 +222,7 @@ function stopSpeech() {
   speakingToken++;
   speechBatch++;
   speechQueue = Promise.resolve();
+  activeAvatarStreamTurn=null;
   activeReplyController?.abort(); activeReplyController = null;
   for(const stream of activeStreamingSpeech)stream.cancel();activeStreamingSpeech.clear();
   clearInterval(speechTimer);
@@ -363,24 +365,13 @@ function prepareStreamingNeuralSpeech(text,emotion,batch,behavior={action:"idle"
   activeStreamingSpeech.add(stream);return stream;
 }
 
-async function playStreamingNeuralSpeech(stream,batch,behavior={action:"idle"}){
-  const playbacks=[];let streamedAudioMs=0;
-  try{
-    while(batch===speechBatch){
-      const item=await stream.next();if(item.done)break;
-      streamedAudioMs+=Math.max(0,Number(item.value?.segment?.audioMs)||0);
-      playbacks.push(playPreparedNeuralSpeech(item.value,batch,{enqueue:true}));
-    }
-  }finally{
-    if(batch===speechBatch){
-      const action=typeof behavior==="string"?behavior:behavior?.action||"idle";
-      const lingerMs=action==="idle"?120:Math.min(360,Math.max(180,Number(behavior?.holdMs||0)*.1));
-      realSpeechTimelineMs+=streamedAudioMs;
-      digitalHumanFrame.contentWindow.postMessage({type:"wav2lip-stream-end",lingerMs,idleTimeMs:realSpeechTimelineMs},location.origin);
-    }
+async function enqueueStreamingNeuralSpeech(stream,batch,behavior,turn){
+  const action=typeof behavior==="string"?behavior:behavior?.action||"idle";
+  const lingerMs=action==="idle"?120:Math.min(360,Math.max(180,Number(behavior?.holdMs||0)*.1));
+  while(batch===speechBatch){
+    const item=await stream.next();if(item.done)break;
+    turn.trackSegment(playPreparedNeuralSpeech(item.value,batch,{enqueue:true}),item.value?.segment?.audioMs,lingerMs);
   }
-  await Promise.all(playbacks);
-  if(batch===speechBatch)speaking(false);
 }
 
 async function playPreparedNeuralSpeech(rendered, batch, {enqueue=false}={}) {
@@ -409,7 +400,7 @@ async function playSilentNeuralAction(url,batch){
   });
 }
 
-function enqueueSpeech(text, emotion, batch, behavior={action:"idle"}) {
+function enqueueSpeech(text, emotion, batch, behavior={action:"idle"},streamTurn=activeAvatarStreamTurn) {
   const action=typeof behavior==="string"?behavior:behavior?.action||"idle";
   if (neuralAvatarProfile) {
     // Start TTS and rendering immediately for every completed sentence. Playback
@@ -418,11 +409,14 @@ function enqueueSpeech(text, emotion, batch, behavior={action:"idle"}) {
     const preparation = streamingAvatarExperiment&&!silentAction
       ? prepareStreamingNeuralSpeech(text,emotion,batch,behavior)
       : prepareNeuralSpeech(text, emotion, batch,silentAction?"idle":action);
-    speechQueue = speechQueue.then(async () => {
+    const schedule=streamTurn
+      ? task=>streamTurn.enqueue(task)
+      : task=>speechQueue=speechQueue.then(task);
+    const scheduled=schedule(async () => {
       if (batch !== speechBatch) return;
       try {
-        if(silentAction)await playSilentNeuralAction(silentAction,batch);
-        if(streamingAvatarExperiment&&!silentAction)await playStreamingNeuralSpeech(preparation,batch,behavior);
+        if(silentAction){if(streamTurn)await streamTurn.waitForPlayback();await playSilentNeuralAction(silentAction,batch);}
+        if(streamingAvatarExperiment&&!silentAction)await enqueueStreamingNeuralSpeech(preparation,batch,behavior,streamTurn);
         else await playPreparedNeuralSpeech(await preparation, batch);
       }
       catch (error) {
@@ -432,7 +426,8 @@ function enqueueSpeech(text, emotion, batch, behavior={action:"idle"}) {
         liveTranscript.textContent = "回答准备失败，请重试";
       }
     });
-    return speechQueue;
+    if(streamTurn)speechQueue=streamTurn.finishPromise||streamTurn.enqueueQueue;
+    return scheduled;
   }
   speechQueue = speechQueue.then(async () => {
     if (batch !== speechBatch) return;
@@ -472,6 +467,14 @@ async function reply(message) {
   sendButton.disabled = true; showTyping(); setEmotion("curious"); setVoiceState("thinking","正在理解你刚才说的话"); statusText.textContent = "正在想…";
   const controller = new AbortController(); activeReplyController = controller;
   const batch = speechBatch; realSpeechTimelineMs=0; let article, streamedText = "", currentEmotion = "calm",currentAction="idle",spokenSentenceCount=0;
+  const streamTurn=streamingAvatarExperiment&&neuralAvatarProfile?new AvatarStreamTurn({
+    isCurrent:()=>batch===speechBatch,
+    onEnd:({audioMs,lingerMs})=>{
+      realSpeechTimelineMs+=audioMs;
+      digitalHumanFrame.contentWindow.postMessage({type:"wav2lip-stream-end",lingerMs,idleTimeMs:realSpeechTimelineMs},location.origin);
+    }
+  }):null;
+  activeAvatarStreamTurn=streamTurn;
   try {
     const response = await fetch("/api/chat/stream", { method:"POST", headers:{"content-type":"application/json"}, body:JSON.stringify({ message, history:history.slice(0,-1).slice(-8).map(item=>({...item,content:String(item.content||"").slice(-900)})), userId, persona, fastSpeech:neuralAvatarProfile }), signal:controller.signal });
     if (!response.ok || !response.body) { const data=await response.json().catch(()=>({})); throw new Error(data.error || "连接失败"); }
@@ -491,7 +494,7 @@ async function reply(message) {
         const sentencePlan=conversationActions.planForSentence(data.text,sentenceIndex,data.action||currentAction,currentEmotion);
         const sentenceAction=sentencePlan.action;portrait.dataset.behavior=JSON.stringify(sentencePlan);
         if(sentenceAction!=="idle"&&!sentencePlan.continuation)setDigitalHumanAction(sentenceAction,{force:true,hold:true,behavior:sentencePlan}).catch(()=>{});
-        enqueueSpeech(data.text,currentEmotion,batch,sentencePlan);
+        enqueueSpeech(data.text,currentEmotion,batch,sentencePlan,streamTurn);
       }
       if (event === "error") throw new Error(data.error || "回答中断");
       if (event === "done") {
@@ -503,8 +506,9 @@ async function reply(message) {
       }
     });
     if (streamedText) { history.push({role:"assistant",content:streamedText}); history=history.slice(-20); localStorage.setItem("lumi-history",JSON.stringify(history)); }
-    const completedQueue=speechQueue;
-    completedQueue.finally(()=>{if(batch===speechBatch){conversationActions.finishTurn();if(switchableAvatarProfile&&avatarMode==="anime")digitalHumanFrame?.contentWindow?.postMessage({type:"vrm-finish-gesture"},location.origin);}});
+    const completedQueue=streamTurn?streamTurn.finish():speechQueue;
+    if(streamTurn)speechQueue=completedQueue;
+    completedQueue.finally(()=>{if(batch===speechBatch){if(streamTurn)speaking(false);if(activeAvatarStreamTurn===streamTurn)activeAvatarStreamTurn=null;conversationActions.finishTurn();if(switchableAvatarProfile&&avatarMode==="anime")digitalHumanFrame?.contentWindow?.postMessage({type:"vrm-finish-gesture"},location.origin);}});
   } catch (error) {
     $("#typing")?.remove();
     if (error.name !== "AbortError") { addMessage("assistant", `刚才的连接有点不稳定：${error.message}。再试一次好吗？`, false); setEmotion("caring"); speaking(false); setVoiceState("idle","连接不稳定，请点击麦克风重试"); }
