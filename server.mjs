@@ -1,6 +1,6 @@
 import http from "node:http";
-import { readFile } from "node:fs/promises";
-import { readFileSync } from "node:fs";
+import { stat } from "node:fs/promises";
+import { createReadStream, readFileSync } from "node:fs";
 import { extname, join, normalize } from "node:path";
 import { fileURLToPath } from "node:url";
 import { buildChatPayload, buildMiniMaxChatPayload, buildMiniMaxReply, buildMiniMaxSpeechPayload, buildSpeechPayload, companionIdentityReply, companionPresenceReply, decodeMiniMaxAudio, demoReply, extractMiniMaxChatText, extractResponseText, inferCompanionState, normalizePersona, parseCompanionReply, sanitizeReplyText, takeCompleteSentences } from "./src/companion.mjs";
@@ -12,6 +12,7 @@ import { DINetRenderStore } from "./src/dinet-render.mjs";
 import { DINetStreamSessionStore } from "./src/dinet-stream.mjs";
 import { streamMiniMaxPcm } from "./src/minimax-stream-tts.mjs";
 import { BoundedAsyncCache } from "./src/audio-cache.mjs";
+import { cacheControlForStaticPath, parseByteRange } from "./src/static-media.mjs";
 
 function loadLocalEnv() {
   try {
@@ -343,11 +344,38 @@ async function staticFile(req, res) {
   const path = join(root, relative);
   if (!path.startsWith(root)) return json(res, 403, { error: "禁止访问" });
   try {
-    const file = await readFile(path);
+    const metadata = await stat(path);
+    if (!metadata.isFile()) throw Object.assign(new Error("不是文件"), { code:"ENOENT" });
     const extension=extname(path);
-    const cacheControl=[".html",".js",".json"].includes(extension)?"no-store":"no-cache";
-    res.writeHead(200, { "content-type": mime[extension] || "application/octet-stream", "cache-control": cacheControl });
-    res.end(file);
+    const headers = {
+      "content-type": mime[extension] || "application/octet-stream",
+      "cache-control": cacheControlForStaticPath(urlPath, extension),
+      "content-length": metadata.size
+    };
+    if (extension === ".mp4") headers["accept-ranges"] = "bytes";
+
+    let range = null;
+    if (extension === ".mp4" && req.headers.range) {
+      try { range = parseByteRange(req.headers.range, metadata.size); }
+      catch (error) {
+        if (error.code !== "INVALID_RANGE") throw error;
+        res.writeHead(416, { ...headers, "content-length":0, "content-range":`bytes */${metadata.size}` });
+        return res.end();
+      }
+    }
+    if (range) {
+      headers["content-length"] = range.length;
+      headers["content-range"] = `bytes ${range.start}-${range.end}/${metadata.size}`;
+    }
+    res.writeHead(range ? 206 : 200, headers);
+    if (req.method === "HEAD") return res.end();
+
+    const stream = createReadStream(path, range ? { start:range.start, end:range.end } : undefined);
+    stream.on("error", error => {
+      console.error(`静态文件读取失败：${error.message}`);
+      if (!res.destroyed) res.destroy(error);
+    });
+    stream.pipe(res);
   } catch { json(res, 404, { error: "页面不存在" }); }
 }
 
