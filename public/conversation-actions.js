@@ -48,7 +48,13 @@ export class ConversationActionScheduler{
     const startAtMs=this.cursorMs,durationMs=estimatedSpeechMs(text);
     const continuing=continuation&&resolved===this.activeAction&&startAtMs<this.activeUntilMs;
     if(!preview&&resolved!=="idle"&&!continuing){this.activeAction=resolved;this.activeStartedAtMs=startAtMs;this.activeUntilMs=startAtMs+Math.max(behavior.holdMs,durationMs);}
-    const frameOffset=continuing?Math.max(0,Math.round((startAtMs-this.activeStartedAtMs)/40)):0;
+    // Idle clips share the turn clock so ordinary multi-sentence replies do not
+    // restart the body from frame zero at every punctuation boundary. A newly
+    // selected gesture still starts at its authored entry pose; continuations
+    // advance within that gesture's own timeline.
+    const frameOffset=resolved==="idle"
+      ?Math.max(0,Math.round(startAtMs/40))
+      :continuing?Math.max(0,Math.round((startAtMs-this.activeStartedAtMs)/40)):0;
     const plan={action:resolved,emotion,intensity:behavior.intensity,gaze:behavior.gaze,head:behavior.head,startAtMs,holdMs:Math.max(behavior.holdMs,durationMs),durationMs,frameOffset,continuation:continuing,explicit:Boolean(explicit),deferred:Boolean(deferred)};
     if(!preview)this.cursorMs+=durationMs;
     this.timeline.push(plan);return plan;

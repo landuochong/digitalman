@@ -25,6 +25,16 @@ test("accepts one reply-derived micro gesture during a neutral turn",()=>{
   assert.equal(scheduler.actionForSentence("继续保持。",2,"caring"),"idle");
 });
 
+test("keeps ordinary idle sentences on one source-video timeline",()=>{
+  const scheduler=new ConversationActionScheduler();
+  scheduler.startTurn({message:"随便聊聊",action:"idle"});
+  const first=scheduler.planForSentence("今天天气不错。",0,"idle");
+  const second=scheduler.planForSentence("适合出去走走。",1,"idle");
+  assert.equal(first.frameOffset,0);
+  assert.ok(second.frameOffset>0);
+  assert.equal(second.startAtMs,first.durationMs);
+});
+
 test("limits repeated large inferred gestures but preserves explicit requests",()=>{
   let now=1000;
   const scheduler=new ConversationActionScheduler({clock:()=>now});

@@ -7,6 +7,8 @@ let segmentPlaying=false;
 let activeSegment=null;
 let streamEnded=true;
 let idleRevealTimer=0;
+let pendingIdleTimeMs=null;
+let pendingIdleLingerMs=120;
 const segmentQueue=[];
 
 function notify(type, data = {}) { parent.postMessage({ type, ...data }, location.origin); }
@@ -17,6 +19,7 @@ function playIdle() {
   speechVideo.pause();
   for(const video of stage.querySelectorAll(".speech-segment")){video.pause();video.remove();}
   segmentQueue.length=0;segmentPlaying=false;activeSegment=null;streamEnded=true;
+  pendingIdleTimeMs=null;pendingIdleLingerMs=120;
   idleVideo.play().catch(() => {});
 }
 
@@ -50,14 +53,29 @@ async function playQueuedSegment(){
   finally{
     segmentPlaying=false;
     if(segmentQueue.length)playQueuedSegment();
-    else if(token===playToken&&streamEnded)scheduleIdleReveal();
+    else if(token===playToken&&streamEnded)scheduleIdleReveal(pendingIdleLingerMs,pendingIdleTimeMs);
   }
 }
 
-function scheduleIdleReveal(delayMs=120){
+async function alignIdleToTime(speechTime){
+  const target=reflectedIdleTime(speechTime);
+  if(Math.abs(idleVideo.currentTime-target)<=.05)return;
+  idleVideo.pause();
+  await new Promise(resolve=>{
+    let settled=false;
+    const done=()=>{if(settled)return;settled=true;clearTimeout(timer);idleVideo.removeEventListener("seeked",done);resolve();};
+    const timer=setTimeout(done,140);idleVideo.addEventListener("seeked",done,{once:true});
+    const duration=idleVideo.duration;
+    try{idleVideo.currentTime=Number.isFinite(duration)&&duration>0?Math.min(target,Math.max(0,duration-.04)):target;}catch{done();}
+  });
+}
+
+function scheduleIdleReveal(delayMs=120,idleTimeMs=null){
   clearTimeout(idleRevealTimer);
-  idleRevealTimer=setTimeout(()=>{
+  if(Number.isFinite(Number(idleTimeMs)))void alignIdleToTime(Number(idleTimeMs)/1000);
+  idleRevealTimer=setTimeout(async()=>{
     if(segmentPlaying||segmentQueue.length||!streamEnded)return;
+    if(Number.isFinite(Number(idleTimeMs)))await alignIdleToTime(Number(idleTimeMs)/1000);
     const previous=activeSegment;activeSegment=null;
     idleVideo.play().catch(()=>{});
     requestAnimationFrame(()=>{
@@ -75,32 +93,7 @@ function reflectedIdleTime(speechTime) {
 }
 
 async function revealAlignedIdle(token) {
-  const target = reflectedIdleTime(speechVideo.currentTime);
-  if (Math.abs(idleVideo.currentTime - target) > 0.05) {
-    idleVideo.pause();
-    await new Promise(resolve => {
-      let settled = false;
-      let finishIfAligned;
-      const done = () => {
-        if (settled) return;
-        settled = true;
-        clearTimeout(timer);
-        idleVideo.removeEventListener("seeked", finishIfAligned);
-        resolve();
-      };
-      const timer = setTimeout(done, 140);
-      finishIfAligned = () => {
-        if (Math.abs(idleVideo.currentTime - target) <= 0.08) done();
-      };
-      idleVideo.addEventListener("seeked", finishIfAligned);
-      const duration = idleVideo.duration;
-      const seekTarget = Number.isFinite(duration) && duration > 0
-        ? Math.min(target, Math.max(0, duration - 0.04))
-        : target;
-      try { idleVideo.currentTime = seekTarget; }
-      catch { done(); }
-    });
-  }
+  await alignIdleToTime(speechVideo.currentTime);
   if (token !== playToken) return false;
   speechVideo.classList.remove("active");
   idleVideo.play().catch(() => {});
@@ -114,7 +107,10 @@ window.addEventListener("message", async event => {
     clearTimeout(idleRevealTimer);idleRevealTimer=0;streamEnded=false;
     document.body.classList.add("loading");segmentQueue.push(preloadSegment(event.data));playQueuedSegment();return;
   }
-  if(event.data?.type==="wav2lip-stream-end"){streamEnded=true;if(!segmentPlaying&&!segmentQueue.length)scheduleIdleReveal(event.data.lingerMs);return;}
+  if(event.data?.type==="wav2lip-stream-end"){
+    streamEnded=true;pendingIdleLingerMs=event.data.lingerMs;pendingIdleTimeMs=event.data.idleTimeMs;
+    if(!segmentPlaying&&!segmentQueue.length)scheduleIdleReveal(pendingIdleLingerMs,pendingIdleTimeMs);return;
+  }
   const isSilentAction=event.data?.type==="wav2lip-action";
   if ((event.data?.type !== "wav2lip-play"&&!isSilentAction) || !event.data.url) return;
   const token = ++playToken;

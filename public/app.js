@@ -1,4 +1,4 @@
-import { ConversationActionScheduler } from "./conversation-actions.js?v=20260812-behavior-continuity-v2";
+import { ConversationActionScheduler } from "./conversation-actions.js?v=20260812-idle-continuity-v3";
 
 const $ = (selector) => document.querySelector(selector);
 const portrait = $("#portrait"), wave = $("#soundWave"), messages = $("#messages");
@@ -6,7 +6,7 @@ const input = $("#messageInput"), form = $("#chatForm"), sendButton = $("#sendBu
 const micButton = $("#micButton"), modeBanner = $("#modeBanner"), statusText = $("#statusText");
 const voiceButton = $("#voiceButton"), voicePrompt = $("#voicePrompt"), liveTranscript = $("#liveTranscript"), captionButton = $("#captionButton");
 const digitalHumanFrame = $("#digitalHumanFrame");
-const avatarRuntimeVersion="20260812-behavior-continuity-v2";
+const avatarRuntimeVersion="20260812-idle-continuity-v3";
 const avatarRuntimeUrl=path=>`${path}?v=${avatarRuntimeVersion}`;
 const avatarProfile = new URLSearchParams(location.search).get("profile");
 const selfRecordedProfile = avatarProfile === "self";
@@ -85,6 +85,7 @@ if(localStorage.getItem("lumi-history-schema")!==historySchema){localStorage.rem
 let history = JSON.parse(localStorage.getItem("lumi-history") || "[]");
 let mode = "demo", speakingToken = 0, audioContext, activeAudio, activeSpeechResolve, speechTimer, actionRequestId = 0;
 const activeStreamingSpeech=new Set();
+let realSpeechTimelineMs=0;
 let speechQueue = Promise.resolve(), speechBatch = 0, activeReplyController;
 const conversationActions=new ConversationActionScheduler();
 let voiceCallActive = false;
@@ -219,6 +220,7 @@ function stopSpeech() {
   digitalHumanFrame?.contentWindow?.postMessage({ type:"wav2lip-clear" }, location.origin);
   digitalHumanFrame?.contentWindow?.postMessage({ type:"vrm-clear" }, location.origin);
   conversationActions.finishTurn();
+  realSpeechTimelineMs=0;
   speaking(false);
 }
 function addMessage(role, content, persist = true) {
@@ -350,17 +352,19 @@ function prepareStreamingNeuralSpeech(text,emotion,batch,behavior={action:"idle"
 }
 
 async function playStreamingNeuralSpeech(stream,batch,behavior={action:"idle"}){
-  const playbacks=[];
+  const playbacks=[];let streamedAudioMs=0;
   try{
     while(batch===speechBatch){
       const item=await stream.next();if(item.done)break;
+      streamedAudioMs+=Math.max(0,Number(item.value?.segment?.audioMs)||0);
       playbacks.push(playPreparedNeuralSpeech(item.value,batch,{enqueue:true}));
     }
   }finally{
     if(batch===speechBatch){
       const action=typeof behavior==="string"?behavior:behavior?.action||"idle";
       const lingerMs=action==="idle"?120:Math.min(360,Math.max(180,Number(behavior?.holdMs||0)*.1));
-      digitalHumanFrame.contentWindow.postMessage({type:"wav2lip-stream-end",lingerMs},location.origin);
+      realSpeechTimelineMs+=streamedAudioMs;
+      digitalHumanFrame.contentWindow.postMessage({type:"wav2lip-stream-end",lingerMs,idleTimeMs:realSpeechTimelineMs},location.origin);
     }
   }
   await Promise.all(playbacks);
@@ -455,7 +459,7 @@ async function consumeEventStream(response, onEvent) {
 async function reply(message) {
   sendButton.disabled = true; showTyping(); setEmotion("curious"); setVoiceState("thinking","正在理解你刚才说的话"); statusText.textContent = "正在想…";
   const controller = new AbortController(); activeReplyController = controller;
-  const batch = speechBatch; let article, streamedText = "", currentEmotion = "calm",currentAction="idle",spokenSentenceCount=0;
+  const batch = speechBatch; realSpeechTimelineMs=0; let article, streamedText = "", currentEmotion = "calm",currentAction="idle",spokenSentenceCount=0;
   try {
     const response = await fetch("/api/chat/stream", { method:"POST", headers:{"content-type":"application/json"}, body:JSON.stringify({ message, history:history.slice(0,-1), userId, persona, fastSpeech:neuralAvatarProfile }), signal:controller.signal });
     if (!response.ok || !response.body) { const data=await response.json().catch(()=>({})); throw new Error(data.error || "连接失败"); }
