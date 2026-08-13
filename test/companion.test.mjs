@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { buildChatPayload, buildMiniMaxChatPayload, buildMiniMaxReply, buildMiniMaxSpeechPayload, buildResponsiveBackchannel, buildSpeechPayload, companionContextPolicy, companionIdentityReply, companionPresenceReply, decodeMiniMaxAudio, demoReply, extractMiniMaxChatText, extractResponseText, inferCompanionState, inferExplicitActionRequest, isCompanionIdentityQuestion, isCompanionPresenceQuestion, isRedundantClosingQuestion, limitReplyForRequest, normalizeAction, normalizeEmotion, normalizePersona, parseCompanionReply, sanitizeReplyText, takeCompleteSentences } from "../src/companion.mjs";
+import { buildChatPayload, buildMiniMaxChatPayload, buildMiniMaxReply, buildMiniMaxSpeechPayload, buildResponsiveBackchannel, buildSpeechPayload, companionContextPolicy, companionIdentityReply, companionPresenceReply, completedReplySentenceCount, decodeMiniMaxAudio, demoReply, extractMiniMaxChatText, extractResponseText, inferCompanionState, inferExplicitActionRequest, isCompanionIdentityQuestion, isCompanionPresenceQuestion, isRedundantClosingQuestion, limitReplyForRequest, normalizeAction, normalizeEmotion, normalizePersona, parseCompanionReply, requestedSentenceLimit, sanitizeReplyText, takeCompleteSentences } from "../src/companion.mjs";
 
 test("extracts Responses API output text", () => {
   assert.equal(extractResponseText({ output:[{ type:"message", content:[{ type:"output_text", text:"你好" }] }] }), "你好");
@@ -176,6 +176,11 @@ test("honors explicit concise reply length without truncating normal analysis",(
   assert.equal(limitReplyForRequest(long,"用一句话概括"),"第一句。");
   assert.equal(limitReplyForRequest(long,"请认真详细分析"),long);
   assert.equal(buildMiniMaxReply(long,"简单说一下").reply,"第一句。第二句。第三句。");
+  assert.equal(requestedSentenceLimit("用一句话概括"),1);
+  assert.equal(requestedSentenceLimit("说一两句就好"),2);
+  assert.equal(requestedSentenceLimit("简单安排一下"),3);
+  assert.equal(requestedSentenceLimit("详细分析"),0);
+  assert.equal(completedReplySentenceCount("开场逗号，仍是第一句。第二句；未完成"),2);
 });
 test("repairs device-confinement replies while continuing the shared scene",()=>{
   const history=[

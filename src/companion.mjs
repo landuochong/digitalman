@@ -64,13 +64,15 @@ export function sanitizeReplyText(value) {
     .trim();
 }
 
-function requestedSentenceLimit(message){
+export function requestedSentenceLimit(message){
   const input=String(message||"");
   if(/(?:两句话|两句|一两句)/.test(input))return 2;
   if(/(?:一句话|一句)/.test(input))return 1;
   if(/(?:简单|简短|简洁|精简|概括|大概).{0,8}(?:说|讲|回答|排|安排|规划|建议|分析|说明|一下)|(?:简单|简短|简洁|精简)(?:点|一点|一些)?/.test(input))return 3;
   return 0;
 }
+
+export function completedReplySentenceCount(reply){return (String(reply||"").match(/[。！？!?；;\n]+/g)||[]).length;}
 
 export function limitReplyForRequest(reply,message){
   const value=String(reply||"").trim(),limit=requestedSentenceLimit(message);if(!limit)return value;
