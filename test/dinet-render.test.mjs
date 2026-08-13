@@ -178,7 +178,11 @@ test("stream endpoint reports TTS and first playable segment timing",async()=>{
   assert.match(server,/new PreparedTtsLease\(/);
   assert.match(server,/prepare:\(\)=>prepareTtsConnection\(\{voice,emotion:initialState\.emotion\}\)/);
   assert.match(server,/sendEvent\(res,"speech-ready",\{ttsConnectionId\}\)/);
+  const streamHandler=server.slice(server.indexOf("async function miniMaxChatStream"),server.indexOf("async function chat(req"));
+  assert.ok(streamHandler.indexOf("ttsLease.start()")<streamHandler.indexOf("response=await fetch(`${miniMaxBaseUrl}/chat/completions`"));
   assert.match(server,/firstSentenceEmitted=true;ttsLease\?\.freeze\(\)/);
+  assert.match(streamHandler,/catch\(error\)\{\s*ttsLease\?\.cancel\(\);\s*throw error;/);
+  assert.match(streamHandler,/if \(!response\.ok \|\| !response\.body\)\{ttsLease\?\.cancel\(\)/);
   assert.match(server,/signal:client\.signal/);
   assert.match(server,/ttsLease\?\.cancel\(\)/);
   assert.match(server,/prewarmMiniMaxPcm\(\{text:backchannel\.text,voice,emotion:backchannel\.emotion,signal:client\.signal\}\)/);

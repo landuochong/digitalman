@@ -182,6 +182,9 @@ test("does not turn an ordinary life share into an unnecessary interview",()=>{
   assert.equal(buildMiniMaxReply("嗯，听起来挺让人眼前一亮的。今天天气怎么样，树是绿的吗？",share).reply,"嗯，听起来挺让人眼前一亮的。");
   assert.equal(buildMiniMaxReply("哇，什么样的树呀？",share).reply,"听起来挺特别的。");
   assert.equal(isRedundantClosingQuestion("今天路上看到事故了，我很害怕","你现在安全了吗？",true),false);
+  assert.equal(isRedundantClosingQuestion("今天工作有点累，事情特别多。","吃了没？",true),false);
+  assert.equal(buildMiniMaxReply("吃了没？","今天工作有点累，事情特别多。").reply,"吃了没？");
+  assert.equal(buildMiniMaxReply("要不要先休息一下？","今天刚下班回来。").reply,"要不要先休息一下？");
   assert.equal(isRedundantClosingQuestion("今天去了哪里比较好？","你更喜欢室内还是户外？",true),false);
   assert.equal(isRedundantClosingQuestion(share,"那棵树一定很显眼。",true),false);
 });

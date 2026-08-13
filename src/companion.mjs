@@ -265,13 +265,14 @@ const directPlanningRequest=/(?:帮我|给我|替我|请你).{0,8}(?:安排|规�
 const genericPlanConfirmation=/^(?:你觉得|你看)(?:这样|这个|这么|这样的)?(?:安排|节奏|计划|方案)?(?:可以|行|合适|怎么样)(?:吗)?[？?。]?$/;
 const ordinaryLifeShare=/(?:今天|昨天|刚才|刚刚|路上|下班|到家|回来|散步|出门|吃完|看完|做完|完成|遇到|看到|听到|发现|买了|去了|来了)/;
 const asksForHelpOrAnswer=/(?:[？?]|为什么|怎么|如何|怎么办|能不能|可以吗|要不要|帮我|给我|请你|建议|推荐|分析|安排|规划|计划|想知道|告诉我)/;
-const distressOrCrisis=/(?:自杀|不想活|活不下去|伤害自己|结束生命|难过|伤心|焦虑|崩溃|害怕|担心|不舒服|生病|疼|压力|委屈|孤独|失落)/;
+const distressOrCrisis=/(?:自杀|不想活|活不下去|伤害自己|结束生命|难过|伤心|焦虑|崩溃|害怕|担心|不舒服|生病|疼|压力|委屈|孤独|失落|累|疲惫|烦|饿|困)/;
+const ordinaryInterviewQuestion=/(?:什么样|怎么样|什么颜色|多(?:高|大|长|远)|哪(?:里|儿|个|种)|在(?:哪|什么地方)|什么时候|和谁|谁陪|好看吗|漂亮吗|特别吗|有趣吗|喜欢吗|是.{0,16}吗|有没有.{0,16})[^。！？!?]*[？?]$/;
 
 export function isRedundantClosingQuestion(message,sentence,hasSubstantiveAnswer=false){
   if(!hasSubstantiveAnswer)return false;
   const input=String(message||""),closing=String(sentence||"").trim();
   if(directPlanningRequest.test(input)&&genericPlanConfirmation.test(closing))return true;
-  return ordinaryLifeShare.test(input)&&!asksForHelpOrAnswer.test(input)&&!distressOrCrisis.test(input)&&/[？?]$/.test(closing);
+  return ordinaryLifeShare.test(input)&&!asksForHelpOrAnswer.test(input)&&!distressOrCrisis.test(input)&&ordinaryInterviewQuestion.test(closing);
 }
 
 function isOrdinaryLifeShare(message){
@@ -284,7 +285,7 @@ function removeRedundantClosingQuestion(reply,message){
   if(!closing)return value;
   const substantive=value.slice(0,-closing.length).replace(/[\s，。！？!?；;、]/g,"").length>=8;
   if(isRedundantClosingQuestion(message,closing,substantive))return value.slice(0,-closing.length).trim();
-  if(!substantive&&isOrdinaryLifeShare(message)&&/[？?]$/.test(closing))return "听起来挺特别的。";
+  if(!substantive&&isOrdinaryLifeShare(message)&&ordinaryInterviewQuestion.test(closing))return "听起来挺特别的。";
   return value;
 }
 

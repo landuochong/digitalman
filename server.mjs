@@ -288,14 +288,6 @@ async function miniMaxChatStream(message, history, persona, memories, companionS
     trace.backchannel=backchannel;
     sendEvent(res,"backchannel",backchannel);
   },BACKCHANNEL_OFFER_MS):null;
-  const response = await fetch(`${miniMaxBaseUrl}/chat/completions`, {
-    method:"POST",
-    headers:{ authorization:`Bearer ${apiKey}`, "content-type":"application/json" },
-    body:JSON.stringify(requestPayload),
-    signal:client.signal
-  });
-  trace.timings.upstreamConnectedMs=Math.round(performance.now()-trace._startedMs);
-  if (!response.ok || !response.body) throw new Error(`MiniMax 流式文案接口失败 (${response.status})`);
   if(fastSpeech&&!client.signal.aborted){
     ttsLease=new PreparedTtsLease({
       prepare:()=>prepareTtsConnection({voice,emotion:initialState.emotion}),
@@ -309,6 +301,20 @@ async function miniMaxChatStream(message, history, persona, memories, companionS
     });
     ttsLease.start();
   }
+  let response;
+  try{
+    response=await fetch(`${miniMaxBaseUrl}/chat/completions`, {
+      method:"POST",
+      headers:{ authorization:`Bearer ${apiKey}`, "content-type":"application/json" },
+      body:JSON.stringify(requestPayload),
+      signal:client.signal
+    });
+  }catch(error){
+    ttsLease?.cancel();
+    throw error;
+  }
+  trace.timings.upstreamConnectedMs=Math.round(performance.now()-trace._startedMs);
+  if (!response.ok || !response.body){ttsLease?.cancel();throw new Error(`MiniMax 流式文案接口失败 (${response.status})`);}
 
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
