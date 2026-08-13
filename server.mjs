@@ -13,6 +13,7 @@ import { DINetStreamSessionStore, encodePcm16Wav } from "./src/dinet-stream.mjs"
 import { normalizeMiniMaxTtsEmotion, streamMiniMaxPcm } from "./src/minimax-stream-tts.mjs";
 import { BoundedAsyncCache } from "./src/audio-cache.mjs";
 import { cacheControlForStaticPath, parseByteRange } from "./src/static-media.mjs";
+import { EphemeralPcmStore } from "./src/ephemeral-pcm-store.mjs";
 
 function loadLocalEnv() {
   try {
@@ -36,7 +37,12 @@ const actionUploadDir = fileURLToPath(new URL("./data/dh-action-uploads", import
 const actionTasks = new DhActionTaskStore({ projectRoot });
 const wav2lipRenders = new Wav2LipRenderStore({ projectRoot });
 const dinetRenders = new DINetRenderStore({ projectRoot });
-const dinetStreams = new DINetStreamSessionStore({ renderer:dinetRenders });
+const ephemeralPcm=new EphemeralPcmStore();
+const dinetStreams = new DINetStreamSessionStore({
+  renderer:dinetRenders,
+  publishAudio:payload=>ephemeralPcm.put(payload.pcm,payload),
+  releaseAudio:streamId=>ephemeralPcm.deleteStream(streamId)
+});
 const port = Number(process.env.PORT || 3000);
 const provider = process.env.AI_PROVIDER || (process.env.OPENAI_API_KEY ? "openai" : process.env.MINIMAX_API_KEY ? "minimax" : "demo");
 const apiKey = provider === "minimax" ? process.env.MINIMAX_API_KEY : process.env.OPENAI_API_KEY;
@@ -455,7 +461,14 @@ export const server = http.createServer(async (req, res) => {
     }
     if (pathname === "/api/dinet/status" && req.method === "GET") {
       if (!isLoopbackAddress(req.socket.remoteAddress)) return json(res, 403, { error:"本地 DINet 口型接口仅允许本机访问" });
-      return json(res, 200, {...await dinetRenders.readiness(),cache:await dinetRenders.cacheStatus()});
+      return json(res, 200, {...await dinetRenders.readiness(),cache:await dinetRenders.cacheStatus(),pcm:ephemeralPcm.snapshot()});
+    }
+    const pcmMatch=pathname.match(/^\/api\/dinet\/pcm\/([a-f0-9]{32})$/);
+    if(pcmMatch&&req.method==="GET"){
+      if(!isLoopbackAddress(req.socket.remoteAddress))return json(res,403,{error:"本地 PCM 分片仅允许本机访问"});
+      const entry=ephemeralPcm.get(pcmMatch[1]);if(!entry)return json(res,404,{error:"PCM 分片已过期"});
+      res.writeHead(200,{"content-type":"application/octet-stream","content-length":entry.pcm.length,"cache-control":"no-store","x-pcm-sample-rate":entry.sampleRate,"x-pcm-channels":entry.channels,"x-pcm-sequence":entry.sequence});
+      return res.end(entry.pcm);
     }
     if(pathname==="/api/dinet/prepare-action"&&req.method==="POST"){
       if(!isLoopbackAddress(req.socket.remoteAddress))return json(res,403,{error:"本地 DINet 动作预热仅允许本机访问"});
@@ -476,7 +489,7 @@ export const server = http.createServer(async (req, res) => {
       const pipelineStartedAt=performance.now();let firstAudioAt=null,firstSegmentAt=null;
       res.on("close",()=>{if(!closed)controller.abort();});
       res.writeHead(200,{"content-type":"text/event-stream; charset=utf-8","cache-control":"no-cache, no-transform","x-accel-buffering":"no"});
-      const session=dinetStreams.start({action:String(data.action||"idle"),frameOffset:Number(data.frameOffset||0),videoOnly:data.externalAudio===true});
+      const session=dinetStreams.start({action:String(data.action||"idle"),frameOffset:Number(data.frameOffset||0),videoOnly:data.externalAudio===true,binaryAudio:data.binaryAudio===true});
       sendEvent(res,"started",session);
       let chunkSequence=0,renderChain=Promise.resolve(),firstSegmentSent=false;
       const emitSegments=async(final=false)=>{

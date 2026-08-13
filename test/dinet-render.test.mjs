@@ -125,6 +125,9 @@ test("stream endpoint reports TTS and first playable segment timing",async()=>{
   assert.match(server,/prepareAvatarAction\(groundedResult\.action,trace\)/);
   assert.match(server,/assetPrepareMs/);
   assert.match(server,/videoOnly:data\.externalAudio===true/);
+  assert.match(server,/binaryAudio:data\.binaryAudio===true/);
+  assert.match(server,/^\s*const pcmMatch=pathname\.match/m);
+  assert.match(server,/cache-control":"no-store"/);
 });
 
 test("prepares a resolved action through the serialized persistent worker",async()=>{

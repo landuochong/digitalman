@@ -42,12 +42,16 @@ test("rejects out-of-order chunks without advancing the session", () => {
 });
 
 test("cancel releases buffered audio and makes late chunks harmless", () => {
-  const cancelled=[];
-  const store = new DINetStreamSessionStore({ renderer:{ render:async()=>({}),cancelStream:async id=>cancelled.push(id) } });
+  const cancelled=[],released=[];
+  const store = new DINetStreamSessionStore({
+    renderer:{ render:async()=>({}),cancelStream:async id=>cancelled.push(id) },
+    releaseAudio:id=>released.push(id)
+  });
   const session = store.start();
   store.append(session.id, 0, Buffer.alloc(320));
   assert.deepEqual(store.cancel(session.id), { id:session.id, cancelled:true });
   assert.deepEqual(cancelled,[session.id]);
+  assert.deepEqual(released,[session.id]);
   assert.throws(() => store.append(session.id, 1, Buffer.alloc(320)), error => error.status === 404);
   assert.deepEqual(store.cancel(session.id), { id:session.id, cancelled:false });
 });
@@ -115,6 +119,21 @@ test("renders video-only segments when external PCM playback is negotiated",asyn
   assert.equal(segment.videoOnly,true);
   assert.equal(segment.segment.audioMode,"external-pcm");
   assert.equal(Buffer.from(segment.segment.audio.data,"base64").length,12_800);
+});
+
+test("publishes binary PCM metadata without base64 when negotiated",async()=>{
+  const published=[];
+  const store=new DINetStreamSessionStore({
+    firstSegmentMs:400,
+    publishAudio:payload=>{published.push(payload);return{url:"/api/dinet/pcm/token",bytes:payload.pcm.length};},
+    releaseAudio:()=>{},
+    renderer:{render:async(_wav,_action,options)=>({url:"/silent.mp4",videoOnly:true,metrics:{frames:options.outputFrames}})}
+  });
+  const session=store.start({videoOnly:true,binaryAudio:true});store.append(session.id,0,Buffer.alloc(20_480));
+  const [result]=await store.drain(session.id);
+  assert.equal(published[0].pcm.length,12_800);assert.equal(published[0].streamId,session.id);
+  assert.deepEqual(result.segment.audio,{encoding:"pcm_s16le",sampleRate:16000,channels:1,url:"/api/dinet/pcm/token",bytes:12_800});
+  assert.equal("data" in result.segment.audio,false);
 });
 
 test("defaults to uniform 800 ms segments that preserve playback headroom",async()=>{

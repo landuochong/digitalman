@@ -1,4 +1,5 @@
 import { videoBoundaryDelayMs,videoCatchupSeconds,videoPrestartDelayMs } from "../avatar-video-timing.js?v=20260813-video-handoff-v11";
+import { loadPcmBytes } from "../pcm-segment.js?v=20260813-binary-pcm-v1";
 
 const idleVideo = document.querySelector("#avatar-idle");
 const speechVideo = document.querySelector("#avatar-speech");
@@ -38,9 +39,8 @@ function playIdle() {
   idleVideo.play().catch(() => {});
 }
 
-function pcmBuffer(context,audio){
-  if(audio?.encoding!=="pcm_s16le"||audio.channels!==1||!audio.data)return null;
-  const bytes=Uint8Array.from(atob(audio.data),character=>character.charCodeAt(0));
+function pcmBuffer(context,audio,bytes){
+  if(audio?.encoding!=="pcm_s16le"||audio.channels!==1||!bytes)return null;
   if(!bytes.length||bytes.length%2)return null;
   const samples=new Int16Array(bytes.buffer,bytes.byteOffset,bytes.byteLength/2);
   const buffer=context.createBuffer(1,samples.length,Number(audio.sampleRate)||16000),channel=buffer.getChannelData(0);
@@ -58,7 +58,7 @@ async function ensureStreamAudio(){
 
 async function scheduleSegmentAudio(item){
   const context=await ensureStreamAudio();if(!context){notify("wav2lip-audio-mode",{mode:"mp4",sequence:item.segment?.sequence,gapMs:0});return false;}
-  const buffer=pcmBuffer(context,item.segment?.audio);if(!buffer)return false;
+  const bytes=await loadPcmBytes(item.segment?.audio).catch(()=>null),buffer=pcmBuffer(context,item.segment?.audio,bytes);if(!buffer)return false;
   const source=context.createBufferSource();source.buffer=buffer;source.connect(context.destination);
   const when=Math.max(streamAudioTail,context.currentTime+.06);
   const gapMs=streamAudioTail?Math.max(0,Math.round((when-streamAudioTail)*1000)):0;

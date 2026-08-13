@@ -347,7 +347,7 @@ function prepareStreamingNeuralSpeech(text,emotion,batch,behavior={action:"idle"
   const wake=()=>{while(waiters.length&&(queue.length||ended||failure))waiters.shift()();};
   const controller=new AbortController();
   const consume=(async()=>{
-    const response=await fetch("/api/dinet/speech-stream",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({text,emotion,voice:voiceProfile,action,frameOffset,externalAudio,preferPrewarmed:options.preferPrewarmed===true}),signal:controller.signal});
+    const response=await fetch("/api/dinet/speech-stream",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({text,emotion,voice:voiceProfile,action,frameOffset,externalAudio,binaryAudio:externalAudio,preferPrewarmed:options.preferPrewarmed===true}),signal:controller.signal});
     if(!response.ok||!response.body){const data=await response.json().catch(()=>({}));throw new Error(data.error||"流式回答准备失败");}
     await consumeEventStream(response,async(event,data)=>{
       if(batch!==speechBatch){controller.abort();return;}
