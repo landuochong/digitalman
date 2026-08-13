@@ -15,9 +15,9 @@ test("main voice page offers real and anime modes in one conversation",async()=>
   assert.match(html,/id="personaVoice"/);
   assert.match(html,/人物设置/);
   assert.match(app,/lumi-avatar-mode/);
-  assert.match(html,/app\.js\?v=20260813-final-action-prep-v32/);
+  assert.match(html,/app\.js\?v=20260813-semantic-clause-v33/);
   assert.match(html,/aria-label="开始通话" aria-pressed="false"/);
-  assert.match(app,/avatarRuntimeVersion="20260813-final-action-prep-v32"/);
+  assert.match(app,/avatarRuntimeVersion="20260813-semantic-clause-v33"/);
   assert.match(app,/AVATAR_FIRST_SEGMENT_LEAD_MS=400/);
   assert.match(app,/get\("continuous"\) !== "0"/);
   assert.match(app,/lumi-vrm-look/);
@@ -43,7 +43,7 @@ test("main voice page offers real and anime modes in one conversation",async()=>
   assert.match(app,/frameOffset/);
   assert.match(app,/portrait\.dataset\.behavior=JSON\.stringify\(sentencePlan\)/);
   assert.match(app,/behavior:sentencePlan/);
-  assert.match(app,/conversation-actions\.js\?v=20260813-final-action-prep-v19/);
+  assert.match(app,/conversation-actions\.js\?v=20260813-semantic-clause-v20/);
   assert.match(app,/bow:"\/real-actions\/bedroom_bow_silent\.mp4"/);
   assert.match(app,/surprise:"\/real-actions\/bedroom_surprise_silent\.mp4"/);
   assert.match(app,/if\(silentAction\)\{if\(streamTurn\)await streamTurn\.waitForPlayback\(\);options\.onStart\?\.\(\);await playSilentNeuralAction/);

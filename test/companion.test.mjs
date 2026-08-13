@@ -134,6 +134,11 @@ test("builds streaming MiniMax payload and segments complete spoken sentences", 
   assert.deepEqual(takeCompleteSentences("哦？什么事，说来听听。",false,true),{sentences:["哦？什么事，说来听听。"],remainder:""});
   assert.deepEqual(takeCompleteSentences("好呀。",true,true),{sentences:["好呀。"],remainder:""});
   assert.deepEqual(takeCompleteSentences("辛苦了，今天先休息一下", false, true), { sentences:[], remainder:"辛苦了，今天先休息一下" });
+  assert.deepEqual(takeCompleteSentences("我已经把事情处理好了，接下来继续检查",false,true),{sentences:["我已经把事情处理好了，"],remainder:"接下来继续检查"});
+  assert.deepEqual(takeCompleteSentences("我已经把事情处理好了，",false,true),{sentences:[],remainder:"我已经把事情处理好了，"});
+  assert.deepEqual(takeCompleteSentences("哇，能让你特意停下来看，一定很高",false,true),{sentences:[],remainder:"哇，能让你特意停下来看，一定很高"});
+  assert.deepEqual(takeCompleteSentences("如果明天天气不错，我们就出去走走",false,true),{sentences:[],remainder:"如果明天天气不错，我们就出去走走"});
+  assert.deepEqual(takeCompleteSentences("听到你这么说，我也放心多了",false,true),{sentences:[],remainder:"听到你这么说，我也放心多了"});
   assert.deepEqual(takeCompleteSentences("辛苦了，今天先休息一下。", false, true), { sentences:["辛苦了，今天先休息一下。"], remainder:"" });
   assert.deepEqual(takeCompleteSentences("你已经撑了很久了，真的很棒。今晚早点休息，别硬扛。", false, true),{sentences:["你已经撑了很久了，真的很棒。","今晚早点休息，别硬扛。"],remainder:""});
   assert.deepEqual(takeCompleteSentences("周六上午学习，下午运动，晚上早点休息；周日上午再复习。",false,true),{sentences:["周六上午学习，下午运动，晚上早点休息；周日上午再复习。"],remainder:""});

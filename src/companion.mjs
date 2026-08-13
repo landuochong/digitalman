@@ -402,6 +402,17 @@ export function takeCompleteSentences(text, flush = false, includeClauses = fals
     const terminal = /[。！？!?；;\n]/.test(match[0]);
     const spokenLength = sentence.replace(/[，,、。！？!?；;\s]/g, "").length;
     if (includeClauses && !terminal && spokenLength < Math.max(1,Number(minClauseCharacters)||9)) continue;
+    if(includeClauses&&!terminal&&!flush){
+      // Do not commit at the exact moment a comma arrives. A tiny lookahead is
+      // enough to distinguish an independent spoken clause from a predicate
+      // that is still waiting for its subject or conclusion.
+      const lookahead=source.slice(end).replace(/[\s，,、]/g,"");
+      if(lookahead.length<2)continue;
+      const clause=sentence.replace(/[\s，,、]+$/g,"").replace(/^(?:嗯|哦|哇|呀|啊|诶)[，,、]?/u,"");
+      const dependentStart=/^(?:如果|假如|要是|因为|由于|虽然|尽管|即使|既然|只要|除非|当|等到|为了|听到|看到|想到|说到|提到|能让|让(?:我|你|人)|被|把)/u;
+      const dependentEnd=/(?:如果|因为|但是|而且|所以|然后|以及|或者|还是|的时候|之后|以前|的话|为了|以便|从而|而|并|又|也|就|才|都|还|更|很|太|真|非常|特别|比较|可能|应该|需要|可以|能够|想要|打算|准备|的|地|得)$/u;
+      if(dependentStart.test(clause)||dependentEnd.test(clause))continue;
+    }
     if(includeClauses&&terminal&&spokenLength<=4&&!sentences.length&&!flush)continue;
     if(includeClauses&&terminal&&spokenLength<=8&&sentences.length&&start>0){sentences[sentences.length-1]+=source.slice(start,end);start=end;continue;}
     if (sentence) sentences.push(sentence);
