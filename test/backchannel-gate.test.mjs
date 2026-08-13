@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { BackchannelGate,BackchannelPlayback,remainingAfterSpokenBackchannel } from "../public/backchannel-gate.js";
+import { BackchannelGate,BackchannelPlayback,backchannelContinuationMs,remainingAfterSpokenBackchannel } from "../public/backchannel-gate.js";
 
 function fakeClock(){let task=null;return{set(fn){task=fn;return 1;},clear(){task=null;},fire(){const fn=task;task=null;fn?.();}};}
 
@@ -89,4 +89,10 @@ test("does not trim different wording or a longer backchannel",()=>{
   assert.equal(remainingAfterSpokenBackchannel("嗯。","听着呢，什么事？"),null);
   assert.equal(remainingAfterSpokenBackchannel("听着呢。","听着。"),null);
   assert.equal(remainingAfterSpokenBackchannel("听着呢。","听着呢。"),null);
+});
+
+test("advances the action by measured backchannel audio instead of gesture hold time",()=>{
+  assert.equal(backchannelContinuationMs({expectedAudioMs:690,receivedAudioMs:400}),690);
+  assert.equal(backchannelContinuationMs({expectedAudioMs:690,receivedAudioMs:690}),690);
+  assert.equal(backchannelContinuationMs({}),400);
 });

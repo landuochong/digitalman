@@ -61,8 +61,8 @@ test("main voice page offers real and anime modes in one conversation",async()=>
   assert.match(app,/data\.waitingPreview\?\.url/);
   assert.match(app,/elapsedMs:previewTimeMs,leadMs:AVATAR_FIRST_SEGMENT_LEAD_MS/);
   assert.match(app,/activeWaitingPreview\?\.action===event\.data\.action/);
-  assert.match(app,/backchannelVisual\.stream\?\.expectedAudioMs/);
-  assert.match(app,/backchannelVisual\.stream\?\.receivedAudioMs/);
+  assert.match(app,/backchannelContinuationMs\(\{expectedAudioMs:backchannelVisual\.stream\?\.expectedAudioMs,receivedAudioMs:backchannelVisual\.stream\?\.receivedAudioMs\}\)/);
+  assert.match(app,/backchannelContinuationMs=String\(elapsedMs\)/);
   assert.match(app,/sentencePlan\.frameOffset\+actionFrameBias/);
   assert.match(app,/binaryAudio:externalAudio/);
   assert.match(app,/fragmentedVideo/);

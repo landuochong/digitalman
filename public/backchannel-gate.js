@@ -31,6 +31,11 @@ export function remainingAfterSpokenBackchannel(spoken,formal){
   return suffix.replace(/^[，；;、\s]+/,"").trim();
 }
 
+export function backchannelContinuationMs({expectedAudioMs=0,receivedAudioMs=0,fallbackMs=400}={}){
+  const measured=Math.max(0,Number(expectedAudioMs)||0,Number(receivedAudioMs)||0);
+  return measured||Math.max(0,Number(fallbackMs)||0);
+}
+
 export class BackchannelPlayback{
   constructor(text){this.text=String(text||"");this.started=false;this.completed=false;this.claimed=false;this.closed=false;this.cancelled=false;this.startListeners=[];this.completeListeners=[];this.cancelListeners=[];}
   start(){if(this.started||this.cancelled)return;this.started=true;for(const listener of this.startListeners.splice(0))listener();}
