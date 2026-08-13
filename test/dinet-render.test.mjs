@@ -87,6 +87,8 @@ test("neural avatar keeps a persistent idle layer behind speech", async () => {
   assert.match(script, /isSilentAction/);
   assert.match(script, /speechVideo\.muted = isSilentAction/);
   assert.match(script,/wav2lip-enqueue/);
+  assert.match(script,/wav2lip-cancel/);
+  assert.match(script,/cancelStreamRequest\(event\.data\.requestId\)/);
   assert.match(script,/segmentQueue/);
   assert.match(script,/createElement\("video"\)/);
   assert.match(script,/speech-segment/);

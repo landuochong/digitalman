@@ -15,9 +15,9 @@ test("main voice page offers real and anime modes in one conversation",async()=>
   assert.match(html,/id="personaVoice"/);
   assert.match(html,/人物设置/);
   assert.match(app,/lumi-avatar-mode/);
-  assert.match(html,/app\.js\?v=20260813-backchannel-claim-v24/);
+  assert.match(html,/app\.js\?v=20260813-backchannel-cancel-v25/);
   assert.match(html,/aria-label="开始通话" aria-pressed="false"/);
-  assert.match(app,/avatarRuntimeVersion="20260813-backchannel-claim-v24"/);
+  assert.match(app,/avatarRuntimeVersion="20260813-backchannel-cancel-v25"/);
   assert.match(app,/AVATAR_FIRST_SEGMENT_LEAD_MS=480/);
   assert.match(app,/get\("continuous"\) !== "0"/);
   assert.match(app,/lumi-vrm-look/);
@@ -156,7 +156,7 @@ test("streaming avatar experiment consumes ordered server segments and cancels s
   assert.match(app,/get\("streaming"\) !== "0"/);
   assert.match(app,/\/api\/dinet\/speech-stream/);
   assert.match(app,/event==="segment"/);
-  assert.match(app,/lastPlayback=playPreparedNeuralSpeech\(item\.value,batch,\{enqueue:true,onStart\}\)/);
+  assert.match(app,/lastPlayback=playPreparedNeuralSpeech\(item\.value,batch,\{enqueue:true,onStart,cancellation\}\)/);
   assert.match(app,/pendingWav2LipStarts\.get\(event\.data\.requestId\)/);
   assert.match(app,/new AvatarStreamTurn/);
   assert.match(app,/task=>streamTurn\.enqueue\(task\)/);

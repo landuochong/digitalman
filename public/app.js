@@ -4,7 +4,7 @@ import { AvatarStreamTurn } from "./avatar-stream-turn.js?v=20260813-video-hando
 import { RecognitionTurnGate,recognitionResumeDelayMs,recognitionSilenceMs } from "./recognition-turn-gate.js?v=20260813-adaptive-endpoint-v23";
 import { BargeInDetector } from "./barge-in-detector.js?v=20260813-barge-in-v1";
 import { ReplyTranscript } from "./reply-transcript.js?v=20260813-spoken-history-v1";
-import { BackchannelGate,BackchannelPlayback } from "./backchannel-gate.js?v=20260813-backchannel-claim-v24";
+import { BackchannelGate,BackchannelPlayback } from "./backchannel-gate.js?v=20260813-backchannel-cancel-v25";
 import { BACKCHANNEL_GRACE_MS } from "./backchannel-timing.js?v=20260813-backchannel-prep-v1";
 
 const $ = (selector) => document.querySelector(selector);
@@ -14,7 +14,7 @@ const micButton = $("#micButton"), modeBanner = $("#modeBanner"), statusText = $
 const voiceButton = $("#voiceButton"), voicePrompt = $("#voicePrompt"), liveTranscript = $("#liveTranscript"), captionButton = $("#captionButton");
 const digitalHumanFrame = $("#digitalHumanFrame");
 const AVATAR_FIRST_SEGMENT_LEAD_MS=480;
-const avatarRuntimeVersion="20260813-backchannel-claim-v24";
+const avatarRuntimeVersion="20260813-backchannel-cancel-v25";
 const avatarRuntimeUrl=path=>`${path}?v=${avatarRuntimeVersion}`;
 const avatarProfile = new URLSearchParams(location.search).get("profile");
 const selfRecordedProfile = avatarProfile === "self";
@@ -277,26 +277,29 @@ function showTyping() {
   const el = document.createElement("article"); el.className = "message assistant typing"; el.id = "typing";
   el.innerHTML = `<div class="mini-avatar"></div><div><span></span><p><i></i><i></i><i></i></p></div>`;el.querySelector(".mini-avatar").textContent=persona.name.slice(0,1).toUpperCase();el.querySelector("span").textContent=`${persona.name}正在想`; messages.append(el); messages.scrollTop = messages.scrollHeight;
 }
-function animateBrowserSpeech(text,onStart) {
+function animateBrowserSpeech(text,onStart,cancellation) {
   const token = ++speakingToken;
-  if (!("speechSynthesis" in window)) return Promise.resolve();
+  if (!("speechSynthesis" in window)||cancellation?.cancelled) return Promise.resolve(false);
   speechSynthesis.cancel(); const utterance = new SpeechSynthesisUtterance(text);
   utterance.lang = "zh-CN"; utterance.rate = .98; utterance.pitch = 1.08;
   const voices = speechSynthesis.getVoices(); utterance.voice = voices.find(v => /zh|Chinese|Ting|Meijia|Sinji/i.test(`${v.lang} ${v.name}`)) || null;
   utterance.onstart = () => { onStart?.();speaking(true); speechTimer = setInterval(() => { const t = performance.now()/110; mouth(.18 + Math.abs(Math.sin(t)*.65 + Math.sin(t*1.9)*.17), .35 + Math.abs(Math.sin(t*.37))*.55); }, 70); };
   utterance.onboundary = () => mouth(.75, Math.random());
   return new Promise(resolve => {
-    utterance.onend = () => { clearInterval(speechTimer); if (token === speakingToken) speaking(false); resolve(true); };
-    utterance.onerror = () => { clearInterval(speechTimer); if (token === speakingToken) speaking(false); resolve(false); };
+    const unregister=cancellation?.onCancel(()=>{speechSynthesis.cancel();resolve(false);});
+    utterance.onend = () => { unregister?.();clearInterval(speechTimer); if (token === speakingToken) speaking(false); resolve(true); };
+    utterance.onerror = () => { unregister?.();clearInterval(speechTimer); if (token === speakingToken) speaking(false); resolve(false); };
     speechSynthesis.speak(utterance);
   });
 }
-async function playCloudSpeech(text, emotion, onStart) {
+async function playCloudSpeech(text, emotion, onStart, cancellation) {
+  if(cancellation?.cancelled)return false;
   const requestToken = ++speakingToken;
   const response = await fetch("/api/speech", { method:"POST", headers:{"content-type":"application/json"}, body:JSON.stringify({ text, emotion, voice:voiceProfile }) });
   if (requestToken !== speakingToken) return;
-  if (!response.ok) return animateBrowserSpeech(text,onStart);
+  if (!response.ok) return animateBrowserSpeech(text,onStart,cancellation);
   const speechBuffer = await response.arrayBuffer();
+  if(cancellation?.cancelled)return false;
   if (neuralAvatarProfile) {
     statusText.textContent = "正在准备回答…";
     const renderResponse = await fetch(neuralRenderEndpoint, {
@@ -411,25 +414,26 @@ function prepareStreamingNeuralSpeech(text,emotion,batch,behavior={action:"idle"
   activeStreamingSpeech.add(stream);return stream;
 }
 
-async function enqueueStreamingNeuralSpeech(stream,batch,behavior,turn,onStart,onComplete){
+async function enqueueStreamingNeuralSpeech(stream,batch,behavior,turn,onStart,onComplete,cancellation){
   const action=typeof behavior==="string"?behavior:behavior?.action||"idle";
   const lingerMs=action==="idle"?120:Math.min(360,Math.max(180,Number(behavior?.holdMs||0)*.1));
   let lastPlayback=null;
-  while(batch===speechBatch){
+  while(batch===speechBatch&&!cancellation?.cancelled){
     const item=await stream.next();if(item.done)break;
-    lastPlayback=playPreparedNeuralSpeech(item.value,batch,{enqueue:true,onStart});turn.trackSegment(lastPlayback,item.value?.segment?.audioMs,lingerMs);onStart=null;
+    lastPlayback=playPreparedNeuralSpeech(item.value,batch,{enqueue:true,onStart,cancellation});turn.trackSegment(lastPlayback,item.value?.segment?.audioMs,lingerMs);onStart=null;
   }
   lastPlayback?.then(completed=>{if(completed&&batch===speechBatch)onComplete?.();});
 }
 
-async function playPreparedNeuralSpeech(rendered, batch, {enqueue=false,onStart}={}) {
-  if (!rendered || batch !== speechBatch) return;
+async function playPreparedNeuralSpeech(rendered, batch, {enqueue=false,onStart,cancellation}={}) {
+  if (!rendered || batch !== speechBatch||cancellation?.cancelled) return false;
   const requestId = crypto.randomUUID();
   speaking(true);pendingWav2LipStarts.set(requestId,onStart);
   digitalHumanFrame.contentWindow.postMessage(buildWav2LipPlaybackMessage(rendered,requestId,{enqueue}),location.origin);
-  await new Promise(resolve => {
+  return await new Promise(resolve => {
     const timer = setTimeout(() => { pendingWav2LipPlaybacks.delete(requestId);pendingWav2LipStarts.delete(requestId); speaking(false); resolve(false); }, 180_000);
-    const finish = (completed=false) => { clearTimeout(timer); pendingWav2LipPlaybacks.delete(requestId);pendingWav2LipStarts.delete(requestId); if(!enqueue&&batch===speechBatch)speaking(false); activeSpeechResolve=null; resolve(completed); };
+    let unregister;const finish = (completed=false) => { unregister?.();clearTimeout(timer); pendingWav2LipPlaybacks.delete(requestId);pendingWav2LipStarts.delete(requestId); if(!enqueue&&batch===speechBatch)speaking(false); activeSpeechResolve=null; resolve(completed); };
+    unregister=cancellation?.onCancel(()=>{digitalHumanFrame.contentWindow.postMessage({type:"wav2lip-cancel",requestId},location.origin);finish(false);});
     pendingWav2LipPlaybacks.set(requestId, finish);
     activeSpeechResolve = finish;
   });
@@ -472,11 +476,11 @@ function enqueueSpeech(text, emotion, batch, behavior={action:"idle"},streamTurn
       if (batch !== speechBatch) return;
       try {
         if(silentAction){if(streamTurn)await streamTurn.waitForPlayback();options.onStart?.();await playSilentNeuralAction(silentAction,batch);if(batch===speechBatch)options.onComplete?.();}
-        if(streamingAvatarExperiment&&!silentAction)await enqueueStreamingNeuralSpeech(preparation,batch,preparedBehavior,streamTurn,options.onStart,options.onComplete);
-        else if(!silentAction){const completed=await playPreparedNeuralSpeech(await preparation,batch,{onStart:options.onStart});if(completed&&batch===speechBatch)options.onComplete?.();}
+        if(streamingAvatarExperiment&&!silentAction)await enqueueStreamingNeuralSpeech(preparation,batch,preparedBehavior,streamTurn,options.onStart,options.onComplete,options.cancellation);
+        else if(!silentAction){const completed=await playPreparedNeuralSpeech(await preparation,batch,{onStart:options.onStart,cancellation:options.cancellation});if(completed&&batch===speechBatch)options.onComplete?.();}
       }
       catch (error) {
-        if (batch !== speechBatch) return;
+        if (batch !== speechBatch||options.cancellation?.cancelled) return;
         speaking(false);
         statusText.textContent = error?.message || "回答准备失败";
         liveTranscript.textContent = "回答准备失败，请重试";
@@ -487,10 +491,10 @@ function enqueueSpeech(text, emotion, batch, behavior={action:"idle"},streamTurn
   }
   speechQueue = speechQueue.then(async () => {
     if (batch !== speechBatch) return;
-    try { const completed=await playCloudSpeech(text,emotion,options.onStart);if(completed&&batch===speechBatch)options.onComplete?.(); }
+    try { const completed=await playCloudSpeech(text,emotion,options.onStart,options.cancellation);if(completed&&batch===speechBatch)options.onComplete?.(); }
     catch (error) {
       if (batch !== speechBatch) return;
-      if (!neuralAvatarProfile) {const completed=await animateBrowserSpeech(text,options.onStart);if(completed&&batch===speechBatch)options.onComplete?.();return;}
+      if (!neuralAvatarProfile) {const completed=await animateBrowserSpeech(text,options.onStart,options.cancellation);if(completed&&batch===speechBatch)options.onComplete?.();return;}
       speaking(false);
       statusText.textContent = error?.message || "回答准备失败";
       liveTranscript.textContent = "回答准备失败，请重试";
@@ -562,8 +566,8 @@ async function reply(message) {
     const readyAt=prepared?.work?.preparation?.firstSegmentReadyAt;
     if(readyAt)portrait.dataset.backchannelPreparedLeadMs=String(Math.max(0,Math.round(performance.now()-readyAt)));
     portrait.dataset.backchannel=JSON.stringify({text:data.text,atMs:Math.round(performance.now()-activeReplyStartedAt),...plan});
-    const playback=new BackchannelPlayback(data.text);backchannelPlayback=playback;
-    enqueueSpeech(data.text,plan.emotion,batch,plan,streamTurn,{preferPrewarmed:true,preparedWork:prepared?.work,onStart:()=>playback.start(),onComplete:()=>playback.complete()});
+    const playback=new BackchannelPlayback(data.text);backchannelPlayback=playback;playback.onCancel(()=>prepared?.work?.preparation?.cancel?.());
+    enqueueSpeech(data.text,plan.emotion,batch,plan,streamTurn,{preferPrewarmed:true,preparedWork:prepared?.work,cancellation:playback,onStart:()=>playback.start(),onComplete:()=>playback.complete()});
   }});
   activeAvatarStreamTurn=streamTurn;
   try {
@@ -589,7 +593,7 @@ async function reply(message) {
         streamedText += data.text;
         const transcriptIndex=transcript.receive(data.text);
         const reusedBackchannel=backchannelPlayback?.claim(data.text,{onStart:()=>revealSentence(transcriptIndex),onComplete:()=>finishSentence(transcriptIndex)})===true;
-        if(backchannelPlayback&&!reusedBackchannel){backchannelPlayback.close();backchannelPlayback=null;}
+        if(backchannelPlayback&&!reusedBackchannel){backchannelPlayback.cancelBeforeStart();backchannelPlayback.close();backchannelPlayback=null;}
         if(data.emotion){currentEmotion=data.emotion;setEmotion(currentEmotion);}
         const sentenceIndex=spokenSentenceCount++;
         let sentencePlan=conversationActions.planForSentence(data.text,sentenceIndex,data.action||currentAction,currentEmotion);

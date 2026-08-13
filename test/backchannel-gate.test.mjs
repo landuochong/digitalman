@@ -56,3 +56,25 @@ test("cannot claim a stale backchannel after a different formal sentence",()=>{
   assert.equal(playback.claim("先休息一下。"),false);playback.close();playback.start();playback.complete();
   assert.equal(playback.claim("我在。",{onStart:()=>events.push("late")}),false);assert.deepEqual(events,[]);
 });
+
+test("cancels a committed backchannel while it is still unheard",()=>{
+  const playback=new BackchannelPlayback("我在。"),events=[];
+  const unregister=playback.onCancel(()=>events.push("cancel"));
+  assert.equal(playback.cancelBeforeStart(),true);
+  playback.start();playback.complete();
+  assert.equal(playback.claim("我在。",{onStart:()=>events.push("late")}),false);
+  assert.deepEqual(events,["cancel"]);unregister();
+});
+
+test("never cuts a backchannel that has actually started",()=>{
+  const playback=new BackchannelPlayback("我想想。"),events=[];
+  playback.onCancel(()=>events.push("cancel"));playback.start();
+  assert.equal(playback.cancelBeforeStart(),false);playback.complete();
+  assert.equal(playback.completed,true);assert.deepEqual(events,[]);
+});
+
+test("allows a speculative preparation to detach its cancellation listener",()=>{
+  const playback=new BackchannelPlayback("嗯。"),events=[];
+  const unregister=playback.onCancel(()=>events.push("cancel"));unregister();
+  assert.equal(playback.cancelBeforeStart(),true);assert.deepEqual(events,[]);
+});
