@@ -15,9 +15,9 @@ test("main voice page offers real and anime modes in one conversation",async()=>
   assert.match(html,/id="personaVoice"/);
   assert.match(html,/人物设置/);
   assert.match(app,/lumi-avatar-mode/);
-  assert.match(html,/app\.js\?v=20260813-playback-commit-v22/);
+  assert.match(html,/app\.js\?v=20260813-adaptive-endpoint-v23/);
   assert.match(html,/aria-label="开始通话" aria-pressed="false"/);
-  assert.match(app,/avatarRuntimeVersion="20260813-playback-commit-v22"/);
+  assert.match(app,/avatarRuntimeVersion="20260813-adaptive-endpoint-v23"/);
   assert.match(app,/AVATAR_FIRST_SEGMENT_LEAD_MS=480/);
   assert.match(app,/get\("continuous"\) !== "0"/);
   assert.match(app,/lumi-vrm-look/);
@@ -123,9 +123,10 @@ test("voice button toggles one continuous call instead of each utterance",async(
   assert.match(app,/const toggleCall=\(\)=>voiceCallActive\?endCall\(\):beginCall\(\)/);
   assert.match(app,/await completedQueue\.catch\(\(\)=>\{\}\)/);
   assert.match(app,/recognitionResumeDelayMs\(\{preciseAudioTail:neuralAvatarProfile&&avatarPcmReady,outputLatencyMs\}\)/);
+  assert.match(app,/recognitionSilenceMs\(\{final:recognizedFinal,text:recognizedText\}\)/);
   assert.match(app,/dataset\.answerEndToListeningMs/);
   assert.match(app,/dataset\.audioOutputLatencyMs/);
-  assert.match(app,/const silenceTargetMs=recognitionSilenceMs\(recognizedFinal\)/);
+  assert.match(app,/const silenceTargetMs=recognitionSilenceMs\(\{final:recognizedFinal,text:recognizedText\}\)/);
   assert.match(app,/new RecognitionTurnGate\(\{onCommit:commitRecognizedTurn,finalizeDelayMs:90\}\)/);
   assert.match(app,/turnGate\.requestStop\(\{final:recognizedFinal\}\)/);
   assert.match(app,/recognizedFinal=Boolean\(results\.at\(-1\)\?\.isFinal\)/);

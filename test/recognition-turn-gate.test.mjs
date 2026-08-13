@@ -29,9 +29,15 @@ test("commits a final recognition correction immediately after VAD stop",()=>{
   assert.equal(pending(),0);
 });
 
-test("uses a shorter silence window only for a browser-final transcript",()=>{
-  assert.equal(recognitionSilenceMs(false),650);
-  assert.equal(recognitionSilenceMs(true),450);
+test("uses adaptive silence without cutting off very short utterances",()=>{
+  assert.equal(recognitionSilenceMs({text:"嗯"}),650);
+  assert.equal(recognitionSilenceMs({text:"我想一下"}),560);
+  assert.equal(recognitionSilenceMs({text:"关于这个问题我觉得"}),700);
+  assert.equal(recognitionSilenceMs({text:"我们出去玩但是"}),700);
+  assert.equal(recognitionSilenceMs({text:"今天下班以后我们一起出去走一走吧"}),500);
+  assert.equal(recognitionSilenceMs({text:"这样可以吗？"}),420);
+  assert.equal(recognitionSilenceMs({final:true,text:"嗯"}),430);
+  assert.equal(recognitionSilenceMs({final:true,text:"这样就可以了"}),340);
 });
 
 test("resumes listening sooner only after a precise shared PCM tail",()=>{

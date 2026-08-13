@@ -1,4 +1,12 @@
-export function recognitionSilenceMs(isFinal){return isFinal?450:650;}
+export function recognitionSilenceMs({final=false,text=""}={}){
+  const value=String(text||"").trim(),characters=[...value.replace(/[\s，。！？、,.!?；;：:～~]/g,"")].length;
+  if(final)return characters<=2?430:340;
+  if(characters<=3)return 650;
+  if(/(?:然后|但是|因为|如果|所以|就是|我想|我觉得|可能|要是|虽然|不过|还有|比如)$/.test(value))return 700;
+  if(/[。！？!?]$/.test(value))return 420;
+  if(characters>=12)return 500;
+  return 560;
+}
 export function recognitionResumeDelayMs({preciseAudioTail=false,outputLatencyMs=0}={}){
   if(!preciseAudioTail)return 180;
   return Math.min(180,Math.max(80,Math.ceil(Math.max(0,Number(outputLatencyMs)||0)+40)));
