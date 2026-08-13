@@ -4,7 +4,7 @@ import { stat } from "node:fs/promises";
 import { createReadStream, readFileSync } from "node:fs";
 import { extname, join, normalize } from "node:path";
 import { fileURLToPath } from "node:url";
-import { buildChatPayload, buildMiniMaxChatPayload, buildMiniMaxReply, buildMiniMaxSpeechPayload, buildResponsiveBackchannel, buildSpeechPayload, companionIdentityReply, companionPresenceReply, completedReplySentenceCount, decodeMiniMaxAudio, demoReply, extractMiniMaxChatText, extractResponseText, inferCompanionState, isRedundantClosingQuestion, normalizePersona, parseCompanionReply, requestedSentenceLimit, sanitizeReplyText, takeCompleteSentences } from "./src/companion.mjs";
+import { buildChatPayload, buildMiniMaxChatPayload, buildMiniMaxReply, buildMiniMaxSpeechPayload, buildResponsiveBackchannel, buildSpeechPayload, companionIdentityReply, companionPresenceReply, completedReplySentenceCount, conversationalSentenceLimit, decodeMiniMaxAudio, demoReply, extractMiniMaxChatText, extractResponseText, inferCompanionState, isRedundantClosingQuestion, normalizePersona, parseCompanionReply, sanitizeReplyText, takeCompleteSentences } from "./src/companion.mjs";
 import { CompanionMemoryStore } from "./src/memory.mjs";
 import { buildVoiceCatalog } from "./src/voices.mjs";
 import { DhActionTaskStore, isLoopbackAddress, saveActionVideo } from "./src/dh-action-studio.mjs";
@@ -320,7 +320,7 @@ async function miniMaxChatStream(message, history, persona, memories, companionS
   const decoder = new TextDecoder();
   let upstream = "", rawText = "", observedCleanLength = 0, sentenceBuffer = "";
   let reasoningCharacters=0,finishReason=null,streamUsage=null,replyBudgetReached=false;
-  const sentenceLimit=requestedSentenceLimit(message);
+  const sentenceLimit=conversationalSentenceLimit(message);
   trace.emittedSentences=[];
 
   const emitAvailable = (flush = false) => {

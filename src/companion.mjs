@@ -72,6 +72,18 @@ export function requestedSentenceLimit(message){
   return 0;
 }
 
+export function conversationalSentenceLimit(message){
+  const explicit=requestedSentenceLimit(message);
+  if(explicit)return explicit;
+  const input=String(message||"").replace(/\s+/g," ").trim();
+  // A question about the companion's ordinary tastes is complete after one
+  // or two concrete thoughts. Letting the model continue usually adds a
+  // reciprocal interview question and keeps the upstream stream alive long
+  // after the avatar has enough to answer naturally.
+  if(isPersonalPreferenceQuestion(input))return 2;
+  return 0;
+}
+
 export function completedReplySentenceCount(reply){return (String(reply||"").match(/[。！？!?；;\n]+/g)||[]).length;}
 
 export function limitReplyForRequest(reply,message){
@@ -423,7 +435,10 @@ export function takeCompleteSentences(text, flush = false, includeClauses = fals
   const source = String(text ?? "");
   const sentences = [];
   let start = 0;
-  const boundary = includeClauses ? /[，,、。！？!?；;\n]+/g : /[。！？!?；;\n]+/g;
+  // A Chinese enumeration comma (、) is never a safe speech boundary. Treating
+  // it as one produced fragments such as “你今晚大概几点开始、” and launched an
+  // unnecessary TTS/avatar job before the question was complete.
+  const boundary = includeClauses ? /[，,。！？!?；;\n]+/g : /[。！？!?；;\n]+/g;
   for (const match of source.matchAll(boundary)) {
     const end = match.index + match[0].length;
     const sentence = source.slice(start, end).trim();

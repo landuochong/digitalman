@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { buildChatPayload, buildMiniMaxChatPayload, buildMiniMaxReply, buildMiniMaxSpeechPayload, buildResponsiveBackchannel, buildSpeechPayload, companionContextPolicy, companionIdentityReply, companionPresenceReply, completedReplySentenceCount, decodeMiniMaxAudio, demoReply, extractMiniMaxChatText, extractResponseText, inferCompanionState, inferExplicitActionRequest, isCompanionIdentityQuestion, isCompanionPresenceQuestion, isRedundantClosingQuestion, limitReplyForRequest, normalizeAction, normalizeEmotion, normalizePersona, parseCompanionReply, requestedSentenceLimit, sanitizeReplyText, takeCompleteSentences } from "../src/companion.mjs";
+import { buildChatPayload, buildMiniMaxChatPayload, buildMiniMaxReply, buildMiniMaxSpeechPayload, buildResponsiveBackchannel, buildSpeechPayload, companionContextPolicy, companionIdentityReply, companionPresenceReply, completedReplySentenceCount, conversationalSentenceLimit, decodeMiniMaxAudio, demoReply, extractMiniMaxChatText, extractResponseText, inferCompanionState, inferExplicitActionRequest, isCompanionIdentityQuestion, isCompanionPresenceQuestion, isRedundantClosingQuestion, limitReplyForRequest, normalizeAction, normalizeEmotion, normalizePersona, parseCompanionReply, requestedSentenceLimit, sanitizeReplyText, takeCompleteSentences } from "../src/companion.mjs";
 
 test("extracts Responses API output text", () => {
   assert.equal(extractResponseText({ output:[{ type:"message", content:[{ type:"output_text", text:"你好" }] }] }), "你好");
@@ -151,6 +151,7 @@ test("builds streaming MiniMax payload and segments complete spoken sentences", 
   assert.deepEqual(takeCompleteSentences("你已经撑了很久了，真的很棒。今晚早点休息，别硬扛。", false, true),{sentences:["你已经撑了很久了，真的很棒。","今晚早点休息，别硬扛。"],remainder:""});
   assert.deepEqual(takeCompleteSentences("周六上午学习，下午运动，晚上早点休息；周日上午再复习。",false,true),{sentences:["周六上午学习，下午运动，晚上早点休息；周日上午再复习。"],remainder:""});
   assert.deepEqual(takeCompleteSentences("这样学、动、歇都顾到了，也不会太满。",false,true,12),{sentences:["这样学、动、歇都顾到了，也不会太满。"],remainder:""});
+  assert.deepEqual(takeCompleteSentences("你今晚大概几点开始、有多少时间可以安排呢？",false,true),{sentences:["你今晚大概几点开始、有多少时间可以安排呢？"],remainder:""});
   assert.equal(companionContextPolicy.minSpokenClauseCharacters,9);
 });
 
@@ -211,6 +212,9 @@ test("honors explicit concise reply length without truncating normal analysis",(
   assert.equal(requestedSentenceLimit("说一两句就好"),2);
   assert.equal(requestedSentenceLimit("简单安排一下"),3);
   assert.equal(requestedSentenceLimit("详细分析"),0);
+  assert.equal(conversationalSentenceLimit("你平时有什么爱好？"),2);
+  assert.equal(conversationalSentenceLimit("你喜欢怎样度过周末？"),2);
+  assert.equal(conversationalSentenceLimit("请详细分析这个方案"),0);
   assert.equal(completedReplySentenceCount("开场逗号，仍是第一句。第二句；未完成"),2);
 });
 test("repairs device-confinement replies while continuing the shared scene",()=>{
