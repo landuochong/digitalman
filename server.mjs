@@ -42,6 +42,7 @@ const ephemeralPcm=new EphemeralPcmStore();
 const visualTurns=new VisualTurnGate();
 const speculativeStreams=new Map();
 const visualSkipTasks=new Map();
+const CONTINUOUS_FIRST_SEGMENT_MS=600;
 const dinetStreams = new DINetStreamSessionStore({
   renderer:dinetRenders,
   publishAudio:payload=>ephemeralPcm.put(payload.pcm,payload),
@@ -511,7 +512,8 @@ export const server = http.createServer(async (req, res) => {
       const pipelineStartedAt=performance.now();let firstAudioAt=null,firstSegmentAt=null;
       res.on("close",()=>{if(!closed)controller.abort();});
       res.writeHead(200,{"content-type":"text/event-stream; charset=utf-8","cache-control":"no-cache, no-transform","x-accel-buffering":"no"});
-      const session=dinetStreams.start({action:String(data.action||"idle"),frameOffset:Number(data.frameOffset||0),videoOnly:data.externalAudio===true,binaryAudio:data.binaryAudio===true,fragmentedVideo:data.fragmentedVideo===true,renderBackpressure:data.renderBackpressure===true,visualTurnId:orderedSentence?visualTurnId:"",visualSentenceIndex:orderedSentence?visualSentenceIndex:0});
+      const continuousVideo=data.externalAudio===true&&data.fragmentedVideo===true;
+      const session=dinetStreams.start({action:String(data.action||"idle"),frameOffset:Number(data.frameOffset||0),videoOnly:data.externalAudio===true,binaryAudio:data.binaryAudio===true,fragmentedVideo:data.fragmentedVideo===true,renderBackpressure:data.renderBackpressure===true,visualTurnId:orderedSentence?visualTurnId:"",visualSentenceIndex:orderedSentence?visualSentenceIndex:0,...(continuousVideo?{firstSegmentMs:CONTINUOUS_FIRST_SEGMENT_MS}:{})});
       sendEvent(res,"started",session);
       const speculative=data.speculative===true;
       const speculativeState=speculative?{committed:false,waiters:new Set()}:null;

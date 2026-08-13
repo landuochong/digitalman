@@ -105,6 +105,25 @@ test("emits a shorter first segment before returning to the steady window",async
   assert.deepEqual(calls.map(item=>item.outputFrames),[10,20]);
 });
 
+test("allows each continuous session to select a shorter aligned first window",async()=>{
+  const calls=[];
+  const store=new DINetStreamSessionStore({
+    firstSegmentMs:800,segmentMs:800,
+    renderer:{render:async(wav,_action,options)=>{calls.push({bytes:wav.readUInt32LE(40),...options});return{url:`/${calls.length}.mp4`,metrics:{frames:options.outputFrames}};}}
+  });
+  const session=store.start({videoOnly:true,fragmentedVideo:true,firstSegmentMs:600});
+  assert.equal(session.firstSegmentMs,600);
+  store.append(session.id,0,Buffer.alloc(52_480));
+  const segments=await store.drain(session.id);
+  assert.deepEqual(segments.map(item=>item.segment.audioMs),[600,800]);
+  assert.deepEqual(calls.map(item=>item.outputFrames),[15,20]);
+
+  const compatibility=store.start();
+  assert.equal(compatibility.firstSegmentMs,800);
+  assert.throws(()=>store.start({firstSegmentMs:360}),error=>error.status===400);
+  assert.throws(()=>store.start({firstSegmentMs:840}),error=>error.status===400);
+});
+
 test("renders video-only segments when external PCM playback is negotiated",async()=>{
   const calls=[];
   const store=new DINetStreamSessionStore({
