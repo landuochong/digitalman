@@ -130,6 +130,9 @@ test("builds streaming MiniMax payload and segments complete spoken sentences", 
   assert.deepEqual(takeCompleteSentences("第一句。第二句还没完"), { sentences:["第一句。"], remainder:"第二句还没完" });
   assert.deepEqual(takeCompleteSentences("最后一句", true), { sentences:["最后一句"], remainder:"" });
   assert.deepEqual(takeCompleteSentences("嗯，累了就说累，没什么的。", false, true), { sentences:["嗯，累了就说累，没什么的。"], remainder:"" });
+  assert.deepEqual(takeCompleteSentences("哦？",false,true),{sentences:[],remainder:"哦？"});
+  assert.deepEqual(takeCompleteSentences("哦？什么事，说来听听。",false,true),{sentences:["哦？什么事，说来听听。"],remainder:""});
+  assert.deepEqual(takeCompleteSentences("好呀。",true,true),{sentences:["好呀。"],remainder:""});
   assert.deepEqual(takeCompleteSentences("辛苦了，今天先休息一下", false, true), { sentences:[], remainder:"辛苦了，今天先休息一下" });
   assert.deepEqual(takeCompleteSentences("辛苦了，今天先休息一下。", false, true), { sentences:["辛苦了，今天先休息一下。"], remainder:"" });
   assert.deepEqual(takeCompleteSentences("你已经撑了很久了，真的很棒。今晚早点休息，别硬扛。", false, true),{sentences:["你已经撑了很久了，真的很棒。","今晚早点休息，别硬扛。"],remainder:""});

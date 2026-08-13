@@ -396,6 +396,7 @@ export function takeCompleteSentences(text, flush = false, includeClauses = fals
     const terminal = /[。！？!?；;\n]/.test(match[0]);
     const spokenLength = sentence.replace(/[，,、。！？!?；;\s]/g, "").length;
     if (includeClauses && !terminal && spokenLength < Math.max(1,Number(minClauseCharacters)||9)) continue;
+    if(includeClauses&&terminal&&spokenLength<=4&&!sentences.length&&!flush)continue;
     if(includeClauses&&terminal&&spokenLength<=8&&sentences.length&&start>0){sentences[sentences.length-1]+=source.slice(start,end);start=end;continue;}
     if (sentence) sentences.push(sentence);
     start = end;

@@ -589,6 +589,7 @@ async function reply(message) {
         streamedText += data.text;
         const transcriptIndex=transcript.receive(data.text);
         const reusedBackchannel=backchannelPlayback?.claim(data.text,{onStart:()=>revealSentence(transcriptIndex),onComplete:()=>finishSentence(transcriptIndex)})===true;
+        if(backchannelPlayback&&!reusedBackchannel){backchannelPlayback.close();backchannelPlayback=null;}
         if(data.emotion){currentEmotion=data.emotion;setEmotion(currentEmotion);}
         const sentenceIndex=spokenSentenceCount++;
         let sentencePlan=conversationActions.planForSentence(data.text,sentenceIndex,data.action||currentAction,currentEmotion);

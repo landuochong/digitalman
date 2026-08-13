@@ -50,3 +50,9 @@ test("can claim an already completed backchannel but not different text",()=>{
   assert.equal(playback.claim("我在",{onStart:()=>events.push("duplicate")}),false);
   assert.equal(playback.claim("慢慢说",{onStart:()=>events.push("wrong")}),false);
 });
+
+test("cannot claim a stale backchannel after a different formal sentence",()=>{
+  const playback=new BackchannelPlayback("我在。"),events=[];
+  assert.equal(playback.claim("先休息一下。"),false);playback.close();playback.start();playback.complete();
+  assert.equal(playback.claim("我在。",{onStart:()=>events.push("late")}),false);assert.deepEqual(events,[]);
+});

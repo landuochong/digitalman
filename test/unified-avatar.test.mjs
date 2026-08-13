@@ -31,6 +31,7 @@ test("main voice page offers real and anime modes in one conversation",async()=>
   assert.match(app,/new BackchannelGate\(\{delayMs:BACKCHANNEL_GRACE_MS/);
   assert.match(app,/new BackchannelPlayback\(data\.text\)/);
   assert.match(app,/backchannelPlayback\?\.claim\(data\.text/);
+  assert.match(app,/backchannelPlayback\.close\(\);backchannelPlayback=null/);
   assert.match(app,/onPrepare:data=>/);
   assert.match(app,/speculative:true/);
   assert.match(app,/preparedWork:prepared\?\.work/);
