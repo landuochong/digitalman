@@ -183,6 +183,35 @@ export function inferCompanionState(message, reply = "", companionState=null) {
   return { emotion:"calm", action:"idle" };
 }
 
+const backchannelChoices={
+  caring:["先别急，我在呢。","嗯，我陪着你。","我在，慢慢说。"],
+  thinking:["嗯，让我想想。","我想一下。","嗯，我认真想想。"],
+  happy:["嗯，我听着呢。","好呀，我在听。","嗯，你接着说。"],
+  excited:["真的呀？","哇，我听着呢。","好呀，快说说。"],
+  greeting:["嗨，我在呢。","嗯，我在呀。","我在，听见啦。"],
+  neutral:["嗯，我听着呢。","我在，你说。","嗯，你接着说。"]
+};
+
+function stableChoice(values,text){
+  let hash=0;for(const character of String(text))hash=(hash*31+character.codePointAt(0))>>>0;
+  return values[hash%values.length];
+}
+
+// This is a short, locally generated conversational backchannel, not the final
+// answer. It is emitted only when the cloud model has not produced speech in
+// time, so the person can acknowledge the user without inventing an answer.
+export function buildResponsiveBackchannel(message,state=inferCompanionState(message)){
+  const input=String(message||"").trim();
+  if(!input)return null;
+  if(/自杀|不想活|活不下去|伤害自己|结束生命/.test(input))return {text:"我在，先保证自己现在是安全的。",emotion:"caring",action:"caring"};
+  if(/你好|嗨|哈喽|嘿|早上好|中午好|下午好|晚上好|在吗|hello|hi/i.test(input))return {text:stableChoice(backchannelChoices.greeting,input),emotion:"happy",action:"wave_approval"};
+  if(state.action==="caring")return {text:stableChoice(backchannelChoices.caring,input),emotion:"caring",action:"caring"};
+  if(state.action==="thinking")return {text:stableChoice(backchannelChoices.thinking,input),emotion:"curious",action:"thinking"};
+  if(["clap","cheer","surprise"].includes(state.action))return {text:stableChoice(backchannelChoices.excited,input),emotion:"excited",action:"happy"};
+  if(["happy","shy","nod","thumbs_up","wave_approval"].includes(state.action))return {text:stableChoice(backchannelChoices.happy,input),emotion:"happy",action:"nod"};
+  return {text:stableChoice(backchannelChoices.neutral,input),emotion:state.emotion||"calm",action:"nod"};
+}
+
 export function buildMiniMaxReply(text, message, companionState=null, history=[]) {
   const parsed = parseCompanionReply(text);
   let reply = sanitizeReplyText(parsed.reply);

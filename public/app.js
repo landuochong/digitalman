@@ -2,6 +2,7 @@ import { ConversationActionScheduler } from "./conversation-actions.js?v=2026081
 import { buildWav2LipPlaybackMessage } from "./avatar-protocol.js?v=20260813-video-handoff-v11";
 import { AvatarStreamTurn } from "./avatar-stream-turn.js?v=20260813-video-handoff-v11";
 import { RecognitionTurnGate,recognitionSilenceMs } from "./recognition-turn-gate.js?v=20260813-video-handoff-v11";
+import { BackchannelGate } from "./backchannel-gate.js?v=20260813-responsive-v12";
 
 const $ = (selector) => document.querySelector(selector);
 const portrait = $("#portrait"), wave = $("#soundWave"), messages = $("#messages");
@@ -481,9 +482,15 @@ async function reply(message) {
       digitalHumanFrame.contentWindow.postMessage({type:"wav2lip-stream-end",lingerMs,idleTimeMs:realSpeechTimelineMs},location.origin);
     }
   }):null;
+  const backchannelGate=new BackchannelGate({delayMs:500,onSpeak:data=>{
+    if(batch!==speechBatch)return;
+    const plan={action:data.action||"nod",emotion:data.emotion||currentEmotion,intensity:.35,head:data.action==="thinking"?"slight-left":"center",gaze:"user",holdMs:1400,frameOffset:0,continuation:false};
+    portrait.dataset.backchannel=JSON.stringify({text:data.text,atMs:Math.round(performance.now()-activeReplyStartedAt),...plan});
+    enqueueSpeech(data.text,plan.emotion,batch,plan,streamTurn);
+  }});
   activeAvatarStreamTurn=streamTurn;
   try {
-    const response = await fetch("/api/chat/stream", { method:"POST", headers:{"content-type":"application/json"}, body:JSON.stringify({ message, history:history.slice(0,-1).slice(-8).map(item=>({...item,content:String(item.content||"").slice(-900)})), userId, persona, fastSpeech:neuralAvatarProfile }), signal:controller.signal });
+    const response = await fetch("/api/chat/stream", { method:"POST", headers:{"content-type":"application/json"}, body:JSON.stringify({ message, history:history.slice(0,-1).slice(-8).map(item=>({...item,content:String(item.content||"").slice(-900)})), userId, persona, fastSpeech:neuralAvatarProfile, responsiveSpeech:true }), signal:controller.signal });
     if (!response.ok || !response.body) { const data=await response.json().catch(()=>({})); throw new Error(data.error || "连接失败"); }
     await consumeEventStream(response, async (event, data) => {
       if (controller.signal.aborted) return;
@@ -493,6 +500,7 @@ async function reply(message) {
         currentAction=plan.action;portrait.dataset.behavior=JSON.stringify(plan);
       }
       if (event === "sentence") {
+        backchannelGate.cancel();
         if(!spokenSentenceCount)portrait.dataset.chatFirstSentenceMs=String(Math.round(performance.now()-activeReplyStartedAt));
         $("#typing")?.remove(); streamedText += data.text;
         article ||= addMessage("assistant", "", false);
@@ -504,6 +512,7 @@ async function reply(message) {
         if(sentenceAction!=="idle"&&!sentencePlan.continuation)setDigitalHumanAction(sentenceAction,{force:true,hold:true,behavior:sentencePlan}).catch(()=>{});
         enqueueSpeech(data.text,currentEmotion,batch,sentencePlan,streamTurn);
       }
+      if(event==="backchannel"&&data.text)backchannelGate.offer(data);
       if (event === "error") throw new Error(data.error || "回答中断");
       if (event === "done") {
         mode=data.mode; currentEmotion=data.emotion || currentEmotion; setEmotion(currentEmotion);
@@ -518,6 +527,7 @@ async function reply(message) {
     if(streamTurn)speechQueue=completedQueue;
     completedQueue.finally(()=>{if(batch===speechBatch){if(streamTurn)speaking(false);if(activeAvatarStreamTurn===streamTurn)activeAvatarStreamTurn=null;conversationActions.finishTurn();if(switchableAvatarProfile&&avatarMode==="anime")digitalHumanFrame?.contentWindow?.postMessage({type:"vrm-finish-gesture"},location.origin);}});
   } catch (error) {
+    backchannelGate.cancel();
     $("#typing")?.remove();
     if (error.name !== "AbortError") { addMessage("assistant", `刚才的连接有点不稳定：${error.message}。再试一次好吗？`, false); setEmotion("caring"); speaking(false); setVoiceState("idle","连接不稳定，请点击麦克风重试"); }
   } finally { if(activeReplyController===controller)activeReplyController=null; sendButton.disabled=false; if(!form.hidden)input.focus(); }

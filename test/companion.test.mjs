@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { buildChatPayload, buildMiniMaxChatPayload, buildMiniMaxReply, buildMiniMaxSpeechPayload, buildSpeechPayload, companionContextPolicy, companionIdentityReply, companionPresenceReply, decodeMiniMaxAudio, demoReply, extractMiniMaxChatText, extractResponseText, inferCompanionState, isCompanionIdentityQuestion, isCompanionPresenceQuestion, normalizeAction, normalizeEmotion, normalizePersona, parseCompanionReply, sanitizeReplyText, takeCompleteSentences } from "../src/companion.mjs";
+import { buildChatPayload, buildMiniMaxChatPayload, buildMiniMaxReply, buildMiniMaxSpeechPayload, buildResponsiveBackchannel, buildSpeechPayload, companionContextPolicy, companionIdentityReply, companionPresenceReply, decodeMiniMaxAudio, demoReply, extractMiniMaxChatText, extractResponseText, inferCompanionState, isCompanionIdentityQuestion, isCompanionPresenceQuestion, normalizeAction, normalizeEmotion, normalizePersona, parseCompanionReply, sanitizeReplyText, takeCompleteSentences } from "../src/companion.mjs";
 
 test("extracts Responses API output text", () => {
   assert.equal(extractResponseText({ output:[{ type:"message", content:[{ type:"output_text", text:"你好" }] }] }), "你好");
@@ -22,6 +22,17 @@ test("supports the migrated AITuber gestures", () => {
 });
 test("demo responds empathetically to negative emotion", () => {
   const result = demoReply("我今天很焦虑也很累"); assert.equal(result.emotion, "caring"); assert.equal(result.action, "caring"); assert.match(result.reply, /陪|难受|轻松/);
+});
+test("builds short contextual backchannels without pretending they are answers",()=>{
+  const caring=buildResponsiveBackchannel("今天有点累");
+  assert.equal(caring.emotion,"caring");assert.equal(caring.action,"caring");assert.match(caring.text,/在|陪|慢慢/);
+  const thinking=buildResponsiveBackchannel("这个问题应该怎么办？");
+  assert.equal(thinking.action,"thinking");assert.match(thinking.text,/想/);
+  const excited=buildResponsiveBackchannel("我终于成功了");
+  assert.equal(excited.action,"happy");assert.match(excited.text,/真的|哇|好呀/);
+  assert.match(buildResponsiveBackchannel("我不想活了").text,/安全/);
+  assert.equal(buildResponsiveBackchannel(""),null);
+  assert.deepEqual(buildResponsiveBackchannel("今天有点累"),caring);
 });
 test("demo maps the good-news suggestion to an excited response", () => {
   const result = demoReply("我有个好消息"); assert.equal(result.emotion, "excited"); assert.equal(result.action, "clap"); assert.match(result.reply, /开心|高兴/);

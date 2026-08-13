@@ -3,7 +3,7 @@ import { stat } from "node:fs/promises";
 import { createReadStream, readFileSync } from "node:fs";
 import { extname, join, normalize } from "node:path";
 import { fileURLToPath } from "node:url";
-import { buildChatPayload, buildMiniMaxChatPayload, buildMiniMaxReply, buildMiniMaxSpeechPayload, buildSpeechPayload, companionIdentityReply, companionPresenceReply, decodeMiniMaxAudio, demoReply, extractMiniMaxChatText, extractResponseText, inferCompanionState, normalizePersona, parseCompanionReply, sanitizeReplyText, takeCompleteSentences } from "./src/companion.mjs";
+import { buildChatPayload, buildMiniMaxChatPayload, buildMiniMaxReply, buildMiniMaxSpeechPayload, buildResponsiveBackchannel, buildSpeechPayload, companionIdentityReply, companionPresenceReply, decodeMiniMaxAudio, demoReply, extractMiniMaxChatText, extractResponseText, inferCompanionState, normalizePersona, parseCompanionReply, sanitizeReplyText, takeCompleteSentences } from "./src/companion.mjs";
 import { CompanionMemoryStore } from "./src/memory.mjs";
 import { buildVoiceCatalog } from "./src/voices.mjs";
 import { DhActionTaskStore, isLoopbackAddress, saveActionVideo } from "./src/dh-action-studio.mjs";
@@ -162,11 +162,28 @@ async function warmupMiniMaxChat() {
   await reader.cancel();
 }
 
-async function miniMaxChatStream(message, history, persona, memories, companionState, userId, res, fastSpeech = false, trace) {
+async function miniMaxChatStream(message, history, persona, memories, companionState, userId, res, fastSpeech = false, responsiveSpeech = false, trace) {
   const initialState=inferCompanionState(message,"",companionState);
   if(fastSpeech)prepareAvatarAction(initialState.action,trace);
   const requestPayload=buildMiniMaxChatPayload({ model:miniMaxTextModel, message, history, stream:true, persona, memories, companionState });
   trace.providerRequest={url:`${miniMaxBaseUrl}/chat/completions`,payload:requestPayload};
+  res.writeHead(200, {
+    "content-type":"text/event-stream; charset=utf-8",
+    "cache-control":"no-cache, no-transform",
+    connection:"keep-alive",
+    "x-accel-buffering":"no"
+  });
+  res.flushHeaders?.();
+  sendEvent(res, "meta", { ...initialState, mode:"minimax" });
+  let firstSentenceEmitted=false,backchannel=null;
+  const backchannelTimer=responsiveSpeech?setTimeout(()=>{
+    if(firstSentenceEmitted||res.writableEnded)return;
+    backchannel=buildResponsiveBackchannel(message,initialState);
+    if(!backchannel)return;
+    trace.timings.backchannelMs=Math.round(performance.now()-trace._startedMs);
+    trace.backchannel=backchannel;
+    sendEvent(res,"backchannel",backchannel);
+  },700):null;
   const response = await fetch(`${miniMaxBaseUrl}/chat/completions`, {
     method:"POST",
     headers:{ authorization:`Bearer ${apiKey}`, "content-type":"application/json" },
@@ -174,13 +191,6 @@ async function miniMaxChatStream(message, history, persona, memories, companionS
   });
   trace.timings.upstreamConnectedMs=Math.round(performance.now()-trace._startedMs);
   if (!response.ok || !response.body) throw new Error(`MiniMax 流式文案接口失败 (${response.status})`);
-
-  res.writeHead(200, {
-    "content-type":"text/event-stream; charset=utf-8",
-    "cache-control":"no-cache, no-transform",
-    connection:"keep-alive"
-  });
-  sendEvent(res, "meta", { ...initialState, mode:"minimax" });
 
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
@@ -200,8 +210,10 @@ async function miniMaxChatStream(message, history, persona, memories, companionS
       const sentenceResult=buildMiniMaxReply(sentence,message,companionState,history);
       const safeSentence=sentenceResult.reply;
       if(trace.emittedSentences.at(-1)===safeSentence&&safeSentence!==sentence)continue;
+      firstSentenceEmitted=true;if(backchannelTimer)clearTimeout(backchannelTimer);
       trace.timings.firstSentenceMs??=Math.round(performance.now()-trace._startedMs);
-      trace.emittedSentences.push(safeSentence);sendEvent(res, "sentence", { text:safeSentence, emotion:sentenceResult.emotion, action:sentenceResult.action });
+      trace.emittedSentences.push(safeSentence);
+      if(safeSentence.replace(/[，。！？!?；;、\s]/g,"")!==backchannel?.text?.replace(/[，。！？!?；;、\s]/g,""))sendEvent(res, "sentence", { text:safeSentence, emotion:sentenceResult.emotion, action:sentenceResult.action });
     }
     sentenceBuffer = remainder;
   };
@@ -232,6 +244,7 @@ async function miniMaxChatStream(message, history, persona, memories, companionS
   emitAvailable(true);
   trace.rawModelText=rawText;
   const result = buildMiniMaxReply(rawText, message, companionState,history);
+  if(backchannelTimer)clearTimeout(backchannelTimer);
   finishChatTrace(trace,result,"minimax-stream");
   sendEvent(res, "done", { ...result, mode:"minimax" });
   res.end();
@@ -290,7 +303,7 @@ async function chatStream(req, res) {
     void memoryStore.updateCompanionState(data.userId,groundedResult.emotion);
     return;
   }
-  if (provider === "minimax" && apiKey) return miniMaxChatStream(message, history, persona, memories, companionState, data.userId, res, Boolean(data.fastSpeech),trace);
+  if (provider === "minimax" && apiKey) return miniMaxChatStream(message, history, persona, memories, companionState, data.userId, res, Boolean(data.fastSpeech),Boolean(data.responsiveSpeech),trace);
   const result = provider === "openai" && apiKey
     ? await openAIChat(message, history, data.userId, persona, memories,companionState)
     : demoReply(message, persona);

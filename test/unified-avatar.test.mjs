@@ -26,6 +26,8 @@ test("main voice page offers real and anime modes in one conversation",async()=>
   assert.match(app,/action=\$\{encodeURIComponent\(action\)\}/);
   assert.match(app,/conversationActions\.planForSentence\(data\.text,sentenceIndex,data\.action\|\|currentAction,currentEmotion\)/);
   assert.match(app,/enqueueSpeech\(data\.text,currentEmotion,batch,sentencePlan,streamTurn\)/);
+  assert.match(app,/new BackchannelGate\(\{delayMs:500/);
+  assert.match(app,/backchannelGate\.cancel\(\)/);
   assert.match(app,/frameOffset/);
   assert.match(app,/portrait\.dataset\.behavior=JSON\.stringify\(sentencePlan\)/);
   assert.match(app,/behavior:sentencePlan/);
@@ -36,6 +38,7 @@ test("main voice page offers real and anime modes in one conversation",async()=>
   assert.match(app,/\/wav2lip-avatar\/avatar\.html/);
   assert.match(app,/\/vrm-embed\.html/);
   assert.match(app,/history:history\.slice\(0,-1\)\.slice\(-8\)/);
+  assert.match(app,/responsiveSpeech:true/);
   assert.match(app,/content:String\(item\.content\|\|""\)\.slice\(-900\)/);
   assert.doesNotMatch(html,/lumi-realistic-v2\.png|class="realistic-avatar"/);
   assert.match(styles,/\.avatar-panel \.portrait[\s\S]*position: absolute/);
