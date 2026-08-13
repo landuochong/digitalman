@@ -45,7 +45,7 @@ const visualTurns=new VisualTurnGate();
 const speculativeStreams=new Map();
 const visualSkipTasks=new Map();
 const preparedTtsConnections=new Map();
-const CONTINUOUS_FIRST_SEGMENT_MS=600;
+const CONTINUOUS_FIRST_SEGMENT_MS=480;
 const dinetStreams = new DINetStreamSessionStore({
   renderer:dinetRenders,
   publishAudio:payload=>ephemeralPcm.put(payload.pcm,payload),

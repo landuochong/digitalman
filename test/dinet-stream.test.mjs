@@ -111,12 +111,12 @@ test("allows each continuous session to select a shorter aligned first window",a
     firstSegmentMs:800,segmentMs:800,
     renderer:{render:async(wav,_action,options)=>{calls.push({bytes:wav.readUInt32LE(40),...options});return{url:`/${calls.length}.mp4`,metrics:{frames:options.outputFrames}};}}
   });
-  const session=store.start({videoOnly:true,fragmentedVideo:true,firstSegmentMs:600});
-  assert.equal(session.firstSegmentMs,600);
+  const session=store.start({videoOnly:true,fragmentedVideo:true,firstSegmentMs:480});
+  assert.equal(session.firstSegmentMs,480);
   store.append(session.id,0,Buffer.alloc(52_480));
   const segments=await store.drain(session.id);
-  assert.deepEqual(segments.map(item=>item.segment.audioMs),[600,800]);
-  assert.deepEqual(calls.map(item=>item.outputFrames),[15,20]);
+  assert.deepEqual(segments.map(item=>item.segment.audioMs),[480,800]);
+  assert.deepEqual(calls.map(item=>item.outputFrames),[12,20]);
 
   const compatibility=store.start();
   assert.equal(compatibility.firstSegmentMs,800);

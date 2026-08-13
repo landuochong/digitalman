@@ -15,9 +15,10 @@ test("main voice page offers real and anime modes in one conversation",async()=>
   assert.match(html,/id="personaVoice"/);
   assert.match(html,/人物设置/);
   assert.match(app,/lumi-avatar-mode/);
-  assert.match(html,/app\.js\?v=20260813-video-audio-gate-v17/);
+  assert.match(html,/app\.js\?v=20260813-fast-first-segment-v18/);
   assert.match(html,/aria-label="开始通话" aria-pressed="false"/);
-  assert.match(app,/avatarRuntimeVersion="20260813-video-audio-gate-v17"/);
+  assert.match(app,/avatarRuntimeVersion="20260813-fast-first-segment-v18"/);
+  assert.match(app,/AVATAR_FIRST_SEGMENT_LEAD_MS=480/);
   assert.match(app,/get\("continuous"\) !== "0"/);
   assert.match(app,/lumi-vrm-look/);
   assert.match(app,/lumi-vrm-persona/);
@@ -51,7 +52,7 @@ test("main voice page offers real and anime modes in one conversation",async()=>
   assert.match(app,/ttsConnectionId:options\.ttsConnectionId/);
   assert.match(app,/type:"wav2lip-preview"/);
   assert.match(app,/data\.waitingPreview\?\.url/);
-  assert.match(app,/elapsedMs:previewTimeMs,leadMs:600/);
+  assert.match(app,/elapsedMs:previewTimeMs,leadMs:AVATAR_FIRST_SEGMENT_LEAD_MS/);
   assert.match(app,/activeWaitingPreview\?\.action===event\.data\.action/);
   assert.match(app,/backchannelVisual\.stream\?\.expectedAudioMs/);
   assert.match(app,/backchannelVisual\.stream\?\.receivedAudioMs/);

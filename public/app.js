@@ -10,7 +10,8 @@ const input = $("#messageInput"), form = $("#chatForm"), sendButton = $("#sendBu
 const micButton = $("#micButton"), modeBanner = $("#modeBanner"), statusText = $("#statusText");
 const voiceButton = $("#voiceButton"), voicePrompt = $("#voicePrompt"), liveTranscript = $("#liveTranscript"), captionButton = $("#captionButton");
 const digitalHumanFrame = $("#digitalHumanFrame");
-const avatarRuntimeVersion="20260813-video-audio-gate-v17";
+const AVATAR_FIRST_SEGMENT_LEAD_MS=480;
+const avatarRuntimeVersion="20260813-fast-first-segment-v18";
 const avatarRuntimeUrl=path=>`${path}?v=${avatarRuntimeVersion}`;
 const avatarProfile = new URLSearchParams(location.search).get("profile");
 const selfRecordedProfile = avatarProfile === "self";
@@ -524,7 +525,7 @@ async function reply(message) {
         const previewTimeMs=waitingPreview.observedAt
           ?waitingPreview.mediaTimeMs+performance.now()-waitingPreview.observedAt
           :performance.now()-waitingPreview.startedAt;
-        plan=continueActionPlan(plan,{action:waitingPreview.action,elapsedMs:previewTimeMs,leadMs:600});
+        plan=continueActionPlan(plan,{action:waitingPreview.action,elapsedMs:previewTimeMs,leadMs:AVATAR_FIRST_SEGMENT_LEAD_MS});
       }
       return{plan,work:prepareSpeechWork(data.text,plan.emotion,batch,plan,streamTurn,{preferPrewarmed:true,speculative:true})};
     },
@@ -573,7 +574,7 @@ async function reply(message) {
             const previewTimeMs=waitingPreview.observedAt
               ?waitingPreview.mediaTimeMs+performance.now()-waitingPreview.observedAt
               :performance.now()-waitingPreview.startedAt;
-            sentencePlan=avatarMode!=="anime"?continueActionPlan(sentencePlan,{action:waitingPreview.action,elapsedMs:previewTimeMs,leadMs:600}):{...sentencePlan,continuation:true};
+            sentencePlan=avatarMode!=="anime"?continueActionPlan(sentencePlan,{action:waitingPreview.action,elapsedMs:previewTimeMs,leadMs:AVATAR_FIRST_SEGMENT_LEAD_MS}):{...sentencePlan,continuation:true};
             if(avatarMode!=="anime"){actionFrameBias=sentencePlan.frameOffset;biasedAction=sentencePlan.action;}
           }
           else digitalHumanFrame?.contentWindow?.postMessage({type:"wav2lip-preview-clear"},location.origin);
