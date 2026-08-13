@@ -1,5 +1,7 @@
 export class AvatarStreamTurn {
   constructor({isCurrent=()=>true,onEnd=()=>{}}={}){
+    this.id=crypto.randomUUID();
+    this.nextSentenceIndex=0;
     this.isCurrent=isCurrent;
     this.onEnd=onEnd;
     this.enqueueQueue=Promise.resolve();
@@ -9,6 +11,8 @@ export class AvatarStreamTurn {
     this.segmentCount=0;
     this.finishPromise=null;
   }
+
+  allocateSentence(){return{visualTurnId:this.id,visualSentenceIndex:this.nextSentenceIndex++};}
 
   enqueue(task){
     const run=this.enqueueQueue.then(()=>this.isCurrent()?task(this):undefined);

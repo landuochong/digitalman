@@ -197,3 +197,12 @@ test("can continue an action from a later source frame across spoken sentences",
   assert.equal(calls[0].frameOffset,37);
   assert.throws(()=>store.start({frameOffset:-1}),error=>error.status===400);
 });
+
+test("forwards visual turn ordering to every rendered segment",async()=>{
+  const calls=[];
+  const store=new DINetStreamSessionStore({firstSegmentMs:400,segmentMs:400,renderer:{render:async(_wav,_action,options)=>{calls.push(options);return{url:"/part.mp4",metrics:{frames:options.outputFrames}};}}});
+  const session=store.start({visualTurnId:"turn-1",visualSentenceIndex:2});
+  store.append(session.id,0,Buffer.alloc(33_280));await store.drain(session.id);
+  assert.equal(calls.length,2);
+  assert.deepEqual(calls.map(({visualTurnId,visualSentenceIndex})=>[visualTurnId,visualSentenceIndex]),[["turn-1",2],["turn-1",2]]);
+});

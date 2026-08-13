@@ -41,3 +41,9 @@ test("offers a playback barrier before a silent full-body action",async()=>{
   await Promise.resolve();assert.equal(passed,false);
   playback.resolve();await barrier;assert.equal(passed,true);
 });
+
+test("allocates stable ordered visual sentence identifiers",()=>{
+  const turn=new AvatarStreamTurn(),first=turn.allocateSentence(),second=turn.allocateSentence();
+  assert.match(first.visualTurnId,/^[0-9a-f-]{36}$/);assert.equal(second.visualTurnId,first.visualTurnId);
+  assert.deepEqual([first.visualSentenceIndex,second.visualSentenceIndex],[0,1]);
+});

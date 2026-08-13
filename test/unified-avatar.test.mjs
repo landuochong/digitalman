@@ -149,6 +149,9 @@ test("streaming avatar experiment consumes ordered server segments and cancels s
   assert.match(app,/\/ack`/);
   assert.match(app,/renderUnacknowledged/);
   assert.match(app,/action,frameOffset,externalAudio/);
+  assert.match(app,/streamTurn\.allocateSentence\(\)/);
+  assert.match(app,/visualTurnId:behavior\?\.visualTurnId/);
+  assert.match(app,/closeVisualTurn\(streamTurn\.id\)/);
   assert.match(app,/dataset\.chatFirstSentenceMs/);
   assert.match(app,/dataset\.avatarFirstSegmentMs/);
   assert.match(app,/dataset\.ttsFirstAudioMs/);

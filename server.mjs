@@ -14,6 +14,7 @@ import { normalizeMiniMaxTtsEmotion, streamMiniMaxPcm } from "./src/minimax-stre
 import { BoundedAsyncCache } from "./src/audio-cache.mjs";
 import { cacheControlForStaticPath, parseByteRange } from "./src/static-media.mjs";
 import { EphemeralPcmStore } from "./src/ephemeral-pcm-store.mjs";
+import { VisualTurnGate } from "./src/visual-turn-gate.mjs";
 
 function loadLocalEnv() {
   try {
@@ -38,6 +39,7 @@ const actionTasks = new DhActionTaskStore({ projectRoot });
 const wav2lipRenders = new Wav2LipRenderStore({ projectRoot });
 const dinetRenders = new DINetRenderStore({ projectRoot });
 const ephemeralPcm=new EphemeralPcmStore();
+const visualTurns=new VisualTurnGate();
 const dinetStreams = new DINetStreamSessionStore({
   renderer:dinetRenders,
   publishAudio:payload=>ephemeralPcm.put(payload.pcm,payload),
@@ -485,14 +487,18 @@ export const server = http.createServer(async (req, res) => {
       if(provider!=="minimax"||!apiKey)return json(res,503,{error:"流式人物当前需要 MiniMax 语音服务"});
       const data=await body(req),text=String(data.text||"").trim().slice(0,1800);
       if(!text)return json(res,400,{error:"语音内容不能为空"});
+      const visualTurnId=/^[0-9a-f-]{8,64}$/i.test(String(data.visualTurnId||""))?String(data.visualTurnId):"";
+      const visualSentenceIndex=Number(data.visualSentenceIndex);
+      const orderedSentence=visualTurnId&&Number.isSafeInteger(visualSentenceIndex)&&visualSentenceIndex>=0;
       const controller=new AbortController();let closed=false;
       const pipelineStartedAt=performance.now();let firstAudioAt=null,firstSegmentAt=null;
       res.on("close",()=>{if(!closed)controller.abort();});
       res.writeHead(200,{"content-type":"text/event-stream; charset=utf-8","cache-control":"no-cache, no-transform","x-accel-buffering":"no"});
-      const session=dinetStreams.start({action:String(data.action||"idle"),frameOffset:Number(data.frameOffset||0),videoOnly:data.externalAudio===true,binaryAudio:data.binaryAudio===true,fragmentedVideo:data.fragmentedVideo===true,renderBackpressure:data.renderBackpressure===true});
+      const session=dinetStreams.start({action:String(data.action||"idle"),frameOffset:Number(data.frameOffset||0),videoOnly:data.externalAudio===true,binaryAudio:data.binaryAudio===true,fragmentedVideo:data.fragmentedVideo===true,renderBackpressure:data.renderBackpressure===true,visualTurnId:orderedSentence?visualTurnId:"",visualSentenceIndex:orderedSentence?visualSentenceIndex:0});
       sendEvent(res,"started",session);
-      let chunkSequence=0,renderChain=Promise.resolve(),firstSegmentSent=false;
+      let chunkSequence=0,renderChain=Promise.resolve(),firstSegmentSent=false,visualSlotPromise=null;
       const emitSegments=async(final=false)=>{
+        if(orderedSentence)await(visualSlotPromise||=visualTurns.wait(visualTurnId,visualSentenceIndex,{signal:controller.signal}));
         const segments=await dinetStreams.drain(session.id,{final,signal:controller.signal,onSegment:segment=>{
           firstSegmentAt??=performance.now();
           firstSegmentSent=true;sendEvent(res,"segment",segment);
@@ -536,8 +542,17 @@ export const server = http.createServer(async (req, res) => {
         closed=true;res.end();
       }catch(error){
         dinetStreams.cancel(session.id);sendEvent(res,"error",{error:error.message||"流式人物生成失败"});closed=true;res.end();
+      }finally{
+        if(orderedSentence)visualTurns.finish(visualTurnId,visualSentenceIndex);
       }
       return;
+    }
+    const visualTurnMatch=pathname.match(/^\/api\/dinet\/visual-turn\/([0-9a-f-]{8,64})\/finish$/i);
+    if(visualTurnMatch&&req.method==="POST"){
+      if(!isLoopbackAddress(req.socket.remoteAddress))return json(res,403,{error:"本地人物轮次接口仅允许本机访问"});
+      visualTurns.close(visualTurnMatch[1]);
+      await dinetRenders.closeVisualTurn?.(visualTurnMatch[1]);
+      return json(res,200,{id:visualTurnMatch[1],closed:true});
     }
     if (pathname === "/api/dinet/stream/start" && req.method === "POST") {
       if (!isLoopbackAddress(req.socket.remoteAddress)) return json(res, 403, { error:"本地 DINet 流式接口仅允许本机访问" });

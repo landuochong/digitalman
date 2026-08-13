@@ -62,6 +62,11 @@ test("DINet streams raw frames into the final H.264 encode",async()=>{
   assert.match(source,/cancel_stream/);
   assert.match(source,/prepare_asset/);
   assert.match(source,/"loadMs"/);
+  assert.match(source,/transition_source = self\.visual_turn_frames\.get/);
+  assert.match(source,/previous_visual_asset = self\.visual_turn_assets\.get/);
+  assert.match(source,/cv2\.addWeighted/);
+  assert.match(source,/transitionFrames/);
+  assert.match(source,/close_visual_turn/);
   assert.doesNotMatch(source,/cv2\.VideoWriter/);
   assert.doesNotMatch(source,/silent_path/);
 });
@@ -144,6 +149,9 @@ test("stream endpoint reports TTS and first playable segment timing",async()=>{
   assert.match(server,/renderBackpressure:data\.renderBackpressure===true/);
   assert.match(server,/audio-chunk\|finish\|cancel\|ack/);
   assert.match(server,/dinetStreams\.acknowledge/);
+  assert.match(server,/visualTurns\.wait\(visualTurnId,visualSentenceIndex/);
+  assert.match(server,/visualTurns\.finish\(visualTurnId,visualSentenceIndex\)/);
+  assert.match(server,/dinetRenders\.closeVisualTurn/);
   const worker=await readFile(new URL("../scripts/dinet_worker.py",import.meta.url),"utf8");
   assert.match(worker,/frag_keyframe\+empty_moov\+default_base_moof/);
   assert.match(worker,/"-g", "20", "-keyint_min", "20", "-sc_threshold", "0"/);

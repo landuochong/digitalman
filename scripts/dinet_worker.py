@@ -143,6 +143,8 @@ class PersistentDINetRenderer:
         self.mouth_width_scale = float(np.clip(mouth_width_scale, 0.65, 1.0))
         self.audio_model = LoadAudioModel(str(audio_checkpoint))
         self.audio_streams = {}
+        self.visual_turn_frames = {}
+        self.visual_turn_assets = {}
         self.render_model = RenderModel_Mini()
         self.render_model.loadModel(str(render_checkpoint))
 
@@ -339,6 +341,7 @@ class PersistentDINetRenderer:
         audio_offset_ms: int = 0, output_frames: int = 0,
         stream_id: str | None = None, stream_final: bool = False,
         video_only: bool = False, fragmented_video: bool = False,
+        visual_turn_id: str | None = None, visual_sentence_index: int = 0,
     ) -> dict:
         started = time.perf_counter()
         if stream_id:
@@ -401,6 +404,15 @@ class PersistentDINetRenderer:
             raise RuntimeError("无法启动视频编码器")
 
         last_valid = np.zeros(12, dtype=np.float32)
+        transition_source = self.visual_turn_frames.get(visual_turn_id) if visual_turn_id else None
+        previous_visual_asset = self.visual_turn_assets.get(visual_turn_id) if visual_turn_id else None
+        visual_asset_changed = previous_visual_asset is not None and previous_visual_asset != str(self.asset)
+        transition_frames = (
+            min(4, len(coefficients))
+            if visual_asset_changed and visual_sentence_index > 0 and transition_source is not None
+            else 0
+        )
+        last_output_frame = None
         try:
             with torch.inference_mode():
                 for audio_index, values in enumerate(coefficients):
@@ -450,6 +462,12 @@ class PersistentDINetRenderer:
                     x0, y0, x1, y1 = self.crop_rects[frame_index]
                     frame = self.frames[frame_index][:, :, :3].copy()
                     frame[y0:y1, x0:x1] = cv2.resize(face, (x1 - x0, y1 - y0))[:, :, :3]
+                    if transition_frames and audio_index < transition_frames:
+                        alpha = float(audio_index + 1) / float(transition_frames + 1)
+                        frame = cv2.addWeighted(
+                            transition_source, 1.0 - alpha, frame, alpha, 0.0
+                        )
+                    last_output_frame = frame.copy()
                     encoder.stdin.write(np.ascontiguousarray(frame[:, :, ::-1]).tobytes())
         except Exception:
             encoder.stdin.close()
@@ -470,11 +488,15 @@ class PersistentDINetRenderer:
         finished = time.perf_counter()
         if stream_id and stream_final:
             self.audio_streams.pop(stream_id, None)
+        if visual_turn_id and last_output_frame is not None:
+            self.visual_turn_frames[visual_turn_id] = last_output_frame
+            self.visual_turn_assets[visual_turn_id] = str(self.asset)
         return {
             "frames": len(coefficients),
             "audioMode": "stateful" if stream_id else "whole-wav",
             "videoOnly": video_only,
             "fragmentedVideo": fragmented_video,
+            "transitionFrames": transition_frames,
             "audioMs": round((audio_ready - started) * 1000),
             "framesMs": round((frames_ready - audio_ready) * 1000),
             "muxMs": round((finished - frames_ready) * 1000),
@@ -514,6 +536,15 @@ def main() -> None:
                 removed = renderer.audio_streams.pop(str(request.get("streamId") or ""), None)
                 send({"type": "done", "id": request_id, "cancelled": removed is not None})
                 continue
+            if request.get("op") == "close_visual_turn":
+                removed = renderer.visual_turn_frames.pop(
+                    str(request.get("visualTurnId") or ""), None
+                )
+                renderer.visual_turn_assets.pop(
+                    str(request.get("visualTurnId") or ""), None
+                )
+                send({"type": "done", "id": request_id, "closed": removed is not None})
+                continue
             with contextlib.redirect_stdout(sys.stderr):
                 if request.get("asset"):
                     renderer.set_asset(Path(request["asset"]))
@@ -527,6 +558,8 @@ def main() -> None:
                     bool(request.get("streamFinal", False)),
                     bool(request.get("videoOnly", False)),
                     bool(request.get("fragmentedVideo", False)),
+                    str(request.get("visualTurnId") or "") or None,
+                    max(0, int(request.get("visualSentenceIndex", 0))),
                 )
             send({"type": "done", "id": request_id, **metrics})
         except Exception as error:

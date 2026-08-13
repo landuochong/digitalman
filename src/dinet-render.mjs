@@ -8,7 +8,7 @@ import { inferAudioExtension } from "./wav2lip-render.mjs";
 import { listRealActionAssets, resolveRealActionAsset } from "./real-actions.mjs";
 import { GeneratedMediaCache } from "./generated-media-cache.mjs";
 
-const RENDER_PROFILE = "dinet-mini-25fps-bedroom-background-v12-optional-fmp4-stream";
+const RENDER_PROFILE = "dinet-mini-25fps-bedroom-background-v13-action-transition";
 
 export function buildDINetWorkerCommand(projectRoot) {
   return {
@@ -73,7 +73,7 @@ class PersistentDINetWorker {
     clearTimeout(this.active.timer); this.active.reject(error); this.active = null;
   }
 
-  render(audioPath, outputPath, asset, frameOffset=0, audioOffsetMs=0, outputFrames=0, streamId="", streamFinal=false, videoOnly=false, fragmentedVideo=false) {
+  render(audioPath, outputPath, asset, frameOffset=0, audioOffsetMs=0, outputFrames=0, streamId="", streamFinal=false, videoOnly=false, fragmentedVideo=false, visualTurnId="", visualSentenceIndex=0) {
     const queuedAt=performance.now();
     const task = this.chain.then(async () => {
       await this.start();
@@ -96,6 +96,8 @@ class PersistentDINetWorker {
           streamFinal,
           videoOnly,
           fragmentedVideo,
+          visualTurnId,
+          visualSentenceIndex,
           asset:join(this.projectRoot, "public", "dh-live", "actions", asset)
         })}\n`);
       });
@@ -128,6 +130,20 @@ class PersistentDINetWorker {
         const timer=setTimeout(()=>this.#fail(Object.assign(new Error("DINet 流式状态清理超时"),{status:504})),10_000);
         this.active={id,resolve,reject,timer};
         this.child.stdin.write(`${JSON.stringify({id,op:"cancel_stream",streamId})}\n`);
+      });
+    });
+    this.chain=task.catch(()=>{});return task;
+  }
+
+  closeVisualTurn(visualTurnId) {
+    if(!visualTurnId)return Promise.resolve({closed:false});
+    const task=this.chain.then(async()=>{
+      await this.start();
+      return new Promise((resolve,reject)=>{
+        const id=createHash("sha256").update(`visual:${visualTurnId}:${Date.now()}`).digest("hex").slice(0,16);
+        const timer=setTimeout(()=>this.#fail(Object.assign(new Error("DINet 视觉轮次清理超时"),{status:504})),10_000);
+        this.active={id,resolve,reject,timer};
+        this.child.stdin.write(`${JSON.stringify({id,op:"close_visual_turn",visualTurnId})}\n`);
       });
     });
     this.chain=task.catch(()=>{});return task;
@@ -167,8 +183,9 @@ export class DINetRenderStore {
   cacheStatus(){return this.cache.snapshot();}
   prepareAction(action="idle"){return this.worker.prepare(resolveRealActionAsset(action));}
   cancelStream(streamId){return this.worker.cancelStream(streamId);}
+  closeVisualTurn(visualTurnId){return this.worker.closeVisualTurn(visualTurnId);}
 
-  async render(audioBuffer, action="idle", { frameOffset=0, audioOffsetMs=0, outputFrames=0, streamId="", streamFinal=false, videoOnly=false, fragmentedVideo=false }={}) {
+  async render(audioBuffer, action="idle", { frameOffset=0, audioOffsetMs=0, outputFrames=0, streamId="", streamFinal=false, videoOnly=false, fragmentedVideo=false, visualTurnId="", visualSentenceIndex=0 }={}) {
     const extension = inferAudioExtension(audioBuffer);
     if (extension !== "wav") {
       throw Object.assign(new Error("DINet 当前仅接受 PCM WAV 音频"), { status:415 });
@@ -191,6 +208,8 @@ export class DINetRenderStore {
       .update(`stream-id:${streamId}`)
       .update(`video-only:${Boolean(videoOnly)}`)
       .update(`fragmented-video:${Boolean(fragmentedVideo)}`)
+      .update(`visual-turn:${visualTurnId}`)
+      .update(`visual-sentence:${visualSentenceIndex}`)
       .update(`${videoInfo.size}:${videoInfo.mtimeMs}:${dataInfo.size}:${dataInfo.mtimeMs}`)
       .update(audioBuffer)
       .digest("hex")
@@ -201,20 +220,20 @@ export class DINetRenderStore {
     if(cachedInfo)return { url:`/dinet-avatar/generated/${outputName}`, bytes:cachedInfo.size, cached:true,action,asset,videoOnly:Boolean(videoOnly),fragmentedVideo:Boolean(videoOnly&&fragmentedVideo) };
     if (this.pending.has(hash)) return this.pending.get(hash);
 
-    const task = this.#render(hash, audioBuffer, outputPath, outputName,asset,action,frameOffset,audioOffsetMs,outputFrames,streamId,streamFinal,Boolean(videoOnly),Boolean(videoOnly&&fragmentedVideo))
+    const task = this.#render(hash, audioBuffer, outputPath, outputName,asset,action,frameOffset,audioOffsetMs,outputFrames,streamId,streamFinal,Boolean(videoOnly),Boolean(videoOnly&&fragmentedVideo),visualTurnId,visualSentenceIndex)
       .finally(() => this.pending.delete(hash));
     this.pending.set(hash, task);
     return task;
   }
 
-  async #render(hash, audioBuffer, outputPath, outputName,asset,action,frameOffset,audioOffsetMs,outputFrames,streamId,streamFinal,videoOnly,fragmentedVideo) {
+  async #render(hash, audioBuffer, outputPath, outputName,asset,action,frameOffset,audioOffsetMs,outputFrames,streamId,streamFinal,videoOnly,fragmentedVideo,visualTurnId,visualSentenceIndex) {
     await mkdir(this.workDir, { recursive:true });
     await mkdir(this.outputDir, { recursive:true });
     const audioPath = join(this.workDir, `${hash}.wav`);
     const stagingPath = join(this.workDir, `${hash}.partial.mp4`);
     await writeFile(audioPath, audioBuffer, { mode:0o600 });
     try {
-      const metrics = await this.worker.render(audioPath, stagingPath, asset, frameOffset, audioOffsetMs, outputFrames, streamId, streamFinal, videoOnly, fragmentedVideo);
+      const metrics = await this.worker.render(audioPath, stagingPath, asset, frameOffset, audioOffsetMs, outputFrames, streamId, streamFinal, videoOnly, fragmentedVideo, visualTurnId, visualSentenceIndex);
       await rename(stagingPath, outputPath);
       const info = await stat(outputPath);
       void this.cache.prune({protectedPaths:[outputPath]}).catch(()=>{});
@@ -232,7 +251,8 @@ export class DINetRenderStore {
           framesMs:metrics.framesMs,
           muxMs:metrics.muxMs,
           totalMs:metrics.totalMs,
-          queueMs:metrics.queueMs
+          queueMs:metrics.queueMs,
+          transitionFrames:metrics.transitionFrames||0
         }
       };
     } finally {

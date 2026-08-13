@@ -227,6 +227,7 @@ function stopSpeech() {
   speakingToken++;
   speechBatch++;
   speechQueue = Promise.resolve();
+  if(activeAvatarStreamTurn)closeVisualTurn(activeAvatarStreamTurn.id);
   activeAvatarStreamTurn=null;
   activeReplyController?.abort(); activeReplyController = null;
   for(const stream of activeStreamingSpeech)stream.cancel();activeStreamingSpeech.clear();
@@ -350,7 +351,7 @@ function prepareStreamingNeuralSpeech(text,emotion,batch,behavior={action:"idle"
   const wake=()=>{while(waiters.length&&(queue.length||ended||failure))waiters.shift()();};
   const controller=new AbortController();
   const consume=(async()=>{
-    const response=await fetch("/api/dinet/speech-stream",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({text,emotion,voice:voiceProfile,action,frameOffset,externalAudio,binaryAudio:externalAudio,fragmentedVideo,renderBackpressure:fragmentedVideo,preferPrewarmed:options.preferPrewarmed===true}),signal:controller.signal});
+    const response=await fetch("/api/dinet/speech-stream",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({text,emotion,voice:voiceProfile,action,frameOffset,externalAudio,binaryAudio:externalAudio,fragmentedVideo,renderBackpressure:fragmentedVideo,preferPrewarmed:options.preferPrewarmed===true,visualTurnId:behavior?.visualTurnId,visualSentenceIndex:behavior?.visualSentenceIndex}),signal:controller.signal});
     if(!response.ok||!response.body){const data=await response.json().catch(()=>({}));throw new Error(data.error||"流式回答准备失败");}
     await consumeEventStream(response,async(event,data)=>{
       if(batch!==speechBatch){controller.abort();return;}
@@ -417,8 +418,10 @@ function enqueueSpeech(text, emotion, batch, behavior={action:"idle"},streamTurn
     // Start TTS and rendering immediately for every completed sentence. Playback
     // stays ordered, while later sentences prepare during the current sentence.
     const silentAction=silentNeuralActions[action];
+    const visualSentence=streamingAvatarExperiment&&!silentAction&&streamTurn?streamTurn.allocateSentence():null;
+    const preparedBehavior=visualSentence?{...(typeof behavior==="object"?behavior:{action}),...visualSentence}:behavior;
     const preparation = streamingAvatarExperiment&&!silentAction
-      ? prepareStreamingNeuralSpeech(text,emotion,batch,behavior,options)
+      ? prepareStreamingNeuralSpeech(text,emotion,batch,preparedBehavior,options)
       : prepareNeuralSpeech(text, emotion, batch,silentAction?"idle":action);
     const schedule=streamTurn
       ? task=>streamTurn.enqueue(task)
@@ -427,7 +430,7 @@ function enqueueSpeech(text, emotion, batch, behavior={action:"idle"},streamTurn
       if (batch !== speechBatch) return;
       try {
         if(silentAction){if(streamTurn)await streamTurn.waitForPlayback();await playSilentNeuralAction(silentAction,batch);}
-        if(streamingAvatarExperiment&&!silentAction)await enqueueStreamingNeuralSpeech(preparation,batch,behavior,streamTurn);
+        if(streamingAvatarExperiment&&!silentAction)await enqueueStreamingNeuralSpeech(preparation,batch,preparedBehavior,streamTurn);
         else await playPreparedNeuralSpeech(await preparation, batch);
       }
       catch (error) {
@@ -474,6 +477,11 @@ async function consumeEventStream(response, onEvent) {
   }
 }
 
+function closeVisualTurn(id){
+  if(!id)return;
+  fetch(`/api/dinet/visual-turn/${encodeURIComponent(id)}/finish`,{method:"POST",keepalive:true}).catch(()=>{});
+}
+
 async function reply(message) {
   sendButton.disabled = true; showTyping(); setEmotion("curious"); setVoiceState("thinking","正在理解你刚才说的话"); statusText.textContent = "正在想…";
   const controller = new AbortController(); activeReplyController = controller;
@@ -483,6 +491,7 @@ async function reply(message) {
     onEnd:({audioMs,lingerMs})=>{
       realSpeechTimelineMs+=audioMs;
       digitalHumanFrame.contentWindow.postMessage({type:"wav2lip-stream-end",lingerMs,idleTimeMs:realSpeechTimelineMs},location.origin);
+      closeVisualTurn(streamTurn.id);
     }
   }):null;
   const backchannelGate=new BackchannelGate({delayMs:500,onSpeak:data=>{
