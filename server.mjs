@@ -16,6 +16,7 @@ import { BoundedAsyncCache } from "./src/audio-cache.mjs";
 import { cacheControlForStaticPath, parseByteRange } from "./src/static-media.mjs";
 import { EphemeralPcmStore } from "./src/ephemeral-pcm-store.mjs";
 import { VisualTurnGate } from "./src/visual-turn-gate.mjs";
+import { resolveWaitingActionPreview } from "./src/real-actions.mjs";
 
 function loadLocalEnv() {
   try {
@@ -234,6 +235,7 @@ async function warmupMiniMaxChat() {
 
 async function miniMaxChatStream(message, history, persona, memories, companionState, userId, res, fastSpeech = false, responsiveSpeech = false, prewarmPcm = false, voice = "", trace) {
   const initialState=inferCompanionState(message,"",companionState);
+  const waitingPreview=fastSpeech?resolveWaitingActionPreview(initialState.action):null;
   if(fastSpeech)prepareAvatarAction(initialState.action,trace);
   const ttsConnectionId=fastSpeech?prepareTtsConnection():"";
   const requestPayload=buildMiniMaxChatPayload({ model:miniMaxTextModel, message, history, stream:true, persona, memories, companionState });
@@ -245,7 +247,7 @@ async function miniMaxChatStream(message, history, persona, memories, companionS
     "x-accel-buffering":"no"
   });
   res.flushHeaders?.();
-  sendEvent(res, "meta", { ...initialState, mode:"minimax", ...(ttsConnectionId?{ttsConnectionId}:{}) });
+  sendEvent(res, "meta", { ...initialState, mode:"minimax", ...(ttsConnectionId?{ttsConnectionId}:{}), ...(waitingPreview?{waitingPreview}:{}) });
   let firstSentenceEmitted=false,backchannel=responsiveSpeech?buildResponsiveBackchannel(message,initialState):null;
   if(backchannel&&prewarmPcm){
     const pcmWarmup=prewarmMiniMaxPcm({text:backchannel.text,voice,emotion:backchannel.emotion});

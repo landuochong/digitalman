@@ -15,9 +15,9 @@ test("main voice page offers real and anime modes in one conversation",async()=>
   assert.match(html,/id="personaVoice"/);
   assert.match(html,/人物设置/);
   assert.match(app,/lumi-avatar-mode/);
-  assert.match(html,/app\.js\?v=20260813-tts-preconnect-v12/);
+  assert.match(html,/app\.js\?v=20260813-waiting-motion-v13/);
   assert.match(html,/aria-label="开始通话" aria-pressed="false"/);
-  assert.match(app,/avatarRuntimeVersion="20260813-render-window-v4"/);
+  assert.match(app,/avatarRuntimeVersion="20260813-waiting-motion-v13"/);
   assert.match(app,/get\("continuous"\) !== "0"/);
   assert.match(app,/lumi-vrm-look/);
   assert.match(app,/lumi-vrm-persona/);
@@ -48,6 +48,10 @@ test("main voice page offers real and anime modes in one conversation",async()=>
   assert.match(app,/prewarmPcm:mode==="minimax"/);
   assert.match(app,/firstTtsConnectionId=String\(data\.ttsConnectionId\|\|""\)/);
   assert.match(app,/ttsConnectionId:options\.ttsConnectionId/);
+  assert.match(app,/type:"wav2lip-preview"/);
+  assert.match(app,/data\.waitingPreview\?\.url/);
+  assert.match(app,/previewTimeMs\+600/);
+  assert.match(app,/activeWaitingPreview\?\.action===event\.data\.action/);
   assert.match(app,/binaryAudio:externalAudio/);
   assert.match(app,/fragmentedVideo/);
   assert.match(app,/continuousVideoExperiment/);
@@ -72,7 +76,7 @@ test("user-facing pages hide provider and rendering implementation names",async(
 
 test("real avatar video covers the complete left panel",async()=>{
   const [html,css]=await Promise.all([readPublic("wav2lip-avatar/avatar.html"),readPublic("wav2lip-avatar/avatar.css")]);
-  assert.match(html,/avatar\.css\?v=20260813-video-handoff-v11/);
+  assert.match(html,/avatar\.css\?v=20260813-waiting-motion-v13/);
   assert.match(css,/\.avatar-layer\{[^}]*width:100%;height:100%;object-fit:cover;object-position:center center/);
   assert.match(css,/#stage\{[^}]*lumi-bedroom-background-v1\.png[^}]*center\/cover/);
 });

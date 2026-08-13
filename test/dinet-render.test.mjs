@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { buildDINetWorkerCommand, DINetRenderStore } from "../src/dinet-render.mjs";
-import { resolveRealActionAsset } from "../src/real-actions.mjs";
+import { resolveRealActionAsset, resolveWaitingActionPreview } from "../src/real-actions.mjs";
 
 test("preloads one persistent DINet worker with the bedroom asset", () => {
   const command = buildDINetWorkerCommand("/project");
@@ -24,6 +24,9 @@ test("maps anime action names onto same-character real video assets",()=>{
   assert.equal(resolveRealActionAsset("cross"),"bedroom_cross");
   assert.equal(resolveRealActionAsset("confident_arms_crossed"),"bedroom_arms_crossed");
   assert.equal(resolveRealActionAsset("unknown"),"bedroom_idle_test");
+  assert.deepEqual(resolveWaitingActionPreview("caring"),{action:"caring",asset:"bedroom_caring",url:"/dh-live/actions/bedroom_caring/01.mp4"});
+  assert.equal(resolveWaitingActionPreview("clap"),null);
+  assert.equal(resolveWaitingActionPreview("surprise"),null);
 });
 
 test("rejects compressed audio before starting the DINet worker", async () => {

@@ -28,6 +28,14 @@ export function resolveRealActionAsset(action){
   return REAL_ACTION_ASSETS[String(action||"").trim()]||REAL_ACTION_ASSETS.idle;
 }
 
+const WAITING_PREVIEW_ACTIONS=new Set(["happy","caring","thinking","nod"]);
+export function resolveWaitingActionPreview(action){
+  const normalized=String(action||"").trim();
+  if(!WAITING_PREVIEW_ACTIONS.has(normalized))return null;
+  const asset=resolveRealActionAsset(normalized);
+  return{action:normalized,asset,url:`/dh-live/actions/${asset}/01.mp4`};
+}
+
 export function listRealActionSupport(){
   return Object.entries(REAL_ACTION_ASSETS).map(([action,asset])=>({
     action,asset,distinct:action==="idle"||asset!==REAL_ACTION_ASSETS.idle

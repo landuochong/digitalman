@@ -3,7 +3,7 @@ body{display:grid;place-items:center;font-family:-apple-system,BlinkMacSystemFon
 #stage{position:relative;width:100%;height:100%;overflow:hidden;background:#eadbd2 url("/assets/lumi-bedroom-background-v1.png") center/cover no-repeat}
 #stage:before{content:"";position:absolute;inset:0;background:linear-gradient(180deg,rgba(255,250,246,.04),rgba(75,48,56,.08));pointer-events:none}
 .avatar-layer{position:absolute;z-index:0;inset:0;width:100%;height:100%;object-fit:cover;object-position:center center;display:block}
-.avatar-layer#avatar-speech,.avatar-layer.speech-segment{z-index:1;opacity:0;pointer-events:none}
+.avatar-layer#avatar-speech,.avatar-layer.speech-segment{z-index:1;opacity:0;pointer-events:none;transition:opacity .16s ease}
 .avatar-layer#avatar-speech.active,.avatar-layer.speech-segment.active{opacity:1}
 #state{position:absolute;z-index:2;left:50%;bottom:16px;translate:-50% 0;padding:7px 12px;border:0;border-radius:999px;background:rgba(30,24,29,.58);color:#fff;font:12px inherit;backdrop-filter:blur(8px);opacity:0;pointer-events:none;transition:opacity .2s}
 body.needs-play #state{opacity:1;pointer-events:auto;cursor:pointer;background:#b95f5d}

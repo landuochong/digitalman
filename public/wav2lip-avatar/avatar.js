@@ -22,6 +22,7 @@ let streamAudioTail=0;
 let audioScheduleChain=Promise.resolve();
 let fragmentedAppendChain=Promise.resolve();
 let fragmentedPlayback=null;
+let waitingPreview=null;
 const streamAudioSources=new Set();
 const segmentQueue=[];
 const MAX_VIDEO_AHEAD_SECONDS=4;
@@ -47,7 +48,32 @@ function playIdle() {
   segmentQueue.length=0;segmentPlaying=false;externalSegmentsPending=0;segmentsPreparing=0;activeSegment=null;activeSegmentSequence=-1;nextPlaybackSequence=0;streamEnded=true;
   pendingIdleTimeMs=null;pendingIdleLingerMs=120;
   stopStreamAudio();stopFragmentedPlayback();
+  waitingPreview=null;
   idleVideo.play().catch(() => {});
+}
+
+function clearWaitingPreview({revealIdle=true}={}){
+  const video=waitingPreview;waitingPreview=null;
+  if(!video)return;
+  video.classList.remove("active");
+  if(activeSegment===video)activeSegment=null;
+  if(revealIdle)idleVideo.play().catch(()=>{});
+  setTimeout(()=>{video.pause();video.remove();},180);
+}
+
+async function showWaitingPreview(data){
+  if(!data.url||segmentPlaying||externalSegmentsPending||segmentsPreparing)return;
+  clearWaitingPreview({revealIdle:false});
+  const video=document.createElement("video");
+  video.className="avatar-layer speech-segment waiting-preview";video.playsInline=true;video.muted=true;video.loop=true;video.preload="auto";video.src=data.url;
+  waitingPreview=video;stage.append(video);
+  try{
+    await video.play();await waitForFirstVideoFrame(video);
+    if(waitingPreview!==video)return;
+    const previous=activeSegment;activeSegment=video;video.classList.add("active");
+    if(previous&&previous!==video){previous.classList.remove("active");setTimeout(()=>{previous.pause();previous.remove();},180);}
+    notify("wav2lip-preview-started",{action:data.action,currentTime:video.currentTime});
+  }catch{if(waitingPreview===video)clearWaitingPreview();}
 }
 
 function pcmBuffer(context,audio,bytes){
@@ -191,7 +217,7 @@ function revealSegment(item,video){
   if(sequence<activeSegmentSequence)return false;
   const previous=activeSegment;activeSegment=video;activeSegmentSequence=sequence;
   video.classList.add("active");
-  requestAnimationFrame(()=>{if(previous&&previous!==video){previous.classList.remove("active");previous.pause();previous.remove();}});
+  requestAnimationFrame(()=>{if(previous&&previous!==video){previous.classList.remove("active");const delay=previous.classList.contains("waiting-preview")?180:0;setTimeout(()=>{previous.pause();previous.remove();},delay);if(previous===waitingPreview)waitingPreview=null;}});
   return true;
 }
 
@@ -316,6 +342,8 @@ window.addEventListener("message", async event => {
   if(event.data?.type==="wav2lip-audio-unlock"){
     const context=await ensureStreamAudio();notify("wav2lip-audio-mode",{mode:context?"pcm-ready":"mp4",fragmentedVideo:Boolean(context&&supportsFragmentedVideo()),gapMs:0});return;
   }
+  if(event.data?.type==="wav2lip-preview"&&event.data.url){void showWaitingPreview(event.data);return;}
+  if(event.data?.type==="wav2lip-preview-clear"){clearWaitingPreview();return;}
   if (event.data?.type === "wav2lip-clear") { playToken++; document.body.classList.remove("loading"); playIdle(); return; }
   if(event.data?.type==="wav2lip-enqueue"&&event.data.url){
     clearTimeout(idleRevealTimer);idleRevealTimer=0;streamEnded=false;

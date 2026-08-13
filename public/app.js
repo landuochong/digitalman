@@ -10,7 +10,7 @@ const input = $("#messageInput"), form = $("#chatForm"), sendButton = $("#sendBu
 const micButton = $("#micButton"), modeBanner = $("#modeBanner"), statusText = $("#statusText");
 const voiceButton = $("#voiceButton"), voicePrompt = $("#voicePrompt"), liveTranscript = $("#liveTranscript"), captionButton = $("#captionButton");
 const digitalHumanFrame = $("#digitalHumanFrame");
-const avatarRuntimeVersion="20260813-render-window-v4";
+const avatarRuntimeVersion="20260813-waiting-motion-v13";
 const avatarRuntimeUrl=path=>`${path}?v=${avatarRuntimeVersion}`;
 const avatarProfile = new URLSearchParams(location.search).get("profile");
 const selfRecordedProfile = avatarProfile === "self";
@@ -104,7 +104,7 @@ function unlockAvatarAudio(){
 }
 document.addEventListener("pointerdown",()=>void unlockAvatarAudio(),{once:true,capture:true});
 let realSpeechTimelineMs=0;
-let speechQueue = Promise.resolve(), speechBatch = 0, activeReplyController,activeAvatarStreamTurn=null,activeReplyStartedAt=0;
+let speechQueue = Promise.resolve(), speechBatch = 0, activeReplyController,activeAvatarStreamTurn=null,activeReplyStartedAt=0,activeWaitingPreview=null;
 const conversationActions=new ConversationActionScheduler();
 let voiceCallActive = false;
 const pendingActions = new Map();
@@ -229,6 +229,7 @@ function stopSpeech() {
   speechQueue = Promise.resolve();
   if(activeAvatarStreamTurn)closeVisualTurn(activeAvatarStreamTurn.id);
   activeAvatarStreamTurn=null;
+  if(activeWaitingPreview){digitalHumanFrame?.contentWindow?.postMessage({type:"wav2lip-preview-clear"},location.origin);activeWaitingPreview=null;delete portrait.dataset.waitingPreview;}
   activeReplyController?.abort(); activeReplyController = null;
   for(const stream of activeStreamingSpeech)stream.cancel();activeStreamingSpeech.clear();
   clearInterval(speechTimer);
@@ -501,7 +502,7 @@ function closeVisualTurn(id){
 async function reply(message) {
   sendButton.disabled = true; showTyping(); setEmotion("curious"); setVoiceState("thinking","正在理解你刚才说的话"); statusText.textContent = "正在想…";
   const controller = new AbortController(); activeReplyController = controller;
-  const batch = speechBatch; activeReplyStartedAt=performance.now();realSpeechTimelineMs=0;delete portrait.dataset.chatFirstSentenceMs;delete portrait.dataset.avatarFirstSegmentMs;delete portrait.dataset.ttsFirstAudioMs;delete portrait.dataset.avatarPipelineMs;let article, streamedText = "", currentEmotion = "calm",currentAction="idle",spokenSentenceCount=0,firstTtsConnectionId="";
+  const batch = speechBatch; activeReplyStartedAt=performance.now();realSpeechTimelineMs=0;delete portrait.dataset.chatFirstSentenceMs;delete portrait.dataset.avatarFirstSegmentMs;delete portrait.dataset.ttsFirstAudioMs;delete portrait.dataset.avatarPipelineMs;let article, streamedText = "", currentEmotion = "calm",currentAction="idle",spokenSentenceCount=0,firstTtsConnectionId="",waitingPreview=null;
   const streamTurn=streamingAvatarExperiment&&neuralAvatarProfile?new AvatarStreamTurn({
     isCurrent:()=>batch===speechBatch,
     onEnd:({audioMs,lingerMs})=>{
@@ -520,6 +521,7 @@ async function reply(message) {
     onCancel:(_data,prepared)=>prepared?.work?.preparation?.cancel?.(),
     onSpeak:(data,prepared)=>{
     if(batch!==speechBatch){prepared?.work?.preparation?.cancel?.();return;}
+    if(waitingPreview){waitingPreview=null;activeWaitingPreview=null;delete portrait.dataset.waitingPreview;}
     const plan=prepared?.plan||backchannelPlan(data);
     prepared?.work?.preparation?.commit?.();
     const readyAt=prepared?.work?.preparation?.firstSegmentReadyAt;
@@ -538,6 +540,12 @@ async function reply(message) {
         firstTtsConnectionId=String(data.ttsConnectionId||"");
         const plan=conversationActions.startTurn({message,emotion:currentEmotion,action:data.action||"idle"});
         currentAction=plan.action;portrait.dataset.behavior=JSON.stringify(plan);
+        if(data.waitingPreview?.url&&data.waitingPreview.action===plan.action){
+          waitingPreview={action:plan.action,startedAt:performance.now(),mediaTimeMs:0,observedAt:0};activeWaitingPreview=waitingPreview;
+          portrait.dataset.waitingPreview=plan.action;
+          if(switchableAvatarProfile&&avatarMode==="anime")setDigitalHumanAction(plan.action,{force:true,hold:true,behavior:{...plan,intensity:Math.min(.28,plan.intensity)}}).catch(()=>{});
+          else digitalHumanFrame?.contentWindow?.postMessage({type:"wav2lip-preview",...data.waitingPreview},location.origin);
+        }
       }
       if (event === "sentence") {
         backchannelGate.cancel();
@@ -547,7 +555,18 @@ async function reply(message) {
         article.querySelector("p").textContent = streamedText;
         if(data.emotion){currentEmotion=data.emotion;setEmotion(currentEmotion);}
         const sentenceIndex=spokenSentenceCount++;
-        const sentencePlan=conversationActions.planForSentence(data.text,sentenceIndex,data.action||currentAction,currentEmotion);
+        let sentencePlan=conversationActions.planForSentence(data.text,sentenceIndex,data.action||currentAction,currentEmotion);
+        if(sentenceIndex===0&&waitingPreview){
+          const continuesPreview=!sentencePlan.deferred&&sentencePlan.action===waitingPreview.action;
+          if(continuesPreview){
+            const previewTimeMs=waitingPreview.observedAt
+              ?waitingPreview.mediaTimeMs+performance.now()-waitingPreview.observedAt
+              :performance.now()-waitingPreview.startedAt;
+            sentencePlan={...sentencePlan,continuation:true,...(avatarMode!=="anime"?{frameOffset:Math.max(sentencePlan.frameOffset,Math.round((previewTimeMs+600)/40))}:{})};
+          }
+          else digitalHumanFrame?.contentWindow?.postMessage({type:"wav2lip-preview-clear"},location.origin);
+          waitingPreview=null;activeWaitingPreview=null;delete portrait.dataset.waitingPreview;
+        }
         const sentenceAction=sentencePlan.action;portrait.dataset.behavior=JSON.stringify(sentencePlan);
         if(sentenceAction!=="idle"&&!sentencePlan.continuation)setDigitalHumanAction(sentenceAction,{force:true,hold:true,behavior:sentencePlan}).catch(()=>{});
         const ttsConnectionId=sentenceIndex===0?firstTtsConnectionId:"";
@@ -572,7 +591,7 @@ async function reply(message) {
     backchannelGate.cancel();
     $("#typing")?.remove();
     if (error.name !== "AbortError") { addMessage("assistant", `刚才的连接有点不稳定：${error.message}。再试一次好吗？`, false); setEmotion("caring"); speaking(false); setVoiceState("idle","连接不稳定，请点击麦克风重试"); }
-  } finally { if(activeReplyController===controller)activeReplyController=null; sendButton.disabled=false; if(!form.hidden)input.focus(); }
+  } finally { if(waitingPreview)digitalHumanFrame?.contentWindow?.postMessage({type:"wav2lip-preview-clear"},location.origin);if(activeWaitingPreview===waitingPreview)activeWaitingPreview=null;if(activeReplyController===controller)activeReplyController=null; sendButton.disabled=false; if(!form.hidden)input.focus(); }
 }
 async function submit(text) { const message = text.trim(); if (!message || sendButton.disabled) return; stopSpeech(); input.value=""; resize(); addMessage("user", message); await reply(message); }
 form.addEventListener("submit", e => { e.preventDefault(); submit(input.value); });
@@ -598,6 +617,7 @@ window.addEventListener("message",event=>{
   if(event.data?.type==="vrm-behavior-accepted"){portrait.dataset.vrmAction=event.data.action;portrait.dataset.vrmActionStarted=String(Boolean(event.data.started));}
   if(event.data?.type==="dh-live-audio-accepted") portrait.dataset.dhAudioBytes=String(event.data.bytes||0);
   if(event.data?.type==="wav2lip-audio-mode"){portrait.dataset.audioMode=event.data.mode;portrait.dataset.audioGapMs=String(event.data.gapMs||0);avatarPcmReady=event.data.mode==="pcm-ready"||event.data.mode==="pcm";avatarFragmentedVideoReady=event.data.fragmentedVideo===true;portrait.dataset.fragmentedVideo=String(avatarFragmentedVideoReady);}
+  if(event.data?.type==="wav2lip-preview-started"&&activeWaitingPreview?.action===event.data.action){activeWaitingPreview.mediaTimeMs=Math.max(0,Number(event.data.currentTime)||0)*1000;activeWaitingPreview.observedAt=performance.now();portrait.dataset.waitingPreviewStarted="true";}
   if(event.data?.type==="wav2lip-started"&&Number.isFinite(Number(event.data.handoffLateMs))){portrait.dataset.videoFirstFrameMs=String(event.data.firstFrameMs||0);portrait.dataset.videoHandoffLateMs=String(event.data.handoffLateMs||0);}
   if(event.data?.type==="wav2lip-video-sync"){portrait.dataset.videoDriftMs=String(event.data.driftMs||0);portrait.dataset.videoMaxDriftMs=String(event.data.maxDriftMs||0);}
   if(event.data?.type==="wav2lip-video-buffer"){portrait.dataset.videoAheadSeconds=String(event.data.aheadSeconds||0);portrait.dataset.videoBufferStart=String(event.data.bufferStart||0);portrait.dataset.videoPrunedSeconds=String(event.data.prunedSeconds||0);}
