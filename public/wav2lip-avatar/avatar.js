@@ -56,9 +56,11 @@ async function ensureStreamAudio(){
   return streamAudioContext.state==="running"?streamAudioContext:null;
 }
 
-async function scheduleSegmentAudio(item){
-  const context=await ensureStreamAudio();if(!context){notify("wav2lip-audio-mode",{mode:"mp4",sequence:item.segment?.sequence,gapMs:0});return false;}
-  const bytes=await loadPcmBytes(item.segment?.audio).catch(()=>null),buffer=pcmBuffer(context,item.segment?.audio,bytes);if(!buffer)return false;
+async function scheduleSegmentAudio(item,pcmBytesPromise,token){
+  const [context,bytes]=await Promise.all([ensureStreamAudio(),pcmBytesPromise]);
+  if(token!==playToken)return false;
+  if(!context){notify("wav2lip-audio-mode",{mode:"mp4",sequence:item.segment?.sequence,gapMs:0});return false;}
+  const buffer=pcmBuffer(context,item.segment?.audio,bytes);if(!buffer)return false;
   const source=context.createBufferSource();source.buffer=buffer;source.connect(context.destination);
   const when=Math.max(streamAudioTail,context.currentTime+.06);
   const gapMs=streamAudioTail?Math.max(0,Math.round((when-streamAudioTail)*1000)):0;
@@ -221,7 +223,8 @@ window.addEventListener("message", async event => {
   if(event.data?.type==="wav2lip-enqueue"&&event.data.url){
     clearTimeout(idleRevealTimer);idleRevealTimer=0;streamEnded=false;
     document.body.classList.add("loading");const item=preloadSegment({...event.data,playbackSequence:nextPlaybackSequence++});
-    item.audioReady=audioScheduleChain=audioScheduleChain.then(()=>scheduleSegmentAudio(item)).catch(()=>false);
+    const token=playToken,pcmBytesPromise=loadPcmBytes(item.segment?.audio).catch(()=>null);
+    item.audioReady=audioScheduleChain=audioScheduleChain.then(()=>scheduleSegmentAudio(item,pcmBytesPromise,token)).catch(()=>false);
     void dispatchSegment(item);return;
   }
   if(event.data?.type==="wav2lip-stream-end"){
