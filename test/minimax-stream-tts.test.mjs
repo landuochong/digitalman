@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { normalizeMiniMaxTtsEmotion, streamMiniMaxPcm } from "../src/minimax-stream-tts.mjs";
+import { normalizeMiniMaxTtsEmotion, prepareMiniMaxTtsConnection, streamMiniMaxPcm } from "../src/minimax-stream-tts.mjs";
 
 class FakeWebSocket {
   static OPEN=1;
@@ -48,4 +48,15 @@ test("supports the event-emitter interface used by the real ws package",async()=
   let bytes=0;
   const result=await streamMiniMaxPcm({apiKey:"secret",text:"好",voice:"voice",WebSocketImpl:EventWebSocket,onAudio:pcm=>{bytes+=pcm.length;}});
   assert.equal(bytes,320);assert.equal(result.audioMs,10);
+});
+
+test("reuses a connection established while reply text is still pending",async()=>{
+  const connection=prepareMiniMaxTtsConnection({apiKey:"secret",WebSocketImpl:FakeWebSocket});
+  await connection.ready;
+  const chunks=[];
+  const result=await streamMiniMaxPcm({apiKey:"secret",text:"你好",voice:"voice",WebSocketImpl:FakeWebSocket,connection,onAudio:pcm=>chunks.push(pcm)});
+  assert.equal(chunks.length,1);
+  assert.equal(result.connectionReused,true);
+  assert.equal(result.connectionWaitMs,0);
+  await assert.rejects(()=>streamMiniMaxPcm({apiKey:"secret",text:"重复",voice:"voice",connection,onAudio:()=>{}}),/已经使用/);
 });

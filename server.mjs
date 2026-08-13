@@ -1,4 +1,5 @@
 import http from "node:http";
+import { randomUUID } from "node:crypto";
 import { stat } from "node:fs/promises";
 import { createReadStream, readFileSync } from "node:fs";
 import { extname, join, normalize } from "node:path";
@@ -10,7 +11,7 @@ import { DhActionTaskStore, isLoopbackAddress, saveActionVideo } from "./src/dh-
 import { Wav2LipRenderStore } from "./src/wav2lip-render.mjs";
 import { DINetRenderStore } from "./src/dinet-render.mjs";
 import { DINetStreamSessionStore, encodePcm16Wav } from "./src/dinet-stream.mjs";
-import { normalizeMiniMaxTtsEmotion, streamMiniMaxPcm } from "./src/minimax-stream-tts.mjs";
+import { normalizeMiniMaxTtsEmotion, prepareMiniMaxTtsConnection, streamMiniMaxPcm } from "./src/minimax-stream-tts.mjs";
 import { BoundedAsyncCache } from "./src/audio-cache.mjs";
 import { cacheControlForStaticPath, parseByteRange } from "./src/static-media.mjs";
 import { EphemeralPcmStore } from "./src/ephemeral-pcm-store.mjs";
@@ -42,6 +43,7 @@ const ephemeralPcm=new EphemeralPcmStore();
 const visualTurns=new VisualTurnGate();
 const speculativeStreams=new Map();
 const visualSkipTasks=new Map();
+const preparedTtsConnections=new Map();
 const CONTINUOUS_FIRST_SEGMENT_MS=600;
 const dinetStreams = new DINetStreamSessionStore({
   renderer:dinetRenders,
@@ -89,6 +91,24 @@ function skipVisualSentence(turnId,index){
 
 function miniMaxPcmCacheKey({text,voice,emotion}){
   return JSON.stringify([miniMaxTtsModel,voice,normalizeMiniMaxTtsEmotion(emotion),String(text||"").trim()]);
+}
+
+function prepareTtsConnection(){
+  while(preparedTtsConnections.size>=16){
+    const [oldestId,oldest]=preparedTtsConnections.entries().next().value;
+    preparedTtsConnections.delete(oldestId);clearTimeout(oldest.timer);oldest.connection.close();
+  }
+  const id=randomUUID(),connection=prepareMiniMaxTtsConnection({apiKey,url:miniMaxTtsWsUrl});
+  const timer=setTimeout(()=>{if(preparedTtsConnections.delete(id))connection.close();},15_000);timer.unref?.();
+  preparedTtsConnections.set(id,{connection,timer});
+  return id;
+}
+
+function takeTtsConnection(id){
+  const entry=preparedTtsConnections.get(String(id||""));
+  if(!entry)return null;
+  preparedTtsConnections.delete(String(id));clearTimeout(entry.timer);
+  return entry.connection;
 }
 
 function miniMaxSpeechCacheKey({text,voice,emotion}){
@@ -215,6 +235,7 @@ async function warmupMiniMaxChat() {
 async function miniMaxChatStream(message, history, persona, memories, companionState, userId, res, fastSpeech = false, responsiveSpeech = false, prewarmPcm = false, voice = "", trace) {
   const initialState=inferCompanionState(message,"",companionState);
   if(fastSpeech)prepareAvatarAction(initialState.action,trace);
+  const ttsConnectionId=fastSpeech?prepareTtsConnection():"";
   const requestPayload=buildMiniMaxChatPayload({ model:miniMaxTextModel, message, history, stream:true, persona, memories, companionState });
   trace.providerRequest={url:`${miniMaxBaseUrl}/chat/completions`,payload:requestPayload};
   res.writeHead(200, {
@@ -224,7 +245,7 @@ async function miniMaxChatStream(message, history, persona, memories, companionS
     "x-accel-buffering":"no"
   });
   res.flushHeaders?.();
-  sendEvent(res, "meta", { ...initialState, mode:"minimax" });
+  sendEvent(res, "meta", { ...initialState, mode:"minimax", ...(ttsConnectionId?{ttsConnectionId}:{}) });
   let firstSentenceEmitted=false,backchannel=responsiveSpeech?buildResponsiveBackchannel(message,initialState):null;
   if(backchannel&&prewarmPcm){
     const pcmWarmup=prewarmMiniMaxPcm({text:backchannel.text,voice,emotion:backchannel.emotion});
@@ -547,11 +568,21 @@ export const server = http.createServer(async (req, res) => {
           if(controller.signal.aborted)throw Object.assign(new Error("cancelled"),{name:"AbortError"});
           appendPcm(cached.pcm);ttsMetrics={...cached.metrics,firstAudioMs:0,totalMs:0,cached:true};
         }else{
-          ttsMetrics=await streamMiniMaxPcm({
-            apiKey,text,model:miniMaxTtsModel,voice:resolvedVoice,emotion:data.emotion,
-            url:miniMaxTtsWsUrl,signal:controller.signal,
-            onAudio:appendPcm
-          });
+          const preparedConnection=takeTtsConnection(data.ttsConnectionId);
+          try{
+            ttsMetrics=await streamMiniMaxPcm({
+              apiKey,text,model:miniMaxTtsModel,voice:resolvedVoice,emotion:data.emotion,
+              url:miniMaxTtsWsUrl,signal:controller.signal,connection:preparedConnection,
+              onAudio:appendPcm
+            });
+          }catch(error){
+            if(!preparedConnection||chunkSequence||controller.signal.aborted)throw error;
+            ttsMetrics=await streamMiniMaxPcm({
+              apiKey,text,model:miniMaxTtsModel,voice:resolvedVoice,emotion:data.emotion,
+              url:miniMaxTtsWsUrl,signal:controller.signal,onAudio:appendPcm
+            });
+            ttsMetrics.connectionFallback=true;
+          }
           if(data.preferPrewarmed===true&&chunkSequence){
             // A prewarm miss can happen after cache eviction. Do not retain user
             // answer audio; only explicitly marked backchannels are eligible.

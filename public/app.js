@@ -355,7 +355,7 @@ function prepareStreamingNeuralSpeech(text,emotion,batch,behavior={action:"idle"
     fetch(`/api/dinet/visual-turn/${encodeURIComponent(behavior.visualTurnId)}/skip`,{method:"POST",keepalive:true,headers:{"content-type":"application/json"},body:JSON.stringify({index:Number(behavior.visualSentenceIndex)})}).catch(()=>{});
   };
   const consume=(async()=>{
-    const response=await fetch("/api/dinet/speech-stream",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({text,emotion,voice:voiceProfile,action,frameOffset,externalAudio,binaryAudio:externalAudio,fragmentedVideo,renderBackpressure:fragmentedVideo,preferPrewarmed:options.preferPrewarmed===true,speculative:options.speculative===true,visualTurnId:behavior?.visualTurnId,visualSentenceIndex:behavior?.visualSentenceIndex}),signal:controller.signal});
+    const response=await fetch("/api/dinet/speech-stream",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({text,emotion,voice:voiceProfile,action,frameOffset,externalAudio,binaryAudio:externalAudio,fragmentedVideo,renderBackpressure:fragmentedVideo,preferPrewarmed:options.preferPrewarmed===true,speculative:options.speculative===true,ttsConnectionId:options.ttsConnectionId,visualTurnId:behavior?.visualTurnId,visualSentenceIndex:behavior?.visualSentenceIndex}),signal:controller.signal});
     if(!response.ok||!response.body){const data=await response.json().catch(()=>({}));throw new Error(data.error||"流式回答准备失败");}
     await consumeEventStream(response,async(event,data)=>{
       if(batch!==speechBatch){controller.abort();return;}
@@ -501,7 +501,7 @@ function closeVisualTurn(id){
 async function reply(message) {
   sendButton.disabled = true; showTyping(); setEmotion("curious"); setVoiceState("thinking","正在理解你刚才说的话"); statusText.textContent = "正在想…";
   const controller = new AbortController(); activeReplyController = controller;
-  const batch = speechBatch; activeReplyStartedAt=performance.now();realSpeechTimelineMs=0;delete portrait.dataset.chatFirstSentenceMs;delete portrait.dataset.avatarFirstSegmentMs;delete portrait.dataset.ttsFirstAudioMs;delete portrait.dataset.avatarPipelineMs;let article, streamedText = "", currentEmotion = "calm",currentAction="idle",spokenSentenceCount=0;
+  const batch = speechBatch; activeReplyStartedAt=performance.now();realSpeechTimelineMs=0;delete portrait.dataset.chatFirstSentenceMs;delete portrait.dataset.avatarFirstSegmentMs;delete portrait.dataset.ttsFirstAudioMs;delete portrait.dataset.avatarPipelineMs;let article, streamedText = "", currentEmotion = "calm",currentAction="idle",spokenSentenceCount=0,firstTtsConnectionId="";
   const streamTurn=streamingAvatarExperiment&&neuralAvatarProfile?new AvatarStreamTurn({
     isCurrent:()=>batch===speechBatch,
     onEnd:({audioMs,lingerMs})=>{
@@ -535,6 +535,7 @@ async function reply(message) {
       if (controller.signal.aborted) return;
       if (event === "meta") {
         mode=data.mode; currentEmotion=data.emotion || "calm"; setEmotion(currentEmotion);
+        firstTtsConnectionId=String(data.ttsConnectionId||"");
         const plan=conversationActions.startTurn({message,emotion:currentEmotion,action:data.action||"idle"});
         currentAction=plan.action;portrait.dataset.behavior=JSON.stringify(plan);
       }
@@ -549,7 +550,9 @@ async function reply(message) {
         const sentencePlan=conversationActions.planForSentence(data.text,sentenceIndex,data.action||currentAction,currentEmotion);
         const sentenceAction=sentencePlan.action;portrait.dataset.behavior=JSON.stringify(sentencePlan);
         if(sentenceAction!=="idle"&&!sentencePlan.continuation)setDigitalHumanAction(sentenceAction,{force:true,hold:true,behavior:sentencePlan}).catch(()=>{});
-        enqueueSpeech(data.text,currentEmotion,batch,sentencePlan,streamTurn);
+        const ttsConnectionId=sentenceIndex===0?firstTtsConnectionId:"";
+        firstTtsConnectionId="";
+        enqueueSpeech(data.text,currentEmotion,batch,sentencePlan,streamTurn,{ttsConnectionId});
       }
       if(event==="backchannel"&&data.text)backchannelGate.offer(data);
       if (event === "error") throw new Error(data.error || "回答中断");
