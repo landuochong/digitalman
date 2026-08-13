@@ -172,8 +172,8 @@ async function playFragmentedSegment(item,token){
       notify("wav2lip-video-sync",{sequence:item.playbackSequence,driftMs,maxDriftMs:playback.maxDriftMs});
     }
     const remainingMs=Math.max(0,(item.audioEnd-streamAudioContext.currentTime)*1000);if(remainingMs)await new Promise(resolve=>setTimeout(resolve,remainingMs));
-    if(token===playToken)notify("wav2lip-ended",{requestId:item.requestId,sequence:item.playbackSequence,continuousVideo:true});
-  }catch{if(token===playToken)notify("wav2lip-error",{requestId:item.requestId,sequence:item.playbackSequence,error:"continuous-media-unavailable"});}
+    if(token===playToken)notify("wav2lip-ended",{requestId:item.requestId,streamId:item.segment?.id,sequence:item.segment?.sequence,playbackSequence:item.playbackSequence,continuousVideo:true});
+  }catch{if(token===playToken)notify("wav2lip-error",{requestId:item.requestId,streamId:item.segment?.id,sequence:item.segment?.sequence,playbackSequence:item.playbackSequence,error:"continuous-media-unavailable"});}
   finally{externalSegmentsPending=Math.max(0,externalSegmentsPending-1);if(token===playToken&&!externalSegmentsPending&&!segmentsPreparing&&!segmentPlaying&&!segmentQueue.length&&streamEnded)scheduleIdleReveal(pendingIdleLingerMs,pendingIdleTimeMs);}
 }
 
@@ -217,8 +217,8 @@ async function playExternalSegment(item,token){
     if(revealSegment(item,video))notify("wav2lip-started",{requestId:item.requestId,sequence,firstFrameMs,handoffLateMs});
     const remainingMs=Math.max(0,(item.audioEnd-streamAudioContext.currentTime)*1000);
     if(remainingMs)await new Promise(resolve=>setTimeout(resolve,remainingMs));
-    if(token===playToken)notify("wav2lip-ended",{requestId:item.requestId,sequence});
-  }catch{if(token===playToken)notify("wav2lip-error",{requestId:item.requestId,sequence});}
+    if(token===playToken)notify("wav2lip-ended",{requestId:item.requestId,streamId:item.segment?.id,sequence:item.segment?.sequence,playbackSequence:sequence});
+  }catch{if(token===playToken)notify("wav2lip-error",{requestId:item.requestId,streamId:item.segment?.id,sequence:item.segment?.sequence,playbackSequence:sequence});}
   finally{
     externalSegmentsPending=Math.max(0,externalSegmentsPending-1);
     if(token!==playToken){video.pause();video.remove();return;}

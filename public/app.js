@@ -10,7 +10,7 @@ const input = $("#messageInput"), form = $("#chatForm"), sendButton = $("#sendBu
 const micButton = $("#micButton"), modeBanner = $("#modeBanner"), statusText = $("#statusText");
 const voiceButton = $("#voiceButton"), voicePrompt = $("#voicePrompt"), liveTranscript = $("#liveTranscript"), captionButton = $("#captionButton");
 const digitalHumanFrame = $("#digitalHumanFrame");
-const avatarRuntimeVersion="20260813-bounded-stream-v3";
+const avatarRuntimeVersion="20260813-render-window-v4";
 const avatarRuntimeUrl=path=>`${path}?v=${avatarRuntimeVersion}`;
 const avatarProfile = new URLSearchParams(location.search).get("profile");
 const selfRecordedProfile = avatarProfile === "self";
@@ -350,7 +350,7 @@ function prepareStreamingNeuralSpeech(text,emotion,batch,behavior={action:"idle"
   const wake=()=>{while(waiters.length&&(queue.length||ended||failure))waiters.shift()();};
   const controller=new AbortController();
   const consume=(async()=>{
-    const response=await fetch("/api/dinet/speech-stream",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({text,emotion,voice:voiceProfile,action,frameOffset,externalAudio,binaryAudio:externalAudio,fragmentedVideo,preferPrewarmed:options.preferPrewarmed===true}),signal:controller.signal});
+    const response=await fetch("/api/dinet/speech-stream",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({text,emotion,voice:voiceProfile,action,frameOffset,externalAudio,binaryAudio:externalAudio,fragmentedVideo,renderBackpressure:fragmentedVideo,preferPrewarmed:options.preferPrewarmed===true}),signal:controller.signal});
     if(!response.ok||!response.body){const data=await response.json().catch(()=>({}));throw new Error(data.error||"流式回答准备失败");}
     await consumeEventStream(response,async(event,data)=>{
       if(batch!==speechBatch){controller.abort();return;}
@@ -563,6 +563,12 @@ window.addEventListener("message",event=>{
   if(event.data?.type==="wav2lip-video-sync"){portrait.dataset.videoDriftMs=String(event.data.driftMs||0);portrait.dataset.videoMaxDriftMs=String(event.data.maxDriftMs||0);}
   if(event.data?.type==="wav2lip-video-buffer"){portrait.dataset.videoAheadSeconds=String(event.data.aheadSeconds||0);portrait.dataset.videoBufferStart=String(event.data.bufferStart||0);portrait.dataset.videoPrunedSeconds=String(event.data.prunedSeconds||0);}
   if(event.data?.type==="wav2lip-audio-buffer"){portrait.dataset.audioAheadSeconds=String(event.data.aheadSeconds||0);portrait.dataset.audioSources=String(event.data.sources||0);}
+  if(event.data?.type==="wav2lip-ended"&&event.data.streamId&&Number.isSafeInteger(Number(event.data.sequence))){
+    fetch(`/api/dinet/stream/${encodeURIComponent(event.data.streamId)}/ack`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({sequence:Number(event.data.sequence)})}).then(response=>response.ok?response.json():null).then(data=>{if(data?.acknowledged)portrait.dataset.renderUnacknowledged=String(data.unacknowledged||0);}).catch(()=>{});
+  }
+  if(event.data?.type==="wav2lip-error"&&event.data.streamId){
+    fetch(`/api/dinet/stream/${encodeURIComponent(event.data.streamId)}/cancel`,{method:"POST"}).catch(()=>{});
+  }
   if(event.data?.type==="wav2lip-ended"||event.data?.type==="wav2lip-error") pendingWav2LipPlaybacks.get(event.data.requestId)?.();
   if(event.data?.type==="dh-live-action-ready"||event.data?.type==="dh-live-action-error"){
     pendingActions.get(event.data.requestId)?.(); pendingActions.delete(event.data.requestId);

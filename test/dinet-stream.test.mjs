@@ -146,6 +146,36 @@ test("forwards fragmented-video negotiation only for video-only streams",async()
   assert.equal(store.start({fragmentedVideo:true}).fragmentedVideo,false);
 });
 
+test("does not render beyond the acknowledged playback window",async()=>{
+  const calls=[];
+  const store=new DINetStreamSessionStore({firstSegmentMs:400,segmentMs:400,maxUnacknowledgedSegments:2,renderer:{render:async(_wav,_action,options)=>{calls.push(options);return{url:`/${calls.length}.mp4`,metrics:{frames:options.outputFrames}};}}});
+  const session=store.start({videoOnly:true,fragmentedVideo:true,renderBackpressure:true});
+  assert.equal(session.renderBackpressure,true);assert.equal(session.maxUnacknowledgedSegments,2);
+  store.append(session.id,0,Buffer.alloc(46_080));
+  const draining=store.drain(session.id);await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(calls.length,2);
+  assert.deepEqual(store.acknowledge(session.id,0),{id:session.id,acknowledged:true,sequence:0,unacknowledged:1});
+  await draining;assert.equal(calls.length,3);
+  assert.equal(store.acknowledge(session.id,99).sequence,2);
+});
+
+test("cancelling a backpressured stream wakes the blocked renderer",async()=>{
+  const store=new DINetStreamSessionStore({firstSegmentMs:400,segmentMs:400,maxUnacknowledgedSegments:1,renderer:{render:async(_wav,_action,options)=>({url:"/part.mp4",metrics:{frames:options.outputFrames}})}});
+  const session=store.start({videoOnly:true,fragmentedVideo:true,renderBackpressure:true});store.append(session.id,0,Buffer.alloc(33_280));
+  const draining=store.drain(session.id);await new Promise(resolve=>setImmediate(resolve));store.cancel(session.id);
+  await assert.rejects(draining,error=>error.status===409);
+});
+
+test("retains a completed backpressured session until final playback acknowledgement",async()=>{
+  const released=[];
+  const store=new DINetStreamSessionStore({firstSegmentMs:400,releaseAudio:id=>released.push(id),renderer:{render:async(_wav,_action,options)=>({url:"/part.mp4",metrics:{frames:options.outputFrames}})}});
+  const session=store.start({videoOnly:true,fragmentedVideo:true,renderBackpressure:true});store.append(session.id,0,Buffer.alloc(20_480));
+  await store.drain(session.id);assert.deepEqual(store.complete(session.id),{id:session.id,completed:true,segments:1,audioMs:400});
+  assert.deepEqual(released,[]);
+  assert.deepEqual(store.acknowledge(session.id,0),{id:session.id,acknowledged:true,sequence:0,unacknowledged:0});
+  assert.deepEqual(released,[session.id]);assert.equal(store.acknowledge(session.id,0).acknowledged,false);
+});
+
 test("defaults to uniform 800 ms segments that preserve playback headroom",async()=>{
   const durations=[];
   const store=new DINetStreamSessionStore({

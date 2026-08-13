@@ -185,6 +185,8 @@ DINet 生成目录使用有界磁盘缓存，而不是无限保留每个随机�
 
 长回答使用双重有界缓冲。Web Audio 最多提前排程约 4 秒，MediaSource 最多提前追加约 4 秒；考虑当前 800 毫秒分片，观测上限约为 4.8 秒。视频播放点后方只保留约 3 秒，`SourceBuffer.remove()` 与 append 共用同一串行队列，不发生 updating 冲突。12 秒/15 分片页面压力测试中，视频最大前向缓冲 4.8 秒、音频 4.78 秒，历史视频累计回收 3.121 秒，单视频启动、15 个结束事件齐全且无错误。人物容器暴露 audio/video ahead、音源数、缓冲起点和累计回收秒数。SSE 仍是 HTTP 单向流，服务端可继续生成至 60 秒上限；未下载 PCM 由 60 秒 TTL、8 MiB 全局内存上限保护，未来若改双向 WebSocket 再把背压传递到 DINet 生成端。
 
+DINet 渲染也加入基于播放确认的窗口，不再把长回答完整算完。新页面协商 `renderBackpressure=true` 后，每个会话最多有 6 个已渲染但未播放确认的 segment；第 7 个在进入 DINet 前等待。iframe 只在对应 PCM 真正播放结束后返回原始 stream ID/sequence，父页面调用本机 `/api/dinet/stream/:id/ack`，播放错误则直接 cancel。生成完成与播放完成是两个状态：最后一段生成后保留最多 60 秒的轻量确认状态，最终 ack 才释放 session 和 PCM；页面消失则超时回收。真实 15 段测试得到 `received=acked=15`、最大未确认 6，前六段 1.188 秒内生成，第七段在首个 ack 后 560 毫秒到达。HTTP SSE 本身仍单向，但独立 ack 请求已经把播放背压传回 DINet 计算入口。
+
 前端需维护少量背压：未播放内容目标保持 300–800 ms，超过上限暂停向 DINet 投递，低于下限才继续追加；不允许为了追赶而乱序播放。用户中断时同时关闭 M3 流、TTS WebSocket、PCM 解码器、DINet 会话和 MediaSource，并递增会话令牌，任何旧分片到达后直接丢弃。
 
 第一阶段的验收基线：

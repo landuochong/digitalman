@@ -489,11 +489,11 @@ export const server = http.createServer(async (req, res) => {
       const pipelineStartedAt=performance.now();let firstAudioAt=null,firstSegmentAt=null;
       res.on("close",()=>{if(!closed)controller.abort();});
       res.writeHead(200,{"content-type":"text/event-stream; charset=utf-8","cache-control":"no-cache, no-transform","x-accel-buffering":"no"});
-      const session=dinetStreams.start({action:String(data.action||"idle"),frameOffset:Number(data.frameOffset||0),videoOnly:data.externalAudio===true,binaryAudio:data.binaryAudio===true,fragmentedVideo:data.fragmentedVideo===true});
+      const session=dinetStreams.start({action:String(data.action||"idle"),frameOffset:Number(data.frameOffset||0),videoOnly:data.externalAudio===true,binaryAudio:data.binaryAudio===true,fragmentedVideo:data.fragmentedVideo===true,renderBackpressure:data.renderBackpressure===true});
       sendEvent(res,"started",session);
       let chunkSequence=0,renderChain=Promise.resolve(),firstSegmentSent=false;
       const emitSegments=async(final=false)=>{
-        const segments=await dinetStreams.drain(session.id,{final,onSegment:segment=>{
+        const segments=await dinetStreams.drain(session.id,{final,signal:controller.signal,onSegment:segment=>{
           firstSegmentAt??=performance.now();
           firstSegmentSent=true;sendEvent(res,"segment",segment);
         }});
@@ -543,7 +543,7 @@ export const server = http.createServer(async (req, res) => {
       if (!isLoopbackAddress(req.socket.remoteAddress)) return json(res, 403, { error:"本地 DINet 流式接口仅允许本机访问" });
       return json(res, 201, dinetStreams.start(await body(req)));
     }
-    const dinetStreamMatch = pathname.match(/^\/api\/dinet\/stream\/([0-9a-f-]+)\/(audio-chunk|finish|cancel)$/i);
+    const dinetStreamMatch = pathname.match(/^\/api\/dinet\/stream\/([0-9a-f-]+)\/(audio-chunk|finish|cancel|ack)$/i);
     if (dinetStreamMatch && req.method === "POST") {
       if (!isLoopbackAddress(req.socket.remoteAddress)) return json(res, 403, { error:"本地 DINet 流式接口仅允许本机访问" });
       const [, sessionId, command] = dinetStreamMatch;
@@ -551,6 +551,7 @@ export const server = http.createServer(async (req, res) => {
         const sequence = Number(req.headers["x-chunk-sequence"]);
         return json(res, 202, dinetStreams.append(sessionId, sequence, await binaryBody(req, 512_000)));
       }
+      if(command==="ack"){const data=await body(req);return json(res,200,dinetStreams.acknowledge(sessionId,data.sequence));}
       if (command === "finish") return json(res, 200, await dinetStreams.finish(sessionId));
       return json(res, 200, dinetStreams.cancel(sessionId));
     }
