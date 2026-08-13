@@ -10,7 +10,7 @@ const input = $("#messageInput"), form = $("#chatForm"), sendButton = $("#sendBu
 const micButton = $("#micButton"), modeBanner = $("#modeBanner"), statusText = $("#statusText");
 const voiceButton = $("#voiceButton"), voicePrompt = $("#voicePrompt"), liveTranscript = $("#liveTranscript"), captionButton = $("#captionButton");
 const digitalHumanFrame = $("#digitalHumanFrame");
-const avatarRuntimeVersion="20260813-video-handoff-v11";
+const avatarRuntimeVersion="20260813-fmp4-v1";
 const avatarRuntimeUrl=path=>`${path}?v=${avatarRuntimeVersion}`;
 const avatarProfile = new URLSearchParams(location.search).get("profile");
 const selfRecordedProfile = avatarProfile === "self";
@@ -28,6 +28,7 @@ if(!["real","anime","experiment"].includes(avatarMode))avatarMode="real";
 let neuralAvatarProfile = wav2LipAvatarProfile || (switchableAvatarProfile && avatarMode === "real");
 const neuralRenderEndpoint = wav2LipAvatarProfile ? "/api/wav2lip/render" : "/api/dinet/render";
 const streamingAvatarExperiment = new URLSearchParams(location.search).get("streaming") !== "0";
+const continuousVideoExperiment = new URLSearchParams(location.search).get("continuous") === "1";
 const silentNeuralActions={
   bow:"/real-actions/bedroom_bow_silent.mp4",
   surprise:"/real-actions/bedroom_surprise_silent.mp4"
@@ -91,6 +92,7 @@ let mode = "demo", speakingToken = 0, audioContext, activeAudio, activeSpeechRes
 const activeStreamingSpeech=new Set();
 let avatarAudioContext=null;
 let avatarPcmReady=false;
+let avatarFragmentedVideoReady=false;
 
 function unlockAvatarAudio(){
   const Context=window.AudioContext||window.webkitAudioContext;
@@ -141,7 +143,7 @@ const emotionText = { neutral:"认真听你说", happy:"很高兴见到你", car
 function applyAvatarMode(next,{interrupt=true}={}){
   if(!switchableAvatarProfile||!["real","anime"].includes(next)||next===avatarMode)return;
   if(interrupt)stopSpeech();
-  avatarMode=next;neuralAvatarProfile=next==="real";avatarPcmReady=false;
+  avatarMode=next;neuralAvatarProfile=next==="real";avatarPcmReady=false;avatarFragmentedVideoReady=false;
   localStorage.setItem("lumi-avatar-mode",next);
   portrait.dataset.avatarMode=next;portrait.classList.remove("dh-live-ready");
   digitalHumanFrame.title=next==="real"?"露米的真人形象":"露米的动漫形象";
@@ -343,11 +345,12 @@ function prepareStreamingNeuralSpeech(text,emotion,batch,behavior={action:"idle"
   const action=typeof behavior==="string"?behavior:behavior?.action||"idle";
   const frameOffset=typeof behavior==="object"?Math.max(0,Number(behavior?.frameOffset)||0):0;
   const externalAudio=avatarPcmReady&&avatarAudioContext?.state==="running";
+  const fragmentedVideo=externalAudio&&avatarFragmentedVideoReady&&continuousVideoExperiment;
   const queue=[],waiters=[];let ended=false,failure=null,firstSegmentObserved=false;
   const wake=()=>{while(waiters.length&&(queue.length||ended||failure))waiters.shift()();};
   const controller=new AbortController();
   const consume=(async()=>{
-    const response=await fetch("/api/dinet/speech-stream",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({text,emotion,voice:voiceProfile,action,frameOffset,externalAudio,binaryAudio:externalAudio,preferPrewarmed:options.preferPrewarmed===true}),signal:controller.signal});
+    const response=await fetch("/api/dinet/speech-stream",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({text,emotion,voice:voiceProfile,action,frameOffset,externalAudio,binaryAudio:externalAudio,fragmentedVideo,preferPrewarmed:options.preferPrewarmed===true}),signal:controller.signal});
     if(!response.ok||!response.body){const data=await response.json().catch(()=>({}));throw new Error(data.error||"流式回答准备失败");}
     await consumeEventStream(response,async(event,data)=>{
       if(batch!==speechBatch){controller.abort();return;}
@@ -555,7 +558,7 @@ window.addEventListener("message",event=>{
   }
   if(event.data?.type==="vrm-behavior-accepted"){portrait.dataset.vrmAction=event.data.action;portrait.dataset.vrmActionStarted=String(Boolean(event.data.started));}
   if(event.data?.type==="dh-live-audio-accepted") portrait.dataset.dhAudioBytes=String(event.data.bytes||0);
-  if(event.data?.type==="wav2lip-audio-mode"){portrait.dataset.audioMode=event.data.mode;portrait.dataset.audioGapMs=String(event.data.gapMs||0);avatarPcmReady=event.data.mode==="pcm-ready"||event.data.mode==="pcm";}
+  if(event.data?.type==="wav2lip-audio-mode"){portrait.dataset.audioMode=event.data.mode;portrait.dataset.audioGapMs=String(event.data.gapMs||0);avatarPcmReady=event.data.mode==="pcm-ready"||event.data.mode==="pcm";avatarFragmentedVideoReady=event.data.fragmentedVideo===true;portrait.dataset.fragmentedVideo=String(avatarFragmentedVideoReady);}
   if(event.data?.type==="wav2lip-started"&&Number.isFinite(Number(event.data.handoffLateMs))){portrait.dataset.videoFirstFrameMs=String(event.data.firstFrameMs||0);portrait.dataset.videoHandoffLateMs=String(event.data.handoffLateMs||0);}
   if(event.data?.type==="wav2lip-ended"||event.data?.type==="wav2lip-error") pendingWav2LipPlaybacks.get(event.data.requestId)?.();
   if(event.data?.type==="dh-live-action-ready"||event.data?.type==="dh-live-action-error"){

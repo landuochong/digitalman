@@ -489,7 +489,7 @@ export const server = http.createServer(async (req, res) => {
       const pipelineStartedAt=performance.now();let firstAudioAt=null,firstSegmentAt=null;
       res.on("close",()=>{if(!closed)controller.abort();});
       res.writeHead(200,{"content-type":"text/event-stream; charset=utf-8","cache-control":"no-cache, no-transform","x-accel-buffering":"no"});
-      const session=dinetStreams.start({action:String(data.action||"idle"),frameOffset:Number(data.frameOffset||0),videoOnly:data.externalAudio===true,binaryAudio:data.binaryAudio===true});
+      const session=dinetStreams.start({action:String(data.action||"idle"),frameOffset:Number(data.frameOffset||0),videoOnly:data.externalAudio===true,binaryAudio:data.binaryAudio===true,fragmentedVideo:data.fragmentedVideo===true});
       sendEvent(res,"started",session);
       let chunkSequence=0,renderChain=Promise.resolve(),firstSegmentSent=false;
       const emitSegments=async(final=false)=>{

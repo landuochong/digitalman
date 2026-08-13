@@ -338,7 +338,7 @@ class PersistentDINetRenderer:
         self, audio_path: Path, output_path: Path, frame_offset: int = 0,
         audio_offset_ms: int = 0, output_frames: int = 0,
         stream_id: str | None = None, stream_final: bool = False,
-        video_only: bool = False,
+        video_only: bool = False, fragmented_video: bool = False,
     ) -> dict:
         started = time.perf_counter()
         if stream_id:
@@ -372,8 +372,15 @@ class PersistentDINetRenderer:
             command.extend([
                 "-c:v", "libx264", "-preset", "veryfast",
                 "-pix_fmt", "yuv420p", "-crf", "18", "-an",
-                "-movflags", "+faststart", str(output_path),
             ])
+            if fragmented_video:
+                command.extend([
+                    "-g", "20", "-keyint_min", "20", "-sc_threshold", "0",
+                    "-movflags", "+frag_keyframe+empty_moov+default_base_moof",
+                ])
+            else:
+                command.extend(["-movflags", "+faststart"])
+            command.append(str(output_path))
         else:
             if audio_offset_ms > 0:
                 command.extend(["-ss", f"{audio_offset_ms / 1000:.3f}"])
@@ -467,6 +474,7 @@ class PersistentDINetRenderer:
             "frames": len(coefficients),
             "audioMode": "stateful" if stream_id else "whole-wav",
             "videoOnly": video_only,
+            "fragmentedVideo": fragmented_video,
             "audioMs": round((audio_ready - started) * 1000),
             "framesMs": round((frames_ready - audio_ready) * 1000),
             "muxMs": round((finished - frames_ready) * 1000),
@@ -518,6 +526,7 @@ def main() -> None:
                     str(request.get("streamId") or "") or None,
                     bool(request.get("streamFinal", False)),
                     bool(request.get("videoOnly", False)),
+                    bool(request.get("fragmentedVideo", False)),
                 )
             send({"type": "done", "id": request_id, **metrics})
         except Exception as error:

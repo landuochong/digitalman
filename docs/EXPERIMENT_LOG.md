@@ -559,6 +559,8 @@ v12 去掉了 SSE 内的 base64 PCM。新页面明确协商 `binaryAudio`，服�
 
 页面音轨调度随后拆为“并行下载、顺序排程”两层。旧实现虽已让 PCM 与视频并行，但第二段 PCM 的 `fetch` 仍放在第一段的 `audioScheduleChain` 之后，慢下载会把后续所有分片串行拖住。现在每个 segment 到达时立即启动自己的 PCM 请求，Web Audio 排程链只等待对应的已在途 Promise 并按序写时钟；中断令牌在排程前再次核对，迟到的旧请求不会发声。该优化不改变服务端协议和音画时钟，只扩大播放器对短时下载抖动的缓冲余量。
 
+连续视频实验进入 fMP4 协议阶段。DINet worker 可按协商输出 `empty_moov` 初始化信息及 `moof/mdat` 媒体 fragment，固定 20 帧 GOP；真实三段 800/800/896 毫秒文件结构和 SPS/PPS 已核对一致，渲染分别为 295/235/258 毫秒。页面新增严格 MP4 box 解析器和单 MediaSource/SourceBuffer 播放器，使用 `sequence` 模式承接各个独立 fragment，并用共享启动 Promise 消除后段抢先重复 `play()` 的竞态。默认请求复测仍生成 `ftyp/moov/free/mdat` 普通 MP4，证明稳定回退没有被实验格式污染。由于 Codex 内置浏览器及其 Chrome 控制环境都隔离了 `MediaSource`，新路径暂时只在 `?continuous=1` 且运行时能力检查通过时协商；129 项测试证明协议、解析、回退与静态行为，但不能替代真实浏览器连续画面的验收，故没有默认打开。
+
 ## 10. 安全与配置
 
 - API Key 仅保存在 `.env`，不得写入代码、日志或本文档。

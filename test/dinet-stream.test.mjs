@@ -84,8 +84,8 @@ test("drains 800 ms segments early and keeps the action frame clock continuous",
   const tail=await store.drain(session.id,{final:true});
   assert.equal(tail.length,1);assert.equal(tail[0].segment.audioMs,700);
   assert.deepEqual(calls,[
-    {bytes:25_600,action:"wave_approval",frameOffset:0,outputFrames:20,streamId:session.id,streamFinal:false,videoOnly:false},
-    {bytes:22_400,action:"wave_approval",frameOffset:25,outputFrames:18,streamId:session.id,streamFinal:true,videoOnly:false},
+    {bytes:25_600,action:"wave_approval",frameOffset:0,outputFrames:20,streamId:session.id,streamFinal:false,videoOnly:false,fragmentedVideo:false},
+    {bytes:22_400,action:"wave_approval",frameOffset:25,outputFrames:18,streamId:session.id,streamFinal:true,videoOnly:false,fragmentedVideo:false},
   ]);
   assert.deepEqual(store.complete(session.id),{id:session.id,completed:true,segments:2,audioMs:1500});
 });
@@ -134,6 +134,16 @@ test("publishes binary PCM metadata without base64 when negotiated",async()=>{
   assert.equal(published[0].pcm.length,12_800);assert.equal(published[0].streamId,session.id);
   assert.deepEqual(result.segment.audio,{encoding:"pcm_s16le",sampleRate:16000,channels:1,url:"/api/dinet/pcm/token",bytes:12_800});
   assert.equal("data" in result.segment.audio,false);
+});
+
+test("forwards fragmented-video negotiation only for video-only streams",async()=>{
+  const calls=[];
+  const store=new DINetStreamSessionStore({firstSegmentMs:400,renderer:{render:async(_wav,_action,options)=>{calls.push(options);return{url:"/part.mp4",fragmentedVideo:options.fragmentedVideo,metrics:{frames:options.outputFrames}};}}});
+  const session=store.start({videoOnly:true,fragmentedVideo:true});
+  assert.equal(session.fragmentedVideo,true);
+  store.append(session.id,0,Buffer.alloc(20_480));await store.drain(session.id);
+  assert.equal(calls[0].fragmentedVideo,true);
+  assert.equal(store.start({fragmentedVideo:true}).fragmentedVideo,false);
 });
 
 test("defaults to uniform 800 ms segments that preserve playback headroom",async()=>{

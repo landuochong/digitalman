@@ -102,6 +102,10 @@ test("neural avatar keeps a persistent idle layer behind speech", async () => {
   assert.match(script,/externalSegmentsPending/);
   assert.match(script,/handoffLateMs/);
   assert.match(script,/item\.videoOnly&&!externalAudio/);
+  assert.match(script,/MediaSource\.isTypeSupported/);
+  assert.match(script,/sourceBuffer\.mode="sequence"/);
+  assert.match(script,/splitFragmentedMp4/);
+  assert.match(script,/playback\.startPromise\|\|=/);
   assert.match(script,/videoPrestartDelayMs/);
   assert.match(script,/videoBoundaryDelayMs/);
   assert.match(script,/wav2lip-audio-unlock/);
@@ -123,11 +127,16 @@ test("stream endpoint reports TTS and first playable segment timing",async()=>{
   assert.match(server,/sendEvent\(res,"backchannel",backchannel\)/);
   assert.match(server,/pipelineStartedAt/);
   assert.match(source,/queueMs:metrics\.queueMs/);
+  assert.match(source,/fragmented-video:/);
   assert.match(server,/prepareAvatarAction\(initialState\.action,trace\)/);
   assert.match(server,/prepareAvatarAction\(groundedResult\.action,trace\)/);
   assert.match(server,/assetPrepareMs/);
   assert.match(server,/videoOnly:data\.externalAudio===true/);
   assert.match(server,/binaryAudio:data\.binaryAudio===true/);
+  assert.match(server,/fragmentedVideo:data\.fragmentedVideo===true/);
+  const worker=await readFile(new URL("../scripts/dinet_worker.py",import.meta.url),"utf8");
+  assert.match(worker,/frag_keyframe\+empty_moov\+default_base_moof/);
+  assert.match(worker,/"-g", "20", "-keyint_min", "20", "-sc_threshold", "0"/);
   assert.match(server,/^\s*const pcmMatch=pathname\.match/m);
   assert.match(server,/cache-control":"no-store"/);
 });

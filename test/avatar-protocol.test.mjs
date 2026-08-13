@@ -15,8 +15,8 @@ test("keeps whole-video playback messages free of absent stream metadata",()=>{
   });
 });
 
-test("marks a video-only segment so audio failure cannot become silent playback",()=>{
-  assert.deepEqual(buildWav2LipPlaybackMessage({url:"/silent.mp4",videoOnly:true,segment:{sequence:0}},"request-3",{enqueue:true}),{
-    type:"wav2lip-enqueue",url:"/silent.mp4",requestId:"request-3",videoOnly:true,segment:{sequence:0}
+test("marks negotiated video capabilities so failures cannot become silent playback",()=>{
+  assert.deepEqual(buildWav2LipPlaybackMessage({url:"/silent.mp4",videoOnly:true,fragmentedVideo:true,segment:{sequence:0}},"request-3",{enqueue:true}),{
+    type:"wav2lip-enqueue",url:"/silent.mp4",requestId:"request-3",videoOnly:true,fragmentedVideo:true,segment:{sequence:0}
   });
 });

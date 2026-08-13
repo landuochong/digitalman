@@ -181,6 +181,8 @@ DINet 生成目录使用有界磁盘缓存，而不是无限保留每个随机�
 
 当前验证版以 PCM 的 `AudioContext` 绝对时钟为主时钟，每个无声视频分段开始时按实际音频进度校正 `currentTime`，从而避免独立 AAC 解码器切换，同时约束分段漂移。最终 fMP4 版仍要求音视频由同一个编码时间轴产生：每 16,000 个 16 kHz PCM 采样严格对应 25 个视频帧；不足一帧的采样留到下个块继续累计。FFmpeg 输出一次初始化片段，之后按较短 GOP 输出 `moof/mdat` 媒体片段，浏览器只按连续序号追加到同一个 `SourceBuffer`。
 
+连续视频已建立默认关闭的第一阶段实验入口 `?continuous=1`。页面只有在共享 PCM 已解锁、`MediaSource` 存在且明确支持 `video/mp4; codecs="avc1.64001f"` 时才发送 `fragmentedVideo=true`；否则不改变当前普通 MP4 分层播放器。实验输出使用 `frag_keyframe+empty_moov+default_base_moof`、固定 20 帧 GOP 和关闭场景切换关键帧，SPS/PPS 在实测三个分片中一致。浏览器解析每个文件的 MP4 box，首段只追加一次 `ftyp/moov`，随后把各自全部 `moof/mdat` 以 `SourceBuffer.mode="sequence"` 加入同一视频元素；首次 `play()` 由共享 Promise 去重。真实产物为标准 `ftyp/moov/moof/mdat`，2.496 秒三段的生成耗时为 295/235/258 毫秒。当前自动化浏览器隔离了 `MediaSource`，因此默认启用仍以真实 Chrome/Safari 页面完成无黑屏、无断帧和中断验收为前提；现阶段不会用 box 解析和单测代替这项真机证据。
+
 前端需维护少量背压：未播放内容目标保持 300–800 ms，超过上限暂停向 DINet 投递，低于下限才继续追加；不允许为了追赶而乱序播放。用户中断时同时关闭 M3 流、TTS WebSocket、PCM 解码器、DINet 会话和 MediaSource，并递增会话令牌，任何旧分片到达后直接丢弃。
 
 第一阶段的验收基线：
