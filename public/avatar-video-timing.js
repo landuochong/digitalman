@@ -13,3 +13,9 @@ export function videoCatchupSeconds(audioStart,currentTime,duration,thresholdMs=
   if(lateSeconds*1000<=thresholdMs)return 0;
   return Math.min(lateSeconds,Math.max(0,(Number(duration)||0)-.04));
 }
+
+export function continuousVideoSync(audioOrigin,audioTime,videoTime,duration,thresholdMs=25){
+  const expected=Math.max(0,Number(audioTime)-Number(audioOrigin));
+  const driftMs=Math.round((expected-Number(videoTime))*1000);
+  return{expected,driftMs,seekTo:driftMs>thresholdMs?Math.min(expected,Math.max(0,(Number(duration)||expected)-.01)):null};
+}

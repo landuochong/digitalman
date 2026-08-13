@@ -1,4 +1,4 @@
-import { videoBoundaryDelayMs,videoCatchupSeconds,videoPrestartDelayMs } from "../avatar-video-timing.js?v=20260813-video-handoff-v11";
+import { continuousVideoSync,videoBoundaryDelayMs,videoCatchupSeconds,videoPrestartDelayMs } from "../avatar-video-timing.js?v=20260813-fmp4-v2";
 import { loadPcmBytes } from "../pcm-segment.js?v=20260813-binary-pcm-v1";
 import { splitFragmentedMp4 } from "../fmp4-segment.js?v=20260813-fmp4-v1";
 
@@ -103,7 +103,7 @@ async function ensureFragmentedPlayback(token){
   await new Promise((resolve,reject)=>{mediaSource.addEventListener("sourceopen",resolve,{once:true});mediaSource.addEventListener("error",reject,{once:true});});
   if(token!==playToken){video.remove();URL.revokeObjectURL(url);return null;}
   const sourceBuffer=mediaSource.addSourceBuffer('video/mp4; codecs="avc1.64001f"');sourceBuffer.mode="sequence";
-  fragmentedPlayback={mediaSource,sourceBuffer,video,url,initAppended:false,started:false,startPromise:null};return fragmentedPlayback;
+  fragmentedPlayback={mediaSource,sourceBuffer,video,url,initAppended:false,started:false,startPromise:null,audioOrigin:null,maxDriftMs:0};return fragmentedPlayback;
 }
 
 function appendFragmentBytes(sourceBuffer,bytes){
@@ -137,10 +137,17 @@ async function playFragmentedSegment(item,token){
       if(token!==playToken)return false;
       const catchup=videoCatchupSeconds(item.audioStart,streamAudioContext.currentTime,Number(playback.video.duration)||item.segment?.audioMs/1000||0);
       if(catchup)try{playback.video.currentTime=catchup;}catch{}
-      playback.started=true;revealSegment(item,playback.video);
+      playback.audioOrigin=item.audioStart;playback.started=true;revealSegment(item,playback.video);
       notify("wav2lip-started",{requestId:item.requestId,sequence:item.playbackSequence,firstFrameMs:Math.round(performance.now()-playRequestedAt),handoffLateMs:Math.round(Math.max(0,(streamAudioContext.currentTime-item.audioStart)*1000)),continuousVideo:true});return true;
     })();
     if(!await playback.startPromise)return;
+    if(item.playbackSequence>0&&Number.isFinite(playback.audioOrigin)){
+      const{driftMs,seekTo}=continuousVideoSync(playback.audioOrigin,streamAudioContext.currentTime,playback.video.currentTime,playback.video.duration);
+      playback.maxDriftMs=Math.max(playback.maxDriftMs,Math.abs(driftMs));
+      if(seekTo!==null)try{playback.video.currentTime=seekTo;}catch{}
+      if(playback.video.paused)await playback.video.play().catch(()=>{});
+      notify("wav2lip-video-sync",{sequence:item.playbackSequence,driftMs,maxDriftMs:playback.maxDriftMs});
+    }
     const remainingMs=Math.max(0,(item.audioEnd-streamAudioContext.currentTime)*1000);if(remainingMs)await new Promise(resolve=>setTimeout(resolve,remainingMs));
     if(token===playToken)notify("wav2lip-ended",{requestId:item.requestId,sequence:item.playbackSequence,continuousVideo:true});
   }catch{if(token===playToken)notify("wav2lip-error",{requestId:item.requestId,sequence:item.playbackSequence,error:"continuous-media-unavailable"});}

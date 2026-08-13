@@ -559,7 +559,11 @@ v12 去掉了 SSE 内的 base64 PCM。新页面明确协商 `binaryAudio`，服�
 
 页面音轨调度随后拆为“并行下载、顺序排程”两层。旧实现虽已让 PCM 与视频并行，但第二段 PCM 的 `fetch` 仍放在第一段的 `audioScheduleChain` 之后，慢下载会把后续所有分片串行拖住。现在每个 segment 到达时立即启动自己的 PCM 请求，Web Audio 排程链只等待对应的已在途 Promise 并按序写时钟；中断令牌在排程前再次核对，迟到的旧请求不会发声。该优化不改变服务端协议和音画时钟，只扩大播放器对短时下载抖动的缓冲余量。
 
-连续视频实验进入 fMP4 协议阶段。DINet worker 可按协商输出 `empty_moov` 初始化信息及 `moof/mdat` 媒体 fragment，固定 20 帧 GOP；真实三段 800/800/896 毫秒文件结构和 SPS/PPS 已核对一致，渲染分别为 295/235/258 毫秒。页面新增严格 MP4 box 解析器和单 MediaSource/SourceBuffer 播放器，使用 `sequence` 模式承接各个独立 fragment，并用共享启动 Promise 消除后段抢先重复 `play()` 的竞态。默认请求复测仍生成 `ftyp/moov/free/mdat` 普通 MP4，证明稳定回退没有被实验格式污染。由于 Codex 内置浏览器及其 Chrome 控制环境都隔离了 `MediaSource`，新路径暂时只在 `?continuous=1` 且运行时能力检查通过时协商；129 项测试证明协议、解析、回退与静态行为，但不能替代真实浏览器连续画面的验收，故没有默认打开。
+连续视频进入 fMP4 阶段。DINet worker 可按协商输出 `empty_moov` 初始化信息及 `moof/mdat` 媒体 fragment，固定 20 帧 GOP；真实三段 800/800/896 毫秒文件结构和 SPS/PPS 已核对一致，渲染分别为 295/235/258 毫秒。页面新增严格 MP4 box 解析器和单 MediaSource/SourceBuffer 播放器，使用 `sequence` 模式承接各个独立 fragment，并用共享启动 Promise 消除后段抢先重复 `play()` 的竞态。普通请求复测仍生成 `ftyp/moov/free/mdat` MP4，证明稳定回退没有被新格式污染。
+
+为弥补自动化 evaluate 环境隔离媒体 API 的限制，建立后随即删除了三套同源页面自测，让测试逻辑在网页主执行环境运行、浏览器只读取 DOM 结果。直接三段追加得到连续 2.48 秒缓冲、首帧 37 毫秒、`readyState=4`；正式人物 iframe 通过真实 TTS/DINet 收到三段，仅发出一次 `wav2lip-started`，首帧 40 毫秒、音频边界迟到 4 毫秒，三个 requestId 都正常结束且没有错误；中断测试在首段开始后清空，随后 1.4 秒内没有旧的开始、结束或错误事件。基于这三层证据，连续视频改为默认协商，仍保留 `?continuous=0` 显式回退，并在浏览器不支持 MSE/H.264 时自动回退。
+
+默认开启前补充了长回答漂移保护。连续视频记录第一段 PCM 的绝对起点；每个后续 fragment 可用时比较 `AudioContext` 推导的期望时间与 video `currentTime`，25 毫秒以内保持连续解码，只有画面明显落后才 seek 到已缓冲范围内，并确保暂停状态恢复播放。当前漂移和整轮最大漂移写入人物容器，便于真机长期采样。纯函数测试覆盖 10 毫秒不跳、100 毫秒追赶及不越过媒体尾部；完整测试由 129 项增加到 130 项。
 
 ## 10. 安全与配置
 
