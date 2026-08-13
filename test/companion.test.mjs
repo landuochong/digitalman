@@ -32,6 +32,7 @@ test("builds short contextual backchannels without pretending they are answers",
   const thinking=buildResponsiveBackchannel("这个问题应该怎么办？");
   assert.equal(thinking.action,"thinking");assert.equal(thinking.text,"我想想。");
   assert.deepEqual(buildResponsiveBackchannel("周末帮我安排学习和运动"),thinking);
+  assert.deepEqual(buildResponsiveBackchannel("你平时有什么爱好？"),{text:"这个嘛。",emotion:"calm",action:"nod"});
   assert.deepEqual(buildResponsiveBackchannel("今天傍晚的风很舒服。"),{text:"真好。",emotion:"happy",action:"nod"});
   assert.notEqual(buildResponsiveBackchannel("今天有点不舒服。")?.text,"真好。");
   assert.deepEqual(inferCompanionState("今天傍晚的风很舒服。"),{emotion:"happy",action:"nod"});
@@ -145,6 +146,7 @@ test("builds streaming MiniMax payload and segments complete spoken sentences", 
   assert.deepEqual(takeCompleteSentences("如果明天天气不错，我们就出去走走",false,true),{sentences:[],remainder:"如果明天天气不错，我们就出去走走"});
   assert.deepEqual(takeCompleteSentences("听到你这么说，我也放心多了",false,true),{sentences:[],remainder:"听到你这么说，我也放心多了"});
   assert.deepEqual(takeCompleteSentences("傍晚的风确实最舒服，不冷不热的。",false,true),{sentences:["傍晚的风确实最舒服，不冷不热的。"],remainder:""});
+  assert.deepEqual(takeCompleteSentences("我喜欢在夜里拍星空，偶尔听听爵士乐。",false,true),{sentences:["我喜欢在夜里拍星空，偶尔听听爵士乐。"],remainder:""});
   assert.deepEqual(takeCompleteSentences("辛苦了，今天先休息一下。", false, true), { sentences:["辛苦了，今天先休息一下。"], remainder:"" });
   assert.deepEqual(takeCompleteSentences("你已经撑了很久了，真的很棒。今晚早点休息，别硬扛。", false, true),{sentences:["你已经撑了很久了，真的很棒。","今晚早点休息，别硬扛。"],remainder:""});
   assert.deepEqual(takeCompleteSentences("周六上午学习，下午运动，晚上早点休息；周日上午再复习。",false,true),{sentences:["周六上午学习，下午运动，晚上早点休息；周日上午再复习。"],remainder:""});
@@ -234,6 +236,8 @@ test("infers natural daily phrases for VRM gestures", () => {
   assert.deepEqual(inferCompanionState("我今天很开心"),{emotion:"happy",action:"happy"});
   assert.deepEqual(inferCompanionState("哈哈，挺有意思"),{emotion:"happy",action:"happy"});
   assert.deepEqual(inferCompanionState("你开心吗？"),{emotion:"curious",action:"thinking"});
+  assert.deepEqual(inferCompanionState("你平时有什么爱好？"),{emotion:"calm",action:"idle"});
+  assert.deepEqual(inferCompanionState("你喜欢怎样度过周末？"),{emotion:"calm",action:"idle"});
   assert.deepEqual(inferCompanionState("今天路上看到一棵很高的树","哇，高高的树看着就很治愈吧。"),{emotion:"calm",action:"idle"});
   assert.deepEqual(inferCompanionState("我随便说件小事","哇，真没想到这么特别。"),{emotion:"calm",action:"idle"});
   assert.deepEqual(inferCompanionState("我随便说件小事","恭喜你完成了，真开心。"),{emotion:"calm",action:"idle"});
