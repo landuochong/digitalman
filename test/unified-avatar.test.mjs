@@ -15,9 +15,9 @@ test("main voice page offers real and anime modes in one conversation",async()=>
   assert.match(html,/id="personaVoice"/);
   assert.match(html,/人物设置/);
   assert.match(app,/lumi-avatar-mode/);
-  assert.match(html,/app\.js\?v=20260813-early-backchannel-v19/);
+  assert.match(html,/app\.js\?v=20260813-barge-in-v20/);
   assert.match(html,/aria-label="开始通话" aria-pressed="false"/);
-  assert.match(app,/avatarRuntimeVersion="20260813-early-backchannel-v19"/);
+  assert.match(app,/avatarRuntimeVersion="20260813-barge-in-v20"/);
   assert.match(app,/AVATAR_FIRST_SEGMENT_LEAD_MS=480/);
   assert.match(app,/get\("continuous"\) !== "0"/);
   assert.match(app,/lumi-vrm-look/);
@@ -134,6 +134,11 @@ test("voice button toggles one continuous call instead of each utterance",async(
   assert.match(app,/if\(turnGate\.committed\)return;recognitionFailed=true;turnGate\.fail\(\)/);
   assert.match(app,/getFloatTimeDomainData/);
   assert.match(app,/voiceButton\.onclick=toggleCall/);
+  assert.match(app,/new BargeInDetector\(\)/);
+  assert.match(app,/你可以随时开口打断/);
+  assert.match(app,/startBargeInLoop\(generation\)/);
+  assert.match(app,/answerGeneration\+\+/);
+  assert.match(app,/stopSpeech\(\);setVoiceState\("idle","已暂停，我在听"\);scheduleListening\(60\)/);
   assert.doesNotMatch(app,/voiceButton\.onclick=startListening/);
 });
 
