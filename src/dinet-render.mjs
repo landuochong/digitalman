@@ -74,15 +74,17 @@ class PersistentDINetWorker {
   }
 
   render(audioPath, outputPath, asset, frameOffset=0, audioOffsetMs=0, outputFrames=0, streamId="", streamFinal=false, videoOnly=false) {
+    const queuedAt=performance.now();
     const task = this.chain.then(async () => {
       await this.start();
+      const queueMs=Math.round(performance.now()-queuedAt);
       return new Promise((resolve, reject) => {
         const id = createHash("sha256").update(`${audioPath}:${Date.now()}`).digest("hex").slice(0, 16);
         const timer = setTimeout(() => {
           this.#fail(Object.assign(new Error("DINet 口型生成超时"), { status:504 }));
           this.child?.kill("SIGTERM");
         }, 120_000);
-        this.active = { id, resolve, reject, timer };
+        this.active = { id, resolve:message=>resolve({...message,queueMs}), reject, timer };
         this.child.stdin.write(`${JSON.stringify({
           id,
           audio:audioPath,
@@ -226,7 +228,8 @@ export class DINetRenderStore {
           audioMs:metrics.audioMs,
           framesMs:metrics.framesMs,
           muxMs:metrics.muxMs,
-          totalMs:metrics.totalMs
+          totalMs:metrics.totalMs,
+          queueMs:metrics.queueMs
         }
       };
     } finally {

@@ -22,3 +22,14 @@ test("does not retain failed speech work",async()=>{
   await assert.rejects(failed.value,/failed/);
   assert.equal(cache.getOrCreate("a",async()=>"recovered").hit,false);
 });
+
+test("gets and seeds completed values while preserving the bound",async()=>{
+  const cache=new BoundedAsyncCache(2);
+  assert.equal(cache.get("missing"),null);
+  cache.set("a","one");cache.set("b","two");
+  assert.equal(await cache.get("a"),"one");
+  cache.set("c","three");
+  assert.equal(cache.get("b"),null);
+  assert.equal(await cache.get("a"),"one");
+  assert.equal(await cache.get("c"),"three");
+});

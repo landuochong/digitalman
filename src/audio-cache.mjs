@@ -17,4 +17,18 @@ export class BoundedAsyncCache {
     value.catch(() => { if (this.entries.get(key) === value) this.entries.delete(key); });
     return { value, hit:false };
   }
+
+  get(key) {
+    if (!this.entries.has(key)) return null;
+    const value=this.entries.get(key);
+    this.entries.delete(key);this.entries.set(key,value);
+    return value;
+  }
+
+  set(key, value) {
+    const stored=Promise.resolve(value);
+    this.entries.delete(key);this.entries.set(key,stored);
+    while(this.entries.size>this.limit)this.entries.delete(this.entries.keys().next().value);
+    return stored;
+  }
 }

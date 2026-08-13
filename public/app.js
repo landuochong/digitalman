@@ -339,7 +339,7 @@ async function prepareNeuralSpeech(text, emotion, batch, action="idle") {
   return renderResponse.json();
 }
 
-function prepareStreamingNeuralSpeech(text,emotion,batch,behavior={action:"idle"}){
+function prepareStreamingNeuralSpeech(text,emotion,batch,behavior={action:"idle"},options={}){
   const action=typeof behavior==="string"?behavior:behavior?.action||"idle";
   const frameOffset=typeof behavior==="object"?Math.max(0,Number(behavior?.frameOffset)||0):0;
   const externalAudio=avatarPcmReady&&avatarAudioContext?.state==="running";
@@ -347,7 +347,7 @@ function prepareStreamingNeuralSpeech(text,emotion,batch,behavior={action:"idle"
   const wake=()=>{while(waiters.length&&(queue.length||ended||failure))waiters.shift()();};
   const controller=new AbortController();
   const consume=(async()=>{
-    const response=await fetch("/api/dinet/speech-stream",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({text,emotion,voice:voiceProfile,action,frameOffset,externalAudio}),signal:controller.signal});
+    const response=await fetch("/api/dinet/speech-stream",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({text,emotion,voice:voiceProfile,action,frameOffset,externalAudio,preferPrewarmed:options.preferPrewarmed===true}),signal:controller.signal});
     if(!response.ok||!response.body){const data=await response.json().catch(()=>({}));throw new Error(data.error||"流式回答准备失败");}
     await consumeEventStream(response,async(event,data)=>{
       if(batch!==speechBatch){controller.abort();return;}
@@ -408,14 +408,14 @@ async function playSilentNeuralAction(url,batch){
   });
 }
 
-function enqueueSpeech(text, emotion, batch, behavior={action:"idle"},streamTurn=activeAvatarStreamTurn) {
+function enqueueSpeech(text, emotion, batch, behavior={action:"idle"},streamTurn=activeAvatarStreamTurn,options={}) {
   const action=typeof behavior==="string"?behavior:behavior?.action||"idle";
   if (neuralAvatarProfile) {
     // Start TTS and rendering immediately for every completed sentence. Playback
     // stays ordered, while later sentences prepare during the current sentence.
     const silentAction=silentNeuralActions[action];
     const preparation = streamingAvatarExperiment&&!silentAction
-      ? prepareStreamingNeuralSpeech(text,emotion,batch,behavior)
+      ? prepareStreamingNeuralSpeech(text,emotion,batch,behavior,options)
       : prepareNeuralSpeech(text, emotion, batch,silentAction?"idle":action);
     const schedule=streamTurn
       ? task=>streamTurn.enqueue(task)
@@ -486,11 +486,11 @@ async function reply(message) {
     if(batch!==speechBatch)return;
     const plan={action:data.action||"nod",emotion:data.emotion||currentEmotion,intensity:.35,head:data.action==="thinking"?"slight-left":"center",gaze:"user",holdMs:1400,frameOffset:0,continuation:false};
     portrait.dataset.backchannel=JSON.stringify({text:data.text,atMs:Math.round(performance.now()-activeReplyStartedAt),...plan});
-    enqueueSpeech(data.text,plan.emotion,batch,plan,streamTurn);
+    enqueueSpeech(data.text,plan.emotion,batch,plan,streamTurn,{preferPrewarmed:true});
   }});
   activeAvatarStreamTurn=streamTurn;
   try {
-    const response = await fetch("/api/chat/stream", { method:"POST", headers:{"content-type":"application/json"}, body:JSON.stringify({ message, history:history.slice(0,-1).slice(-8).map(item=>({...item,content:String(item.content||"").slice(-900)})), userId, persona, fastSpeech:neuralAvatarProfile, responsiveSpeech:true }), signal:controller.signal });
+    const response = await fetch("/api/chat/stream", { method:"POST", headers:{"content-type":"application/json"}, body:JSON.stringify({ message, history:history.slice(0,-1).slice(-8).map(item=>({...item,content:String(item.content||"").slice(-900)})), userId, persona, voice:voiceProfile, fastSpeech:neuralAvatarProfile, responsiveSpeech:true, prewarmPcm:mode==="minimax" }), signal:controller.signal });
     if (!response.ok || !response.body) { const data=await response.json().catch(()=>({})); throw new Error(data.error || "连接失败"); }
     await consumeEventStream(response, async (event, data) => {
       if (controller.signal.aborted) return;

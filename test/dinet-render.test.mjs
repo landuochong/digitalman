@@ -112,11 +112,15 @@ test("neural avatar keeps a persistent idle layer behind speech", async () => {
 });
 
 test("stream endpoint reports TTS and first playable segment timing",async()=>{
-  const server=await readFile(new URL("../server.mjs",import.meta.url),"utf8");
+  const [server,source]=await Promise.all([
+    readFile(new URL("../server.mjs",import.meta.url),"utf8"),
+    readFile(new URL("../src/dinet-render.mjs",import.meta.url),"utf8")
+  ]);
   assert.match(server,/ttsFirstAudioMs:firstAudioAt/);
   assert.match(server,/firstSegmentMs:firstSegmentAt/);
   assert.match(server,/sendEvent\(res,"backchannel",backchannel\)/);
   assert.match(server,/pipelineStartedAt/);
+  assert.match(source,/queueMs:metrics\.queueMs/);
   assert.match(server,/prepareAvatarAction\(initialState\.action,trace\)/);
   assert.match(server,/prepareAvatarAction\(groundedResult\.action,trace\)/);
   assert.match(server,/assetPrepareMs/);

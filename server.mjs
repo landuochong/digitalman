@@ -9,8 +9,8 @@ import { buildVoiceCatalog } from "./src/voices.mjs";
 import { DhActionTaskStore, isLoopbackAddress, saveActionVideo } from "./src/dh-action-studio.mjs";
 import { Wav2LipRenderStore } from "./src/wav2lip-render.mjs";
 import { DINetRenderStore } from "./src/dinet-render.mjs";
-import { DINetStreamSessionStore } from "./src/dinet-stream.mjs";
-import { streamMiniMaxPcm } from "./src/minimax-stream-tts.mjs";
+import { DINetStreamSessionStore, encodePcm16Wav } from "./src/dinet-stream.mjs";
+import { normalizeMiniMaxTtsEmotion, streamMiniMaxPcm } from "./src/minimax-stream-tts.mjs";
 import { BoundedAsyncCache } from "./src/audio-cache.mjs";
 import { cacheControlForStaticPath, parseByteRange } from "./src/static-media.mjs";
 
@@ -58,7 +58,31 @@ const voiceCatalog=buildVoiceCatalog({
 const mime = { ".html": "text/html; charset=utf-8", ".css": "text/css; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".json": "application/json; charset=utf-8", ".svg": "image/svg+xml", ".png": "image/png", ".wasm": "application/wasm", ".mp4": "video/mp4", ".vrm": "model/gltf-binary", ".gz": "application/gzip" };
 const recentChatTraces=[];
 const miniMaxSpeechCache=new BoundedAsyncCache(64);
+const miniMaxPcmCache=new BoundedAsyncCache(64);
 let chatTraceSequence=0;
+
+function miniMaxPcmCacheKey({text,voice,emotion}){
+  return JSON.stringify([miniMaxTtsModel,voice,normalizeMiniMaxTtsEmotion(emotion),String(text||"").trim()]);
+}
+
+function miniMaxSpeechCacheKey({text,voice,emotion}){
+  return JSON.stringify([miniMaxTtsModel,voice,String(emotion||""),String(text||"").trim()]);
+}
+
+function collectMiniMaxPcm({text,voice,emotion,signal}={}){
+  const chunks=[];
+  return streamMiniMaxPcm({
+    apiKey,text,model:miniMaxTtsModel,voice,emotion,url:miniMaxTtsWsUrl,signal,
+    onAudio:pcm=>chunks.push(Buffer.from(pcm))
+  }).then(metrics=>({pcm:Buffer.concat(chunks),metrics}));
+}
+
+function prewarmMiniMaxPcm({text,voice,emotion}){
+  const resolvedVoice=voiceCatalog.resolve(voice),key=miniMaxPcmCacheKey({text,voice:resolvedVoice,emotion});
+  const cached=miniMaxPcmCache.getOrCreate(key,()=>collectMiniMaxPcm({text,voice:resolvedVoice,emotion}));
+  void cached.value.then(({pcm})=>miniMaxSpeechCache.set(miniMaxSpeechCacheKey({text,voice:resolvedVoice,emotion}),encodePcm16Wav(pcm))).catch(()=>{});
+  return {key,resolvedVoice,...cached};
+}
 
 function startChatTrace(endpoint,{ message,history,userId,persona,fastSpeech }){
   const startedMs=performance.now();
@@ -162,7 +186,7 @@ async function warmupMiniMaxChat() {
   await reader.cancel();
 }
 
-async function miniMaxChatStream(message, history, persona, memories, companionState, userId, res, fastSpeech = false, responsiveSpeech = false, trace) {
+async function miniMaxChatStream(message, history, persona, memories, companionState, userId, res, fastSpeech = false, responsiveSpeech = false, prewarmPcm = false, voice = "", trace) {
   const initialState=inferCompanionState(message,"",companionState);
   if(fastSpeech)prepareAvatarAction(initialState.action,trace);
   const requestPayload=buildMiniMaxChatPayload({ model:miniMaxTextModel, message, history, stream:true, persona, memories, companionState });
@@ -175,15 +199,22 @@ async function miniMaxChatStream(message, history, persona, memories, companionS
   });
   res.flushHeaders?.();
   sendEvent(res, "meta", { ...initialState, mode:"minimax" });
-  let firstSentenceEmitted=false,backchannel=null;
+  let firstSentenceEmitted=false,backchannel=responsiveSpeech?buildResponsiveBackchannel(message,initialState):null;
+  if(backchannel&&prewarmPcm){
+    const pcmWarmup=prewarmMiniMaxPcm({text:backchannel.text,voice,emotion:backchannel.emotion});
+    trace.backchannelPcm={voice:pcmWarmup.resolvedVoice,cacheHit:pcmWarmup.hit,status:"preparing"};
+    void pcmWarmup.value.then(result=>{
+      trace.backchannelPcm={...trace.backchannelPcm,status:"ready",audioMs:result.metrics.audioMs,readyMs:Math.round(performance.now()-trace._startedMs)};
+    }).catch(error=>{trace.backchannelPcm={...trace.backchannelPcm,status:"failed",error:error.message};});
+  }
   const backchannelTimer=responsiveSpeech?setTimeout(()=>{
     if(firstSentenceEmitted||res.writableEnded)return;
-    backchannel=buildResponsiveBackchannel(message,initialState);
     if(!backchannel)return;
     trace.timings.backchannelMs=Math.round(performance.now()-trace._startedMs);
     trace.backchannel=backchannel;
     sendEvent(res,"backchannel",backchannel);
   },700):null;
+  res.once("close",()=>{if(backchannelTimer)clearTimeout(backchannelTimer);});
   const response = await fetch(`${miniMaxBaseUrl}/chat/completions`, {
     method:"POST",
     headers:{ authorization:`Bearer ${apiKey}`, "content-type":"application/json" },
@@ -303,7 +334,7 @@ async function chatStream(req, res) {
     void memoryStore.updateCompanionState(data.userId,groundedResult.emotion);
     return;
   }
-  if (provider === "minimax" && apiKey) return miniMaxChatStream(message, history, persona, memories, companionState, data.userId, res, Boolean(data.fastSpeech),Boolean(data.responsiveSpeech),trace);
+  if (provider === "minimax" && apiKey) return miniMaxChatStream(message, history, persona, memories, companionState, data.userId, res, Boolean(data.fastSpeech),Boolean(data.responsiveSpeech),Boolean(data.prewarmPcm),String(data.voice||""),trace);
   const result = provider === "openai" && apiKey
     ? await openAIChat(message, history, data.userId, persona, memories,companionState)
     : demoReply(message, persona);
@@ -325,7 +356,7 @@ async function speech(req, res) {
   if (!input) return json(res, 400, { error: "语音内容不能为空" });
   if (provider === "minimax") {
     const selectedVoice=voiceCatalog.resolve(data.voice);
-    const cacheKey=JSON.stringify([miniMaxTtsModel,selectedVoice,String(data.emotion||""),input]);
+    const cacheKey=miniMaxSpeechCacheKey({text:input,voice:selectedVoice,emotion:data.emotion});
     const cached=miniMaxSpeechCache.getOrCreate(cacheKey,async()=>{
       const response = await fetch(`${miniMaxTtsBaseUrl}/t2a_v2`, {
         method:"POST",
@@ -456,19 +487,35 @@ export const server = http.createServer(async (req, res) => {
         return segments.length;
       };
       try{
-        const ttsMetrics=await streamMiniMaxPcm({
-          apiKey,text,model:miniMaxTtsModel,voice:voiceCatalog.resolve(data.voice),emotion:data.emotion,
-          url:miniMaxTtsWsUrl,signal:controller.signal,
-          onAudio:pcm=>{
+        const resolvedVoice=voiceCatalog.resolve(data.voice),pcmKey=miniMaxPcmCacheKey({text,voice:resolvedVoice,emotion:data.emotion});
+        const prewarmed=data.preferPrewarmed===true?miniMaxPcmCache.get(pcmKey):null;
+        let ttsCacheHit=false,ttsMetrics,cachedPcm=null;
+        const appendPcm=pcm=>{
             firstAudioAt??=performance.now();
             dinetStreams.append(session.id,chunkSequence++,pcm);
             renderChain=renderChain.then(()=>emitSegments(false));
+        };
+        if(prewarmed)cachedPcm=await prewarmed.catch(()=>null);
+        if(cachedPcm){
+          const cached=cachedPcm;ttsCacheHit=true;
+          if(controller.signal.aborted)throw Object.assign(new Error("cancelled"),{name:"AbortError"});
+          appendPcm(cached.pcm);ttsMetrics={...cached.metrics,firstAudioMs:0,totalMs:0,cached:true};
+        }else{
+          ttsMetrics=await streamMiniMaxPcm({
+            apiKey,text,model:miniMaxTtsModel,voice:resolvedVoice,emotion:data.emotion,
+            url:miniMaxTtsWsUrl,signal:controller.signal,
+            onAudio:appendPcm
+          });
+          if(data.preferPrewarmed===true&&chunkSequence){
+            // A prewarm miss can happen after cache eviction. Do not retain user
+            // answer audio; only explicitly marked backchannels are eligible.
+            ttsCacheHit=false;
           }
-        });
+        }
         await renderChain;
         await emitSegments(true);
         const completed=dinetStreams.complete(session.id);
-        sendEvent(res,"done",{...completed,tts:ttsMetrics,firstSegmentSent,pipeline:{
+        sendEvent(res,"done",{...completed,tts:{...ttsMetrics,cacheHit:ttsCacheHit},firstSegmentSent,pipeline:{
           ttsFirstAudioMs:firstAudioAt?Math.round(firstAudioAt-pipelineStartedAt):null,
           firstSegmentMs:firstSegmentAt?Math.round(firstSegmentAt-pipelineStartedAt):null,
           totalMs:Math.round(performance.now()-pipelineStartedAt)
