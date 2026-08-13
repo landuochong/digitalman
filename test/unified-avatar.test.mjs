@@ -18,7 +18,7 @@ test("main voice page offers real and anime modes in one conversation",async()=>
   assert.match(html,/app\.js\?v=20260813-restrained-action-v34/);
   assert.match(html,/aria-label="开始通话" aria-pressed="false"/);
   assert.match(app,/avatarRuntimeVersion="20260813-restrained-action-v34"/);
-  assert.match(app,/AVATAR_FIRST_SEGMENT_LEAD_MS=400/);
+  assert.match(app,/AVATAR_FIRST_SEGMENT_LEAD_MS=320/);
   assert.match(app,/get\("continuous"\) !== "0"/);
   assert.match(app,/lumi-vrm-look/);
   assert.match(app,/lumi-vrm-persona/);

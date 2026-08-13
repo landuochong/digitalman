@@ -120,21 +120,21 @@ test("allows each continuous session to select a shorter aligned first window",a
 
   const compatibility=store.start();
   assert.equal(compatibility.firstSegmentMs,800);
-  assert.throws(()=>store.start({firstSegmentMs:360}),error=>error.status===400);
+  assert.throws(()=>store.start({firstSegmentMs:280}),error=>error.status===400);
   assert.throws(()=>store.start({firstSegmentMs:840}),error=>error.status===400);
 });
 
-test("starts a 400 ms continuous segment after retaining 160 ms of tail",async()=>{
+test("starts a 320 ms continuous segment after retaining 160 ms of tail",async()=>{
   const calls=[];
   const store=new DINetStreamSessionStore({
-    firstSegmentMs:400,segmentMs:800,
+    firstSegmentMs:320,segmentMs:800,
     renderer:{render:async(wav,_action,options)=>{calls.push({bytes:wav.readUInt32LE(40),...options});return{url:"/first.mp4",metrics:{frames:options.outputFrames}};}}
   });
   const session=store.start({videoOnly:true,fragmentedVideo:true,minimumTailMs:160});
-  store.append(session.id,0,Buffer.alloc(17_920));
+  store.append(session.id,0,Buffer.alloc(15_360));
   const [first]=await store.drain(session.id);
-  assert.equal(first.segment.audioMs,400);
-  assert.equal(calls[0].outputFrames,10);
+  assert.equal(first.segment.audioMs,320);
+  assert.equal(calls[0].outputFrames,8);
   const [tail]=await store.drain(session.id,{final:true});
   assert.equal(tail.segment.audioMs,160);
   assert.equal(calls[1].outputFrames,4);

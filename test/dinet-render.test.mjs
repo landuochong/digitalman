@@ -172,7 +172,7 @@ test("stream endpoint reports TTS and first playable segment timing",async()=>{
   assert.match(server,/videoOnly:data\.externalAudio===true/);
   assert.match(server,/binaryAudio:data\.binaryAudio===true/);
   assert.match(server,/fragmentedVideo:data\.fragmentedVideo===true/);
-  assert.match(server,/CONTINUOUS_FIRST_SEGMENT_MS=400/);
+  assert.match(server,/CONTINUOUS_FIRST_SEGMENT_MS=320/);
   assert.match(server,/CONTINUOUS_MINIMUM_TAIL_MS=160/);
   assert.match(server,/continuousVideo\?\{firstSegmentMs:CONTINUOUS_FIRST_SEGMENT_MS,minimumTailMs:CONTINUOUS_MINIMUM_TAIL_MS\}:\{\}/);
   assert.match(server,/new PreparedTtsLease\(/);

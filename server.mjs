@@ -50,7 +50,7 @@ const visualTurns=new VisualTurnGate();
 const speculativeStreams=new Map();
 const visualSkipTasks=new Map();
 const preparedTtsConnections=new Map();
-const CONTINUOUS_FIRST_SEGMENT_MS=400;
+const CONTINUOUS_FIRST_SEGMENT_MS=320;
 const CONTINUOUS_MINIMUM_TAIL_MS=160;
 const dinetStreams = new DINetStreamSessionStore({
   renderer:dinetRenders,
