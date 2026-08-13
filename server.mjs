@@ -47,7 +47,8 @@ const visualTurns=new VisualTurnGate();
 const speculativeStreams=new Map();
 const visualSkipTasks=new Map();
 const preparedTtsConnections=new Map();
-const CONTINUOUS_FIRST_SEGMENT_MS=480;
+const CONTINUOUS_FIRST_SEGMENT_MS=400;
+const CONTINUOUS_MINIMUM_TAIL_MS=160;
 const dinetStreams = new DINetStreamSessionStore({
   renderer:dinetRenders,
   publishAudio:payload=>ephemeralPcm.put(payload.pcm,payload),
@@ -583,7 +584,7 @@ export const server = http.createServer(async (req, res) => {
       res.on("close",()=>{if(!closed)controller.abort();});
       res.writeHead(200,{"content-type":"text/event-stream; charset=utf-8","cache-control":"no-cache, no-transform","x-accel-buffering":"no"});
       const continuousVideo=data.externalAudio===true&&data.fragmentedVideo===true;
-      const session=dinetStreams.start({action:String(data.action||"idle"),frameOffset:Number(data.frameOffset||0),videoOnly:data.externalAudio===true,binaryAudio:data.binaryAudio===true,fragmentedVideo:data.fragmentedVideo===true,renderBackpressure:data.renderBackpressure===true,visualTurnId:orderedSentence?visualTurnId:"",visualSentenceIndex:orderedSentence?visualSentenceIndex:0,...(continuousVideo?{firstSegmentMs:CONTINUOUS_FIRST_SEGMENT_MS}:{})});
+      const session=dinetStreams.start({action:String(data.action||"idle"),frameOffset:Number(data.frameOffset||0),videoOnly:data.externalAudio===true,binaryAudio:data.binaryAudio===true,fragmentedVideo:data.fragmentedVideo===true,renderBackpressure:data.renderBackpressure===true,visualTurnId:orderedSentence?visualTurnId:"",visualSentenceIndex:orderedSentence?visualSentenceIndex:0,...(continuousVideo?{firstSegmentMs:CONTINUOUS_FIRST_SEGMENT_MS,minimumTailMs:CONTINUOUS_MINIMUM_TAIL_MS}:{})});
       sendEvent(res,"started",session);
       const speculative=data.speculative===true;
       const speculativeState=speculative?{committed:false,waiters:new Set()}:null;

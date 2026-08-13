@@ -124,6 +124,24 @@ test("allows each continuous session to select a shorter aligned first window",a
   assert.throws(()=>store.start({firstSegmentMs:840}),error=>error.status===400);
 });
 
+test("starts a 400 ms continuous segment after retaining 160 ms of tail",async()=>{
+  const calls=[];
+  const store=new DINetStreamSessionStore({
+    firstSegmentMs:400,segmentMs:800,
+    renderer:{render:async(wav,_action,options)=>{calls.push({bytes:wav.readUInt32LE(40),...options});return{url:"/first.mp4",metrics:{frames:options.outputFrames}};}}
+  });
+  const session=store.start({videoOnly:true,fragmentedVideo:true,minimumTailMs:160});
+  store.append(session.id,0,Buffer.alloc(17_920));
+  const [first]=await store.drain(session.id);
+  assert.equal(first.segment.audioMs,400);
+  assert.equal(calls[0].outputFrames,10);
+  const [tail]=await store.drain(session.id,{final:true});
+  assert.equal(tail.segment.audioMs,160);
+  assert.equal(calls[1].outputFrames,4);
+  assert.equal(store.start().minimumTailMs,240);
+  assert.throws(()=>store.start({minimumTailMs:120}),error=>error.status===400);
+});
+
 test("renders video-only segments when external PCM playback is negotiated",async()=>{
   const calls=[];
   const store=new DINetStreamSessionStore({

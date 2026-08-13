@@ -6,7 +6,8 @@ const DEFAULT_MAX_AUDIO_MS = 60_000;
 const DEFAULT_SEGMENT_MS = 800;
 const DEFAULT_FIRST_SEGMENT_MS = 800;
 const MIN_FIRST_SEGMENT_MS = 400;
-const MIN_TAIL_MS = 240;
+const DEFAULT_MIN_TAIL_MS = 240;
+const MIN_TAIL_MS = 160;
 const DEFAULT_MAX_UNACKNOWLEDGED_SEGMENTS=6;
 
 function streamError(message, status) {
@@ -46,7 +47,7 @@ export class DINetStreamSessionStore {
     this.sessions = new Map();
   }
 
-  start({ action = "idle", sampleRate = DEFAULT_SAMPLE_RATE, channels = DEFAULT_CHANNELS, frameOffset = 0, videoOnly = false, binaryAudio = false, fragmentedVideo = false, renderBackpressure = false, visualTurnId="", visualSentenceIndex=0, firstSegmentMs } = {}) {
+  start({ action = "idle", sampleRate = DEFAULT_SAMPLE_RATE, channels = DEFAULT_CHANNELS, frameOffset = 0, videoOnly = false, binaryAudio = false, fragmentedVideo = false, renderBackpressure = false, visualTurnId="", visualSentenceIndex=0, firstSegmentMs, minimumTailMs=DEFAULT_MIN_TAIL_MS } = {}) {
     if (sampleRate !== DEFAULT_SAMPLE_RATE || channels !== DEFAULT_CHANNELS) {
       throw streamError("流式 DINet 当前只接受 16 kHz、单声道 PCM16", 415);
     }
@@ -55,14 +56,17 @@ export class DINetStreamSessionStore {
     firstSegmentMs=firstSegmentMs===undefined?this.firstSegmentMs:Number(firstSegmentMs);
     if(!Number.isFinite(firstSegmentMs)||firstSegmentMs<MIN_FIRST_SEGMENT_MS||firstSegmentMs>this.segmentMs)throw streamError(`首段窗口必须在 ${MIN_FIRST_SEGMENT_MS}–${this.segmentMs} 毫秒之间`,400);
     firstSegmentMs=Math.round(firstSegmentMs/40)*40;
+    minimumTailMs=Number(minimumTailMs);
+    if(!Number.isFinite(minimumTailMs)||minimumTailMs<MIN_TAIL_MS||minimumTailMs>DEFAULT_MIN_TAIL_MS)throw streamError(`保留尾音必须在 ${MIN_TAIL_MS}–${DEFAULT_MIN_TAIL_MS} 毫秒之间`,400);
+    minimumTailMs=Math.round(minimumTailMs/40)*40;
     const id = randomUUID();
     const startedAt = this.now();
     this.sessions.set(id, {
       id, action, sampleRate, channels, startedAt,
       firstChunkAt:null, nextSequence:0, bytes:0, chunks:[], state:"open",
-      segmentSequence:0, acknowledgedSequence:-1,ackWaiters:new Set(),retentionTimer:null,frameOffset, renderedAudioMs:0,firstSegmentMs,videoOnly:Boolean(videoOnly),binaryAudio:Boolean(videoOnly&&binaryAudio),fragmentedVideo:Boolean(videoOnly&&fragmentedVideo),renderBackpressure:Boolean(videoOnly&&fragmentedVideo&&renderBackpressure),visualTurnId:String(visualTurnId||""),visualSentenceIndex:Math.max(0,Number(visualSentenceIndex)||0)
+      segmentSequence:0, acknowledgedSequence:-1,ackWaiters:new Set(),retentionTimer:null,frameOffset, renderedAudioMs:0,firstSegmentMs,minimumTailMs,videoOnly:Boolean(videoOnly),binaryAudio:Boolean(videoOnly&&binaryAudio),fragmentedVideo:Boolean(videoOnly&&fragmentedVideo),renderBackpressure:Boolean(videoOnly&&fragmentedVideo&&renderBackpressure),visualTurnId:String(visualTurnId||""),visualSentenceIndex:Math.max(0,Number(visualSentenceIndex)||0)
     });
-    return { id, action, sampleRate, channels, frameOffset,firstSegmentMs,videoOnly:Boolean(videoOnly),binaryAudio:Boolean(videoOnly&&binaryAudio),fragmentedVideo:Boolean(videoOnly&&fragmentedVideo),renderBackpressure:Boolean(videoOnly&&fragmentedVideo&&renderBackpressure),maxUnacknowledgedSegments:this.maxUnacknowledgedSegments,nextSequence:0, mode:"stateful-segments" };
+    return { id, action, sampleRate, channels, frameOffset,firstSegmentMs,minimumTailMs,videoOnly:Boolean(videoOnly),binaryAudio:Boolean(videoOnly&&binaryAudio),fragmentedVideo:Boolean(videoOnly&&fragmentedVideo),renderBackpressure:Boolean(videoOnly&&fragmentedVideo&&renderBackpressure),maxUnacknowledgedSegments:this.maxUnacknowledgedSegments,nextSequence:0, mode:"stateful-segments" };
   }
 
   append(id, sequence, chunk) {
@@ -120,7 +124,7 @@ export class DINetStreamSessionStore {
   async drain(id, { final=false, onSegment, signal, maxSegments=Infinity }={}) {
     const session = this.#open(id);
     const bytesPerMs = session.sampleRate * session.channels * 2 / 1000;
-    const minimumTailBytes = Math.round(MIN_TAIL_MS * bytesPerMs);
+    const minimumTailBytes = Math.round(session.minimumTailMs * bytesPerMs);
     const results=[];
     while (true) {
       const available = session.chunks.reduce((total, chunk) => total + chunk.length, 0);

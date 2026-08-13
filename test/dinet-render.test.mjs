@@ -4,6 +4,13 @@ import { readFile } from "node:fs/promises";
 import { buildDINetWorkerCommand, DINetRenderStore } from "../src/dinet-render.mjs";
 import { resolveRealActionAsset, resolveWaitingActionPreview } from "../src/real-actions.mjs";
 
+test("development watch excludes generated avatar media",async()=>{
+  const pkg=JSON.parse(await readFile(new URL("../package.json",import.meta.url),"utf8"));
+  assert.match(pkg.scripts.dev,/--watch-path=server\.mjs/);
+  assert.match(pkg.scripts.dev,/--watch-path=src/);
+  assert.doesNotMatch(pkg.scripts.dev,/public/);
+});
+
 test("preloads one persistent DINet worker with the bedroom asset", () => {
   const command = buildDINetWorkerCommand("/project");
   assert.equal(command.executable, "/project/.venv-dh-live/bin/python");
@@ -165,8 +172,9 @@ test("stream endpoint reports TTS and first playable segment timing",async()=>{
   assert.match(server,/videoOnly:data\.externalAudio===true/);
   assert.match(server,/binaryAudio:data\.binaryAudio===true/);
   assert.match(server,/fragmentedVideo:data\.fragmentedVideo===true/);
-  assert.match(server,/CONTINUOUS_FIRST_SEGMENT_MS=480/);
-  assert.match(server,/continuousVideo\?\{firstSegmentMs:CONTINUOUS_FIRST_SEGMENT_MS\}:\{\}/);
+  assert.match(server,/CONTINUOUS_FIRST_SEGMENT_MS=400/);
+  assert.match(server,/CONTINUOUS_MINIMUM_TAIL_MS=160/);
+  assert.match(server,/continuousVideo\?\{firstSegmentMs:CONTINUOUS_FIRST_SEGMENT_MS,minimumTailMs:CONTINUOUS_MINIMUM_TAIL_MS\}:\{\}/);
   assert.match(server,/ttsConnectionId=fastSpeech\?prepareTtsConnection\(\):""/);
   assert.match(server,/signal:client\.signal/);
   assert.match(server,/discardTtsConnection\(ttsConnectionId\)/);
