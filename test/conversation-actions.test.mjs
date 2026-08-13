@@ -33,6 +33,25 @@ test("accepts one reply-derived micro gesture during a neutral turn",()=>{
   assert.equal(scheduler.actionForSentence("继续保持。",2,"caring"),"idle");
 });
 
+test("keeps one dominant celebration gesture across a praise reply",()=>{
+  const scheduler=new ConversationActionScheduler();
+  scheduler.startTurn({message:"我刚完成了一项很难的工作，夸夸我",action:"clap",emotion:"excited"});
+  const first=scheduler.planForSentence("辛苦了，你真的很厉害！",0,"thumbs_up","happy");
+  const second=scheduler.planForSentence("这份成果值得好好骄傲一下。",1,"clap","excited");
+  assert.equal(first.action,"clap");
+  assert.equal(second.action,"idle");
+  assert.equal(scheduler.secondaryUsed,false);
+  assert.ok(conversationActionPolicy.intentGroups.some(group=>group.includes("clap")&&group.includes("thumbs_up")));
+});
+
+test("still allows one genuinely different secondary intent",()=>{
+  const scheduler=new ConversationActionScheduler();
+  scheduler.startTurn({message:"告诉你一个好消息",action:"clap",emotion:"excited"});
+  assert.equal(scheduler.planForSentence("太好了，恭喜你。",0,"thumbs_up").action,"clap");
+  assert.equal(scheduler.planForSentence("不过下一步要认真想想。",1,"thinking").action,"thinking");
+  assert.equal(scheduler.secondaryUsed,true);
+});
+
 test("keeps ordinary idle sentences on one source-video timeline",()=>{
   const scheduler=new ConversationActionScheduler();
   scheduler.startTurn({message:"随便聊聊",action:"idle"});

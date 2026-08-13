@@ -1,6 +1,11 @@
 const HIGH_ENERGY_ACTIONS=new Set(["wave_approval","clap","cheer","surprise","bow","shrug","cross","confident_arms_crossed","shy"]);
 const DEFER_ON_SHORT_OPENER=new Set(["caring","thinking","shy","confident_arms_crossed"]);
 const HOLD_ACROSS_SENTENCES=new Set(["happy","caring","thinking"]);
+const ACTION_INTENT_GROUPS=[
+  new Set(["happy","nod","thumbs_up","clap","cheer"]),
+  new Set(["thinking","shrug"]),
+  new Set(["caring","shy"])
+];
 const FALLBACK_ACTIONS={
   wave_approval:"happy",clap:"happy",cheer:"happy",surprise:"idle",bow:"idle",
   shrug:"thinking",cross:"idle",confident_arms_crossed:"idle",shy:"happy"
@@ -33,6 +38,7 @@ const ACTION_BEHAVIOR={
 
 function spokenLength(text){return String(text||"").replace(/[，,、。！？!?；;\s]/g,"").length;}
 function estimatedSpeechMs(text){return Math.max(650,Math.min(5200,spokenLength(text)*180));}
+function sameActionIntent(first,second){return first===second||ACTION_INTENT_GROUPS.some(group=>group.has(first)&&group.has(second));}
 function normalizeSourceFrame(value){
   const frame=Math.max(0,Math.round(Number(value)||0));
   return frame%REAL_SOURCE_FRAMES;
@@ -85,12 +91,12 @@ export class ConversationActionScheduler{
     let proposed=String(candidateAction||"idle");
     if(proposed===this.requestedPrimary)proposed=this.primary;
     if(index===0){
-      if(!this.explicit&&proposed!=="idle"&&proposed!==this.primary)this.primary=this.resolveBudget(proposed);
+      if(!this.explicit&&proposed!=="idle"&&!sameActionIntent(proposed,this.primary))this.primary=this.resolveBudget(proposed);
       this.deferPrimary=!this.explicit&&DEFER_ON_SHORT_OPENER.has(this.primary)&&spokenLength(text)<6;
       return this.plan(this.deferPrimary?"idle":this.primary,{emotion,index,text,deferred:this.deferPrimary});
     }
     if(index===1&&this.deferPrimary)return this.plan(this.primary,{emotion,index,text,deferred:true});
-    if(!this.secondaryUsed&&proposed!=="idle"&&proposed!==this.primary){
+    if(!this.secondaryUsed&&proposed!=="idle"&&!sameActionIntent(proposed,this.primary)){
       this.secondaryUsed=true;return this.plan(this.resolveBudget(proposed),{emotion,index,text});
     }
     if(HOLD_ACROSS_SENTENCES.has(this.activeAction)&&this.cursorMs<this.activeUntilMs){
@@ -103,4 +109,4 @@ export class ConversationActionScheduler{
   finishTurn(){this.reset();return "idle";}
 }
 
-export const conversationActionPolicy=Object.freeze({cooldownMs:3000,shortOpenerCharacters:6,sourceFrames:REAL_SOURCE_FRAMES,sourceFps:REAL_SOURCE_FPS,sourceLoopMs:REAL_SOURCE_LOOP_MS,naturalGestureCycleMs:NATURAL_GESTURE_CYCLE_MS,holdAcrossSentences:[...HOLD_ACROSS_SENTENCES],behaviorActions:Object.keys(ACTION_BEHAVIOR)});
+export const conversationActionPolicy=Object.freeze({cooldownMs:3000,shortOpenerCharacters:6,sourceFrames:REAL_SOURCE_FRAMES,sourceFps:REAL_SOURCE_FPS,sourceLoopMs:REAL_SOURCE_LOOP_MS,naturalGestureCycleMs:NATURAL_GESTURE_CYCLE_MS,holdAcrossSentences:[...HOLD_ACROSS_SENTENCES],intentGroups:ACTION_INTENT_GROUPS.map(group=>[...group]),behaviorActions:Object.keys(ACTION_BEHAVIOR)});
