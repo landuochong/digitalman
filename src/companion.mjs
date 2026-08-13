@@ -261,9 +261,15 @@ export function buildResponsiveBackchannel(message,state=inferCompanionState(mes
 
 const directPlanningRequest=/(?:帮我|给我|替我|请你).{0,8}(?:安排|规划|计划|排(?:一)?下|排一排)|(?:安排|规划|计划).{0,8}(?:一下|简单|怎么)/;
 const genericPlanConfirmation=/^(?:你觉得|你看)(?:这样|这个|这么|这样的)?(?:安排|节奏|计划|方案)?(?:可以|行|合适|怎么样)(?:吗)?[？?。]?$/;
+const ordinaryLifeShare=/(?:今天|昨天|刚才|刚刚|路上|下班|到家|回来|散步|出门|吃完|看完|做完|完成|遇到|看到|听到|发现|买了|去了|来了)/;
+const asksForHelpOrAnswer=/(?:[？?]|为什么|怎么|如何|怎么办|能不能|可以吗|要不要|帮我|给我|请你|建议|推荐|分析|安排|规划|计划|想知道|告诉我)/;
+const distressOrCrisis=/(?:自杀|不想活|活不下去|伤害自己|结束生命|难过|伤心|焦虑|崩溃|害怕|担心|不舒服|生病|疼|压力|委屈|孤独|失落)/;
 
 export function isRedundantClosingQuestion(message,sentence,hasSubstantiveAnswer=false){
-  return Boolean(hasSubstantiveAnswer&&directPlanningRequest.test(String(message||""))&&genericPlanConfirmation.test(String(sentence||"").trim()));
+  if(!hasSubstantiveAnswer)return false;
+  const input=String(message||""),closing=String(sentence||"").trim();
+  if(directPlanningRequest.test(input)&&genericPlanConfirmation.test(closing))return true;
+  return ordinaryLifeShare.test(input)&&!asksForHelpOrAnswer.test(input)&&!distressOrCrisis.test(input)&&/[？?]$/.test(closing);
 }
 
 function removeRedundantClosingQuestion(reply,message){

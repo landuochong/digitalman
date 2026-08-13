@@ -171,6 +171,14 @@ test("removes only redundant planning confirmation questions",()=>{
   assert.equal(isRedundantClosingQuestion(message,"你觉得这样节奏可以吗？",false),false);
   assert.equal(buildMiniMaxReply("周六上午学习，下午运动。你觉得这样节奏可以吗？",message).reply,"周六上午学习，下午运动。");
 });
+test("does not turn an ordinary life share into an unnecessary interview",()=>{
+  const share="今天路上看到一棵很高的树";
+  assert.equal(isRedundantClosingQuestion(share,"今天天气怎么样，树是绿的吗？",true),true);
+  assert.equal(buildMiniMaxReply("嗯，听起来挺让人眼前一亮的。今天天气怎么样，树是绿的吗？",share).reply,"嗯，听起来挺让人眼前一亮的。");
+  assert.equal(isRedundantClosingQuestion("今天路上看到事故了，我很害怕","你现在安全了吗？",true),false);
+  assert.equal(isRedundantClosingQuestion("今天去了哪里比较好？","你更喜欢室内还是户外？",true),false);
+  assert.equal(isRedundantClosingQuestion(share,"那棵树一定很显眼。",true),false);
+});
 test("honors explicit concise reply length without truncating normal analysis",()=>{
   const long="第一句。第二句。第三句。第四句。";
   assert.equal(limitReplyForRequest(long,"简单说一下"),"第一句。第二句。第三句。");

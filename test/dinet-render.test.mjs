@@ -166,8 +166,8 @@ test("stream endpoint reports TTS and first playable segment timing",async()=>{
   assert.match(server,/sendEvent\(res,"sentence",\{text:safeSentence,emotion:sentenceResult\.emotion,action:sentenceResult\.action\}\)/);
   assert.match(source,/queueMs:metrics\.queueMs/);
   assert.match(source,/fragmented-video:/);
-  assert.match(server,/prepareAvatarAction\(initialState\.action,trace\)/);
-  assert.match(server,/prepareAvatarAction\(groundedResult\.action,trace\)/);
+  assert.match(server,/shouldPrepareAvatarAction\(initialState\.action,\{fastSpeech\}\)\)prepareAvatarAction\(initialState\.action,trace\)/);
+  assert.match(server,/shouldPrepareAvatarAction\(groundedResult\.action,\{fastSpeech:data\.fastSpeech\}\)\)prepareAvatarAction\(groundedResult\.action,trace\)/);
   assert.match(server,/assetPrepareMs/);
   assert.match(server,/videoOnly:data\.externalAudio===true/);
   assert.match(server,/binaryAudio:data\.binaryAudio===true/);

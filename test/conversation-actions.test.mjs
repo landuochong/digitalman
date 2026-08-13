@@ -70,6 +70,7 @@ test("gives ordinary conversation a restrained three-in-four micro-gesture caden
   for(let index=0;index<4;index+=1){
     const preview=scheduler.startTurn({message:`普通聊天 ${index}`,action:"idle",emotion:"calm"});
     actions.push(preview.action);
+    assert.equal(preview.cadenceManaged,true);
     assert.equal(preview.implicitMicroGesture,preview.action!=="idle"?true:undefined);
     assert.equal(scheduler.planForSentence("我在认真听你说。",0,"idle").action,preview.action);
     scheduler.finishTurn();
@@ -80,9 +81,9 @@ test("gives ordinary conversation a restrained three-in-four micro-gesture caden
 
 test("never replaces an explicit or semantic primary action with cadence",()=>{
   const scheduler=new ConversationActionScheduler();
-  assert.equal(scheduler.startTurn({message:"给我鼓掌",action:"clap"}).action,"clap");
+  const explicit=scheduler.startTurn({message:"给我鼓掌",action:"clap"});assert.equal(explicit.action,"clap");assert.equal(explicit.cadenceManaged,undefined);
   scheduler.finishTurn();
-  assert.equal(scheduler.startTurn({message:"我今天很累",action:"caring"}).action,"caring");
+  const semantic=scheduler.startTurn({message:"我今天很累",action:"caring"});assert.equal(semantic.action,"caring");assert.equal(semantic.cadenceManaged,undefined);
 });
 
 test("counts only neutral turns in the micro-gesture cadence",()=>{

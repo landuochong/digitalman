@@ -19,6 +19,7 @@ import { VisualTurnGate } from "./src/visual-turn-gate.mjs";
 import { BACKCHANNEL_OFFER_MS } from "./src/backchannel-timing.mjs";
 import { resolveWaitingActionPreview } from "./src/real-actions.mjs";
 import { bindClientAbort } from "./src/client-abort.mjs";
+import { shouldPrepareAvatarAction } from "./src/action-preparation.mjs";
 
 function loadLocalEnv() {
   try {
@@ -248,7 +249,7 @@ async function miniMaxChatStream(message, history, persona, memories, companionS
   let backchannelTimer=null;
   const initialState=inferCompanionState(message,"",companionState);
   const waitingPreview=fastSpeech?resolveWaitingActionPreview(initialState.action):null;
-  if(fastSpeech)prepareAvatarAction(initialState.action,trace);
+  if(shouldPrepareAvatarAction(initialState.action,{fastSpeech}))prepareAvatarAction(initialState.action,trace);
   let ttsConnectionId="";
   client.signal.addEventListener("abort",()=>{
     if(backchannelTimer)clearTimeout(backchannelTimer);
@@ -426,7 +427,7 @@ async function chatStream(req, res) {
   trace.memories=memories;trace.companionState=companionState;
   const groundedResult = companionIdentityReply(message,persona) || companionPresenceReply(message,persona);
   if(groundedResult){
-    if(data.fastSpeech)prepareAvatarAction(groundedResult.action,trace);
+    if(shouldPrepareAvatarAction(groundedResult.action,{fastSpeech:data.fastSpeech}))prepareAvatarAction(groundedResult.action,trace);
     res.writeHead(200, { "content-type":"text/event-stream; charset=utf-8", "cache-control":"no-cache, no-transform" });
     sendEvent(res,"meta",{emotion:groundedResult.emotion,action:groundedResult.action,mode:apiKey?provider:"demo"});
     sendEvent(res,"sentence",{text:groundedResult.reply});
@@ -440,7 +441,7 @@ async function chatStream(req, res) {
   const result = provider === "openai" && apiKey
     ? await openAIChat(message, history, data.userId, persona, memories,companionState)
     : demoReply(message, persona);
-  if(data.fastSpeech)prepareAvatarAction(result.action,trace);
+  if(shouldPrepareAvatarAction(result.action,{fastSpeech:data.fastSpeech}))prepareAvatarAction(result.action,trace);
   res.writeHead(200, { "content-type":"text/event-stream; charset=utf-8", "cache-control":"no-cache, no-transform" });
   sendEvent(res, "meta", { emotion:result.emotion, action:result.action, mode:apiKey ? provider : "demo" });
   for (const sentence of takeCompleteSentences(result.reply, true, Boolean(data.fastSpeech)).sentences) sendEvent(res, "sentence", { text:sentence });

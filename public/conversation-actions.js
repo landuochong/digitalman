@@ -63,7 +63,7 @@ export class ConversationActionScheduler{
   constructor({cooldownMs=3000,clock=()=>Date.now()}={}){
     this.cooldownMs=cooldownMs;this.clock=clock;this.lastHighEnergyAt=-Infinity;this.microTurnSequence=0;this.reset();
   }
-  reset(){this.primary="idle";this.requestedPrimary="idle";this.deferPrimary=false;this.secondaryUsed=false;this.explicit=false;this.implicitMicroGesture=false;this.started=false;this.emotion="calm";this.timeline=[];this.cursorMs=0;this.activeAction="idle";this.activeStartedAtMs=0;this.activeUntilMs=0;}
+  reset(){this.primary="idle";this.requestedPrimary="idle";this.deferPrimary=false;this.secondaryUsed=false;this.explicit=false;this.cadenceManaged=false;this.implicitMicroGesture=false;this.started=false;this.emotion="calm";this.timeline=[];this.cursorMs=0;this.activeAction="idle";this.activeStartedAtMs=0;this.activeUntilMs=0;}
   resolveBudget(action,explicit=this.explicit){
     const now=this.clock();let resolved=String(action||"idle");
     if(HIGH_ENERGY_ACTIONS.has(resolved)&&!explicit&&now-this.lastHighEnergyAt<this.cooldownMs)resolved=FALLBACK_ACTIONS[resolved]||"idle";
@@ -73,6 +73,7 @@ export class ConversationActionScheduler{
   startTurn({message="",action="idle",emotion="calm"}={}){
     this.explicit=EXPLICIT_ACTION_WORDS.test(String(message));this.requestedPrimary=String(action||"idle");
     const useCadence=!this.explicit&&this.requestedPrimary==="idle";
+    this.cadenceManaged=useCadence;
     const cadenceAction=useCadence?MICRO_GESTURE_CADENCE[this.microTurnSequence++%MICRO_GESTURE_CADENCE.length]:this.requestedPrimary;
     this.implicitMicroGesture=useCadence&&cadenceAction!==this.requestedPrimary;
     this.primary=this.resolveBudget(cadenceAction,this.explicit);this.deferPrimary=false;this.secondaryUsed=false;this.started=true;this.emotion=emotion;this.timeline=[];
@@ -93,7 +94,7 @@ export class ConversationActionScheduler{
     const frameOffset=resolved==="idle"
       ?normalizeSourceFrame(startAtMs/40)
       :continuing?normalizeSourceFrame((startAtMs-this.activeStartedAtMs)/40):0;
-    const plan={action:resolved,emotion,intensity:behavior.intensity,gaze:behavior.gaze,head:behavior.head,startAtMs,holdMs:Math.max(behavior.holdMs,durationMs),maxContinuousMs:behavior.maxContinuousMs,durationMs,frameOffset,continuation:continuing,explicit:Boolean(explicit),deferred:Boolean(deferred),...(this.implicitMicroGesture&&resolved===this.primary?{implicitMicroGesture:true}:{})};
+    const plan={action:resolved,emotion,intensity:behavior.intensity,gaze:behavior.gaze,head:behavior.head,startAtMs,holdMs:Math.max(behavior.holdMs,durationMs),maxContinuousMs:behavior.maxContinuousMs,durationMs,frameOffset,continuation:continuing,explicit:Boolean(explicit),deferred:Boolean(deferred),...(this.cadenceManaged&&resolved===this.primary?{cadenceManaged:true}:{}),...(this.implicitMicroGesture&&resolved===this.primary?{implicitMicroGesture:true}:{})};
     if(!preview)this.cursorMs+=durationMs;
     this.timeline.push(plan);return plan;
   }
@@ -102,7 +103,7 @@ export class ConversationActionScheduler{
     let proposed=String(candidateAction||"idle");
     if(proposed===this.requestedPrimary)proposed=this.primary;
     if(index===0){
-      if(!this.explicit&&proposed!=="idle"&&!sameActionIntent(proposed,this.primary)){this.primary=this.resolveBudget(proposed);this.implicitMicroGesture=false;}
+      if(!this.explicit&&proposed!=="idle"&&!sameActionIntent(proposed,this.primary)){this.primary=this.resolveBudget(proposed);this.cadenceManaged=false;this.implicitMicroGesture=false;}
       this.deferPrimary=!this.explicit&&DEFER_ON_SHORT_OPENER.has(this.primary)&&spokenLength(text)<6;
       return this.plan(this.deferPrimary?"idle":this.primary,{emotion,index,text,deferred:this.deferPrimary});
     }

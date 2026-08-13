@@ -1,10 +1,10 @@
-import { ConversationActionScheduler, continueActionPlan, preparedPreviewCanStart } from "./conversation-actions.js?v=20260813-thinking-preview-v18";
+import { ConversationActionScheduler, continueActionPlan, preparedPreviewCanStart } from "./conversation-actions.js?v=20260813-final-action-prep-v19";
 import { buildWav2LipPlaybackMessage } from "./avatar-protocol.js?v=20260813-video-handoff-v11";
 import { AvatarStreamTurn } from "./avatar-stream-turn.js?v=20260813-video-handoff-v11";
 import { RecognitionTurnGate,recognitionResumeDelayMs,recognitionSilenceMs } from "./recognition-turn-gate.js?v=20260813-adaptive-endpoint-v23";
 import { BargeInDetector } from "./barge-in-detector.js?v=20260813-barge-in-v1";
 import { ReplyTranscript } from "./reply-transcript.js?v=20260813-spoken-history-v1";
-import { BackchannelGate,BackchannelPlayback,remainingAfterSpokenBackchannel } from "./backchannel-gate.js?v=20260813-thinking-preview-v31";
+import { BackchannelGate,BackchannelPlayback,remainingAfterSpokenBackchannel } from "./backchannel-gate.js?v=20260813-final-action-prep-v32";
 import { BACKCHANNEL_GRACE_MS } from "./backchannel-timing.js?v=20260813-backchannel-prep-v1";
 
 const $ = (selector) => document.querySelector(selector);
@@ -14,7 +14,7 @@ const micButton = $("#micButton"), modeBanner = $("#modeBanner"), statusText = $
 const voiceButton = $("#voiceButton"), voicePrompt = $("#voicePrompt"), liveTranscript = $("#liveTranscript"), captionButton = $("#captionButton");
 const digitalHumanFrame = $("#digitalHumanFrame");
 const AVATAR_FIRST_SEGMENT_LEAD_MS=400;
-const avatarRuntimeVersion="20260813-thinking-preview-v31";
+const avatarRuntimeVersion="20260813-final-action-prep-v32";
 const avatarRuntimeUrl=path=>`${path}?v=${avatarRuntimeVersion}`;
 const avatarProfile = new URLSearchParams(location.search).get("profile");
 const selfRecordedProfile = avatarProfile === "self";
@@ -595,11 +595,12 @@ async function reply(message) {
         // The server can preheat semantic actions before emitting meta, while
         // cadence gestures are chosen locally across neutral turns. Preload the
         // latter immediately so its asset switch remains hidden behind M3.
-        if(plan.implicitMicroGesture){
-          const localPreview=beginWaitingPreview(plan,null,{pending:avatarMode!=="anime"});
+        if(plan.cadenceManaged){
+          const localPreview=plan.implicitMicroGesture?beginWaitingPreview(plan,null,{pending:avatarMode!=="anime"}):null;
           if(avatarMode!=="anime")fetch("/api/dinet/prepare-action",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({action:plan.action}),signal:controller.signal})
             .then(response=>response.ok?response.json():null)
             .then(result=>{
+              if(!localPreview)return;
               if(!result?.preview?.url||!preparedPreviewCanStart(localPreview,{activePreview:waitingPreview,aborted:controller.signal.aborted,spokenSentenceCount}))return;
               localPreview.pending=false;localPreview.startedAt=performance.now();
               digitalHumanFrame?.contentWindow?.postMessage({type:"wav2lip-preview",...result.preview},location.origin);
