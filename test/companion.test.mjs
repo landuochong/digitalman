@@ -116,6 +116,18 @@ test("keeps valid role order after removing a stale device reply",()=>{
   const payload=buildMiniMaxChatPayload({model:"m",message:"为什么不能",history});
   assert.deepEqual(payload.messages.slice(1),[{role:"user",content:"赶紧下楼，我在楼下等你\n为什么不能"}]);
 });
+test("repairs old assistant interview tails before reusing browser history",()=>{
+  const history=[
+    {role:"user",content:"你平时有什么爱好？"},
+    {role:"assistant",content:"我喜欢傍晚去湖边走走。你今天工作那么累，想不想放松一下？"},
+  ];
+  const payload=buildMiniMaxChatPayload({model:"m",message:"我也喜欢散步",history});
+  assert.deepEqual(payload.messages.slice(1),[
+    {role:"user",content:"你平时有什么爱好？"},
+    {role:"assistant",content:"我喜欢傍晚去湖边走走。"},
+    {role:"user",content:"我也喜欢散步"},
+  ]);
+});
 test("speech payload is mp3 and enforces the input limit", () => {
   const payload = buildSpeechPayload({ model:"tts-test", voice:"nova", text:"你".repeat(1900) });
   assert.equal(payload.input.length, 1800); assert.equal(payload.response_format, "mp3"); assert.equal(payload.voice, "nova");

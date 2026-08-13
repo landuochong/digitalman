@@ -373,7 +373,19 @@ const RECENT_HISTORY_ITEM_CHARS=900;
 function recentConversation(history,message){
   const current=String(message??"").trim().slice(-2000);
   let remaining=Math.max(0,RECENT_HISTORY_CHAR_BUDGET-current.length);
-  const eligible=history.filter(({role,content})=>!isCompanionIdentityQuestion(content)&&!isCompanionPresenceQuestion(content)&&(role!=="assistant"||(!staleIdentityReply.test(String(content))&&!staleDeviceReply.test(String(content)))));
+  let previousUser="";
+  const normalizedHistory=[];
+  for(const item of history){
+    const role=item?.role==="assistant"?"assistant":"user";
+    let content=String(item?.content??"").trim();if(!content)continue;
+    if(role==="user")previousUser=content;
+    else{
+      content=sanitizeReplyText(content);
+      if(previousUser)content=removeRedundantClosingQuestion(content,previousUser);
+    }
+    if(content)normalizedHistory.push({...item,role,content});
+  }
+  const eligible=normalizedHistory.filter(({role,content})=>!isCompanionIdentityQuestion(content)&&!isCompanionPresenceQuestion(content)&&(role!=="assistant"||(!staleIdentityReply.test(String(content))&&!staleDeviceReply.test(String(content)))));
   const selected=[];
   let selectedStart=eligible.length;
   for(let index=eligible.length-1;index>=0&&selected.length<RECENT_HISTORY_ITEMS&&remaining>0;index--){
