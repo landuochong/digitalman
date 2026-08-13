@@ -3,6 +3,7 @@ import { buildWav2LipPlaybackMessage } from "./avatar-protocol.js?v=20260813-vid
 import { AvatarStreamTurn } from "./avatar-stream-turn.js?v=20260813-video-handoff-v11";
 import { RecognitionTurnGate,recognitionResumeDelayMs,recognitionSilenceMs } from "./recognition-turn-gate.js?v=20260813-listen-resume-v16";
 import { BargeInDetector } from "./barge-in-detector.js?v=20260813-barge-in-v1";
+import { ReplyTranscript } from "./reply-transcript.js?v=20260813-spoken-history-v1";
 import { BackchannelGate } from "./backchannel-gate.js?v=20260813-short-backchannel-v15";
 import { BACKCHANNEL_GRACE_MS } from "./backchannel-timing.js?v=20260813-backchannel-prep-v1";
 
@@ -13,7 +14,7 @@ const micButton = $("#micButton"), modeBanner = $("#modeBanner"), statusText = $
 const voiceButton = $("#voiceButton"), voicePrompt = $("#voicePrompt"), liveTranscript = $("#liveTranscript"), captionButton = $("#captionButton");
 const digitalHumanFrame = $("#digitalHumanFrame");
 const AVATAR_FIRST_SEGMENT_LEAD_MS=480;
-const avatarRuntimeVersion="20260813-barge-in-v20";
+const avatarRuntimeVersion="20260813-spoken-history-v21";
 const avatarRuntimeUrl=path=>`${path}?v=${avatarRuntimeVersion}`;
 const avatarProfile = new URLSearchParams(location.search).get("profile");
 const selfRecordedProfile = avatarProfile === "self";
@@ -107,11 +108,12 @@ function unlockAvatarAudio(){
 }
 document.addEventListener("pointerdown",()=>void unlockAvatarAudio(),{once:true,capture:true});
 let realSpeechTimelineMs=0;
-let speechQueue = Promise.resolve(), speechBatch = 0, activeReplyController,activeAvatarStreamTurn=null,activeReplyStartedAt=0,activeWaitingPreview=null;
+let speechQueue = Promise.resolve(), speechBatch = 0, activeReplyController,activeAvatarStreamTurn=null,activeReplyStartedAt=0,activeWaitingPreview=null,activeReplyTranscript=null;
 const conversationActions=new ConversationActionScheduler();
 let voiceCallActive = false;
 const pendingActions = new Map();
 const pendingWav2LipPlaybacks = new Map();
+const pendingWav2LipStarts = new Map();
 const userId = localStorage.lumiUserId ||= crypto.randomUUID();
 const personaPresets={
   warm:{name:"露米",relationship:"可信赖的朋友",style:"自然、温暖、有边界感",background:"喜欢傍晚的湖边、轻音乐和生活里细小的好消息，擅长安静倾听，也愿意认真陪你一起想办法"},
@@ -227,6 +229,7 @@ function setVoiceState(state, detail) {
   if (detail) liveTranscript.textContent=detail;
 }
 function stopSpeech() {
+  settleActiveTranscript(true);
   speakingToken++;
   speechBatch++;
   speechQueue = Promise.resolve();
@@ -239,6 +242,7 @@ function stopSpeech() {
   window.speechSynthesis?.cancel();
   if (activeAudio) { activeAudio.pause(); activeAudio.removeAttribute("src"); activeAudio = null; }
   for(const finish of [...pendingWav2LipPlaybacks.values()])finish();pendingWav2LipPlaybacks.clear();
+  pendingWav2LipStarts.clear();
   activeSpeechResolve?.(); activeSpeechResolve = null;
   digitalHumanFrame?.contentWindow?.postMessage({ type:"dh-live-clear" }, location.origin);
   digitalHumanFrame?.contentWindow?.postMessage({ type:"wav2lip-clear" }, location.origin);
@@ -246,6 +250,17 @@ function stopSpeech() {
   conversationActions.finishTurn();
   realSpeechTimelineMs=0;
   speaking(false);
+}
+function persistAssistantText(text){if(!text)return;history.push({role:"assistant",content:text});history=history.slice(-20);localStorage.setItem("lumi-history",JSON.stringify(history));}
+function settleActiveTranscript(interrupted=false){
+  const active=activeReplyTranscript;if(!active)return null;
+  const result=interrupted?active.transcript.interrupt():active.transcript.complete();if(!result)return null;
+  $("#typing")?.remove();
+  if(result.text){active.article ||= addMessage("assistant","",false);active.article.querySelector("p").textContent=result.text;if(result.interrupted)active.article.dataset.interrupted="true";}
+  else active.article?.remove();
+  if(result.persist)persistAssistantText(result.text);
+  if(activeReplyTranscript===active)activeReplyTranscript=null;
+  return result;
 }
 function addMessage(role, content, persist = true) {
   const article = document.createElement("article"); article.className = `message ${role}`;
@@ -262,24 +277,24 @@ function showTyping() {
   const el = document.createElement("article"); el.className = "message assistant typing"; el.id = "typing";
   el.innerHTML = `<div class="mini-avatar"></div><div><span></span><p><i></i><i></i><i></i></p></div>`;el.querySelector(".mini-avatar").textContent=persona.name.slice(0,1).toUpperCase();el.querySelector("span").textContent=`${persona.name}正在想`; messages.append(el); messages.scrollTop = messages.scrollHeight;
 }
-function animateBrowserSpeech(text) {
+function animateBrowserSpeech(text,onStart) {
   const token = ++speakingToken;
   if (!("speechSynthesis" in window)) return Promise.resolve();
   speechSynthesis.cancel(); const utterance = new SpeechSynthesisUtterance(text);
   utterance.lang = "zh-CN"; utterance.rate = .98; utterance.pitch = 1.08;
   const voices = speechSynthesis.getVoices(); utterance.voice = voices.find(v => /zh|Chinese|Ting|Meijia|Sinji/i.test(`${v.lang} ${v.name}`)) || null;
-  utterance.onstart = () => { speaking(true); speechTimer = setInterval(() => { const t = performance.now()/110; mouth(.18 + Math.abs(Math.sin(t)*.65 + Math.sin(t*1.9)*.17), .35 + Math.abs(Math.sin(t*.37))*.55); }, 70); };
+  utterance.onstart = () => { onStart?.();speaking(true); speechTimer = setInterval(() => { const t = performance.now()/110; mouth(.18 + Math.abs(Math.sin(t)*.65 + Math.sin(t*1.9)*.17), .35 + Math.abs(Math.sin(t*.37))*.55); }, 70); };
   utterance.onboundary = () => mouth(.75, Math.random());
   return new Promise(resolve => {
     utterance.onend = utterance.onerror = () => { clearInterval(speechTimer); if (token === speakingToken) speaking(false); resolve(); };
     speechSynthesis.speak(utterance);
   });
 }
-async function playCloudSpeech(text, emotion) {
+async function playCloudSpeech(text, emotion, onStart) {
   const requestToken = ++speakingToken;
   const response = await fetch("/api/speech", { method:"POST", headers:{"content-type":"application/json"}, body:JSON.stringify({ text, emotion, voice:voiceProfile }) });
   if (requestToken !== speakingToken) return;
-  if (!response.ok) return animateBrowserSpeech(text);
+  if (!response.ok) return animateBrowserSpeech(text,onStart);
   const speechBuffer = await response.arrayBuffer();
   if (neuralAvatarProfile) {
     statusText.textContent = "正在准备回答…";
@@ -295,11 +310,11 @@ async function playCloudSpeech(text, emotion) {
     const rendered = await renderResponse.json();
     if (requestToken !== speakingToken) return;
     const requestId = crypto.randomUUID();
-    speaking(true);
+    speaking(true);pendingWav2LipStarts.set(requestId,onStart);
     digitalHumanFrame.contentWindow.postMessage({ type:"wav2lip-play", url:rendered.url, requestId }, location.origin);
     return await new Promise(resolve => {
-      const timer = setTimeout(() => { pendingWav2LipPlaybacks.delete(requestId); speaking(false); resolve(); }, 180_000);
-      const finish = () => { clearTimeout(timer); pendingWav2LipPlaybacks.delete(requestId); if(requestToken===speakingToken)speaking(false); activeSpeechResolve=null; resolve(); };
+      const timer = setTimeout(() => { pendingWav2LipPlaybacks.delete(requestId);pendingWav2LipStarts.delete(requestId); speaking(false); resolve(); }, 180_000);
+      const finish = () => { clearTimeout(timer); pendingWav2LipPlaybacks.delete(requestId);pendingWav2LipStarts.delete(requestId); if(requestToken===speakingToken)speaking(false); activeSpeechResolve=null; resolve(); };
       pendingWav2LipPlaybacks.set(requestId, finish);
       activeSpeechResolve = finish;
     });
@@ -315,7 +330,7 @@ async function playCloudSpeech(text, emotion) {
   function frame() { if (audio.paused || audio.ended || token !== speakingToken) return; analyser.getByteFrequencyData(data); const low = data.slice(2,18).reduce((a,b)=>a+b,0)/16/255; const mid = data.slice(18,55).reduce((a,b)=>a+b,0)/37/255; const targetOpen = low < .06 ? 0 : Math.min(1, low*1.65); const targetWidth = Math.min(1, .25+mid*1.2); smoothOpen += (targetOpen-smoothOpen)*(targetOpen>smoothOpen?.48:.22); smoothWidth += (targetWidth-smoothWidth)*.2; mouth(smoothOpen,smoothWidth); if(switchableAvatarProfile&&avatarMode==="anime")digitalHumanFrame?.contentWindow?.postMessage({type:"vrm-audio-level",level:Math.max(low,mid*.85)},location.origin); requestAnimationFrame(frame); }
   let finished = false;
   const finish = () => { if (finished) return; finished=true; if(activeAudio===audio) activeAudio=null; if(token===speakingToken) speaking(false); URL.revokeObjectURL(url); activeSpeechResolve=null; };
-  audio.onplay = frame; audio.onended = finish; audio.onerror = finish;
+  audio.onplay = () => {onStart?.();frame();}; audio.onended = finish; audio.onerror = finish;
   if(!(switchableAvatarProfile&&avatarMode==="anime")){
     digitalHumanFrame?.contentWindow?.postMessage({ type:"dh-live-clear" }, location.origin);
     digitalHumanFrame?.contentWindow?.postMessage({ type:"dh-live-audio", audio:rendererBuffer }, location.origin, [rendererBuffer]);
@@ -395,23 +410,23 @@ function prepareStreamingNeuralSpeech(text,emotion,batch,behavior={action:"idle"
   activeStreamingSpeech.add(stream);return stream;
 }
 
-async function enqueueStreamingNeuralSpeech(stream,batch,behavior,turn){
+async function enqueueStreamingNeuralSpeech(stream,batch,behavior,turn,onStart){
   const action=typeof behavior==="string"?behavior:behavior?.action||"idle";
   const lingerMs=action==="idle"?120:Math.min(360,Math.max(180,Number(behavior?.holdMs||0)*.1));
   while(batch===speechBatch){
     const item=await stream.next();if(item.done)break;
-    turn.trackSegment(playPreparedNeuralSpeech(item.value,batch,{enqueue:true}),item.value?.segment?.audioMs,lingerMs);
+    turn.trackSegment(playPreparedNeuralSpeech(item.value,batch,{enqueue:true,onStart}),item.value?.segment?.audioMs,lingerMs);onStart=null;
   }
 }
 
-async function playPreparedNeuralSpeech(rendered, batch, {enqueue=false}={}) {
+async function playPreparedNeuralSpeech(rendered, batch, {enqueue=false,onStart}={}) {
   if (!rendered || batch !== speechBatch) return;
   const requestId = crypto.randomUUID();
-  speaking(true);
+  speaking(true);pendingWav2LipStarts.set(requestId,onStart);
   digitalHumanFrame.contentWindow.postMessage(buildWav2LipPlaybackMessage(rendered,requestId,{enqueue}),location.origin);
   await new Promise(resolve => {
-    const timer = setTimeout(() => { pendingWav2LipPlaybacks.delete(requestId); speaking(false); resolve(); }, 180_000);
-    const finish = () => { clearTimeout(timer); pendingWav2LipPlaybacks.delete(requestId); if(!enqueue&&batch===speechBatch)speaking(false); activeSpeechResolve=null; resolve(); };
+    const timer = setTimeout(() => { pendingWav2LipPlaybacks.delete(requestId);pendingWav2LipStarts.delete(requestId); speaking(false); resolve(); }, 180_000);
+    const finish = () => { clearTimeout(timer); pendingWav2LipPlaybacks.delete(requestId);pendingWav2LipStarts.delete(requestId); if(!enqueue&&batch===speechBatch)speaking(false); activeSpeechResolve=null; resolve(); };
     pendingWav2LipPlaybacks.set(requestId, finish);
     activeSpeechResolve = finish;
   });
@@ -453,9 +468,9 @@ function enqueueSpeech(text, emotion, batch, behavior={action:"idle"},streamTurn
     const scheduled=schedule(async () => {
       if (batch !== speechBatch) return;
       try {
-        if(silentAction){if(streamTurn)await streamTurn.waitForPlayback();await playSilentNeuralAction(silentAction,batch);}
-        if(streamingAvatarExperiment&&!silentAction)await enqueueStreamingNeuralSpeech(preparation,batch,preparedBehavior,streamTurn);
-        else await playPreparedNeuralSpeech(await preparation, batch);
+        if(silentAction){if(streamTurn)await streamTurn.waitForPlayback();options.onStart?.();await playSilentNeuralAction(silentAction,batch);}
+        if(streamingAvatarExperiment&&!silentAction)await enqueueStreamingNeuralSpeech(preparation,batch,preparedBehavior,streamTurn,options.onStart);
+        else if(!silentAction)await playPreparedNeuralSpeech(await preparation, batch,{onStart:options.onStart});
       }
       catch (error) {
         if (batch !== speechBatch) return;
@@ -469,10 +484,10 @@ function enqueueSpeech(text, emotion, batch, behavior={action:"idle"},streamTurn
   }
   speechQueue = speechQueue.then(async () => {
     if (batch !== speechBatch) return;
-    try { await playCloudSpeech(text, emotion); }
+    try { await playCloudSpeech(text, emotion,options.onStart); }
     catch (error) {
       if (batch !== speechBatch) return;
-      if (!neuralAvatarProfile) return await animateBrowserSpeech(text);
+      if (!neuralAvatarProfile) return await animateBrowserSpeech(text,options.onStart);
       speaking(false);
       statusText.textContent = error?.message || "回答准备失败";
       liveTranscript.textContent = "回答准备失败，请重试";
@@ -509,7 +524,9 @@ function closeVisualTurn(id){
 async function reply(message) {
   sendButton.disabled = true; showTyping(); setEmotion("curious"); setVoiceState("thinking","正在理解你刚才说的话"); statusText.textContent = "正在想…";
   const controller = new AbortController(); activeReplyController = controller;
-  const batch = speechBatch; activeReplyStartedAt=performance.now();realSpeechTimelineMs=0;delete portrait.dataset.chatFirstSentenceMs;delete portrait.dataset.avatarFirstSegmentMs;delete portrait.dataset.ttsFirstAudioMs;delete portrait.dataset.avatarPipelineMs;let article, streamedText = "", currentEmotion = "calm",currentAction="idle",spokenSentenceCount=0,firstTtsConnectionId="",waitingPreview=null,backchannelVisual=null,actionFrameBias=0,biasedAction="";
+  const batch = speechBatch,transcript=new ReplyTranscript(); activeReplyStartedAt=performance.now();realSpeechTimelineMs=0;delete portrait.dataset.chatFirstSentenceMs;delete portrait.dataset.avatarFirstSegmentMs;delete portrait.dataset.ttsFirstAudioMs;delete portrait.dataset.avatarPipelineMs;let article, streamedText = "", currentEmotion = "calm",currentAction="idle",spokenSentenceCount=0,firstTtsConnectionId="",waitingPreview=null,backchannelVisual=null,actionFrameBias=0,biasedAction="";
+  const transcriptState={transcript,get article(){return article;},set article(value){article=value;}};activeReplyTranscript=transcriptState;
+  const revealSentence=sentenceIndex=>{if(batch!==speechBatch)return;const spoken=transcript.start(sentenceIndex);if(!spoken)return;$("#typing")?.remove();article ||= addMessage("assistant","",false);article.querySelector("p").textContent=spoken;};
   const streamTurn=streamingAvatarExperiment&&neuralAvatarProfile?new AvatarStreamTurn({
     isCurrent:()=>batch===speechBatch,
     onEnd:({audioMs,lingerMs})=>{
@@ -564,9 +581,7 @@ async function reply(message) {
       if (event === "sentence") {
         backchannelGate.cancel();
         if(!spokenSentenceCount)portrait.dataset.chatFirstSentenceMs=String(Math.round(performance.now()-activeReplyStartedAt));
-        $("#typing")?.remove(); streamedText += data.text;
-        article ||= addMessage("assistant", "", false);
-        article.querySelector("p").textContent = streamedText;
+        streamedText += data.text;
         if(data.emotion){currentEmotion=data.emotion;setEmotion(currentEmotion);}
         const sentenceIndex=spokenSentenceCount++;
         let sentencePlan=conversationActions.planForSentence(data.text,sentenceIndex,data.action||currentAction,currentEmotion);
@@ -596,26 +611,24 @@ async function reply(message) {
         if(sentenceAction!=="idle"&&!sentencePlan.continuation)setDigitalHumanAction(sentenceAction,{force:true,hold:true,behavior:sentencePlan}).catch(()=>{});
         const ttsConnectionId=sentenceIndex===0?firstTtsConnectionId:"";
         firstTtsConnectionId="";
-        enqueueSpeech(data.text,currentEmotion,batch,sentencePlan,streamTurn,{ttsConnectionId});
+        const transcriptIndex=transcript.receive(data.text);
+        enqueueSpeech(data.text,currentEmotion,batch,sentencePlan,streamTurn,{ttsConnectionId,onStart:()=>revealSentence(transcriptIndex)});
       }
       if(event==="backchannel"&&data.text)backchannelGate.offer(data);
       if (event === "error") throw new Error(data.error || "回答中断");
       if (event === "done") {
         mode=data.mode; currentEmotion=data.emotion || currentEmotion; setEmotion(currentEmotion);
         const finalText=data.reply || streamedText || "我在听。";
-        $("#typing")?.remove(); article ||= addMessage("assistant", "", false);
-        article.querySelector("p").textContent=finalText;
-        streamedText=finalText;
+        transcript.setFinal(finalText);streamedText=finalText;
       }
     });
-    if (streamedText) { history.push({role:"assistant",content:streamedText}); history=history.slice(-20); localStorage.setItem("lumi-history",JSON.stringify(history)); }
     const completedQueue=streamTurn?streamTurn.finish():speechQueue;
     if(streamTurn)speechQueue=completedQueue;
-    completedQueue.finally(()=>{if(batch===speechBatch){if(streamTurn)speaking(false);if(activeAvatarStreamTurn===streamTurn)activeAvatarStreamTurn=null;conversationActions.finishTurn();if(switchableAvatarProfile&&avatarMode==="anime")digitalHumanFrame?.contentWindow?.postMessage({type:"vrm-finish-gesture"},location.origin);}});
+    completedQueue.finally(()=>{if(batch===speechBatch){settleActiveTranscript(false);if(streamTurn)speaking(false);if(activeAvatarStreamTurn===streamTurn)activeAvatarStreamTurn=null;conversationActions.finishTurn();if(switchableAvatarProfile&&avatarMode==="anime")digitalHumanFrame?.contentWindow?.postMessage({type:"vrm-finish-gesture"},location.origin);}});
   } catch (error) {
     backchannelGate.cancel();
     $("#typing")?.remove();
-    if (error.name !== "AbortError") { addMessage("assistant", `刚才的连接有点不稳定：${error.message}。再试一次好吗？`, false); setEmotion("caring"); speaking(false); setVoiceState("idle","连接不稳定，请点击麦克风重试"); }
+    if (error.name !== "AbortError") { stopSpeech();addMessage("assistant", `刚才的连接有点不稳定：${error.message}。再试一次好吗？`, false); setEmotion("caring"); speaking(false); setVoiceState("idle","连接不稳定，请点击麦克风重试"); }
   } finally { if(waitingPreview)digitalHumanFrame?.contentWindow?.postMessage({type:"wav2lip-preview-clear"},location.origin);if(activeWaitingPreview===waitingPreview)activeWaitingPreview=null;if(activeReplyController===controller)activeReplyController=null; sendButton.disabled=false; if(!form.hidden)input.focus(); }
 }
 async function submit(text) { const message = text.trim(); if (!message || sendButton.disabled) return; stopSpeech(); input.value=""; resize(); addMessage("user", message); await reply(message); }
@@ -643,7 +656,10 @@ window.addEventListener("message",event=>{
   if(event.data?.type==="dh-live-audio-accepted") portrait.dataset.dhAudioBytes=String(event.data.bytes||0);
   if(event.data?.type==="wav2lip-audio-mode"){portrait.dataset.audioMode=event.data.mode;portrait.dataset.audioGapMs=String(event.data.gapMs||0);avatarPcmReady=event.data.mode==="pcm-ready"||event.data.mode==="pcm";avatarFragmentedVideoReady=event.data.fragmentedVideo===true;portrait.dataset.fragmentedVideo=String(avatarFragmentedVideoReady);}
   if(event.data?.type==="wav2lip-preview-started"&&activeWaitingPreview?.action===event.data.action){activeWaitingPreview.mediaTimeMs=Math.max(0,Number(event.data.currentTime)||0)*1000;activeWaitingPreview.observedAt=performance.now();portrait.dataset.waitingPreviewStarted="true";}
-  if(event.data?.type==="wav2lip-started"&&Number.isFinite(Number(event.data.handoffLateMs))){portrait.dataset.videoFirstFrameMs=String(event.data.firstFrameMs||0);portrait.dataset.videoHandoffLateMs=String(event.data.handoffLateMs||0);}
+  if(event.data?.type==="wav2lip-started"){
+    const start=pendingWav2LipStarts.get(event.data.requestId);pendingWav2LipStarts.delete(event.data.requestId);start?.();
+    if(Number.isFinite(Number(event.data.handoffLateMs))){portrait.dataset.videoFirstFrameMs=String(event.data.firstFrameMs||0);portrait.dataset.videoHandoffLateMs=String(event.data.handoffLateMs||0);}
+  }
   if(event.data?.type==="wav2lip-video-sync"){portrait.dataset.videoDriftMs=String(event.data.driftMs||0);portrait.dataset.videoMaxDriftMs=String(event.data.maxDriftMs||0);}
   if(event.data?.type==="wav2lip-video-buffer"){portrait.dataset.videoAheadSeconds=String(event.data.aheadSeconds||0);portrait.dataset.videoBufferStart=String(event.data.bufferStart||0);portrait.dataset.videoPrunedSeconds=String(event.data.prunedSeconds||0);}
   if(event.data?.type==="wav2lip-media-gate")portrait.dataset.videoAudioGateMs=String(event.data.mediaReadyMs||0);
