@@ -248,17 +248,21 @@ async function miniMaxChatStream(message, history, persona, memories, companionS
   });
   res.flushHeaders?.();
   sendEvent(res, "meta", { ...initialState, mode:"minimax", ...(ttsConnectionId?{ttsConnectionId}:{}), ...(waitingPreview?{waitingPreview}:{}) });
-  let firstSentenceEmitted=false,backchannel=responsiveSpeech?buildResponsiveBackchannel(message,initialState):null;
+  let firstSentenceEmitted=false,backchannel=responsiveSpeech?buildResponsiveBackchannel(message,initialState):null,backchannelWarmup=null;
   if(backchannel&&prewarmPcm){
     const pcmWarmup=prewarmMiniMaxPcm({text:backchannel.text,voice,emotion:backchannel.emotion});
     trace.backchannelPcm={voice:pcmWarmup.resolvedVoice,cacheHit:pcmWarmup.hit,status:"preparing"};
-    void pcmWarmup.value.then(result=>{
+    backchannelWarmup=pcmWarmup.value.then(result=>{
       trace.backchannelPcm={...trace.backchannelPcm,status:"ready",audioMs:result.metrics.audioMs,readyMs:Math.round(performance.now()-trace._startedMs)};
-    }).catch(error=>{trace.backchannelPcm={...trace.backchannelPcm,status:"failed",error:error.message};});
+      return result;
+    }).catch(error=>{trace.backchannelPcm={...trace.backchannelPcm,status:"failed",error:error.message};return null;});
   }
-  const backchannelTimer=responsiveSpeech?setTimeout(()=>{
+  const backchannelTimer=responsiveSpeech?setTimeout(async()=>{
     if(firstSentenceEmitted||res.writableEnded)return;
     if(!backchannel)return;
+    const warmed=backchannelWarmup?await backchannelWarmup:null;
+    if(firstSentenceEmitted||res.writableEnded)return;
+    if(warmed?.metrics?.audioMs)backchannel={...backchannel,audioMs:warmed.metrics.audioMs};
     trace.timings.backchannelMs=Math.round(performance.now()-trace._startedMs);
     trace.backchannel=backchannel;
     sendEvent(res,"backchannel",backchannel);
@@ -568,6 +572,7 @@ export const server = http.createServer(async (req, res) => {
         if(cachedPcm){
           const cached=cachedPcm;ttsCacheHit=true;
           if(controller.signal.aborted)throw Object.assign(new Error("cancelled"),{name:"AbortError"});
+          sendEvent(res,"audio-ready",{audioMs:cached.metrics.audioMs});
           appendPcm(cached.pcm);ttsMetrics={...cached.metrics,firstAudioMs:0,totalMs:0,cached:true};
         }else{
           const preparedConnection=takeTtsConnection(data.ttsConnectionId);
@@ -590,6 +595,7 @@ export const server = http.createServer(async (req, res) => {
             // answer audio; only explicitly marked backchannels are eligible.
             ttsCacheHit=false;
           }
+          sendEvent(res,"audio-ready",{audioMs:ttsMetrics.audioMs});
         }
         await renderChain;
         await emitSegments(true);

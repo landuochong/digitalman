@@ -138,8 +138,10 @@ test("stream endpoint reports TTS and first playable segment timing",async()=>{
     readFile(new URL("../src/dinet-render.mjs",import.meta.url),"utf8")
   ]);
   assert.match(server,/ttsFirstAudioMs:firstAudioAt/);
+  assert.match(server,/sendEvent\(res,"audio-ready",\{audioMs:cached\.metrics\.audioMs\}\)/);
   assert.match(server,/firstSegmentMs:firstSegmentAt/);
   assert.match(server,/sendEvent\(res,"backchannel",backchannel\)/);
+  assert.match(server,/backchannel=\{\.\.\.backchannel,audioMs:warmed\.metrics\.audioMs\}/);
   assert.match(server,/pipelineStartedAt/);
   assert.match(source,/queueMs:metrics\.queueMs/);
   assert.match(source,/fragmented-video:/);

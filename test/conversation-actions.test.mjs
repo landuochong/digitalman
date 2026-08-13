@@ -1,6 +1,13 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { ConversationActionScheduler, conversationActionPolicy } from "../public/conversation-actions.js";
+import { ConversationActionScheduler, continueActionPlan, conversationActionPolicy } from "../public/conversation-actions.js";
+
+test("continues a matching action from its visible source frame",()=>{
+  const plan={action:"caring",frameOffset:0,deferred:false};
+  assert.deepEqual(continueActionPlan(plan,{action:"caring",baseFrameOffset:40,elapsedMs:800,leadMs:200}),{...plan,continuation:true,frameOffset:65});
+  assert.equal(continueActionPlan(plan,{action:"thinking",elapsedMs:800}),plan);
+  assert.equal(continueActionPlan({...plan,deferred:true},{action:"caring",elapsedMs:800}).deferred,true);
+});
 
 test("moves a subtle gesture after an unnaturally short spoken opener",()=>{
   const scheduler=new ConversationActionScheduler();

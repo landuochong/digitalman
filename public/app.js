@@ -1,4 +1,4 @@
-import { ConversationActionScheduler } from "./conversation-actions.js?v=20260813-video-handoff-v11";
+import { ConversationActionScheduler, continueActionPlan } from "./conversation-actions.js?v=20260813-action-continuity-v14";
 import { buildWav2LipPlaybackMessage } from "./avatar-protocol.js?v=20260813-video-handoff-v11";
 import { AvatarStreamTurn } from "./avatar-stream-turn.js?v=20260813-video-handoff-v11";
 import { RecognitionTurnGate,recognitionSilenceMs } from "./recognition-turn-gate.js?v=20260813-video-handoff-v11";
@@ -10,7 +10,7 @@ const input = $("#messageInput"), form = $("#chatForm"), sendButton = $("#sendBu
 const micButton = $("#micButton"), modeBanner = $("#modeBanner"), statusText = $("#statusText");
 const voiceButton = $("#voiceButton"), voicePrompt = $("#voicePrompt"), liveTranscript = $("#liveTranscript"), captionButton = $("#captionButton");
 const digitalHumanFrame = $("#digitalHumanFrame");
-const avatarRuntimeVersion="20260813-waiting-motion-v13";
+const avatarRuntimeVersion="20260813-action-continuity-v14";
 const avatarRuntimeUrl=path=>`${path}?v=${avatarRuntimeVersion}`;
 const avatarProfile = new URLSearchParams(location.search).get("profile");
 const selfRecordedProfile = avatarProfile === "self";
@@ -348,7 +348,7 @@ function prepareStreamingNeuralSpeech(text,emotion,batch,behavior={action:"idle"
   const frameOffset=typeof behavior==="object"?Math.max(0,Number(behavior?.frameOffset)||0):0;
   const externalAudio=avatarPcmReady&&avatarAudioContext?.state==="running";
   const fragmentedVideo=externalAudio&&avatarFragmentedVideoReady&&continuousVideoExperiment;
-  const queue=[],waiters=[];let ended=false,failure=null,firstSegmentObserved=false,firstSegmentReadyAt=null,serverStreamId=null,commitRequested=false;
+  const queue=[],waiters=[];let ended=false,failure=null,firstSegmentObserved=false,firstSegmentReadyAt=null,serverStreamId=null,commitRequested=false,receivedAudioMs=0,expectedAudioMs=0;
   const wake=()=>{while(waiters.length&&(queue.length||ended||failure))waiters.shift()();};
   const controller=new AbortController();
   const skipVisualSentence=()=>{
@@ -364,8 +364,10 @@ function prepareStreamingNeuralSpeech(text,emotion,batch,behavior={action:"idle"
         serverStreamId=data.id||null;
         if(commitRequested&&serverStreamId)fetch(`/api/dinet/stream/${encodeURIComponent(serverStreamId)}/commit`,{method:"POST"}).catch(()=>{});
       }
+      if(event==="audio-ready")expectedAudioMs=Math.max(0,Number(data.audioMs)||0);
       if(event==="segment"){
         if(!firstSegmentObserved){firstSegmentObserved=true;firstSegmentReadyAt=performance.now();if(!options.speculative&&!portrait.dataset.avatarFirstSegmentMs)portrait.dataset.avatarFirstSegmentMs=String(Math.round(firstSegmentReadyAt-activeReplyStartedAt));}
+        receivedAudioMs+=Math.max(0,Number(data?.segment?.audioMs)||0);
         queue.push(data);wake();
       }
       if(event==="done"&&data.pipeline&&!options.speculative&&!portrait.dataset.avatarPipelineMs){portrait.dataset.ttsFirstAudioMs=String(data.pipeline.ttsFirstAudioMs??"");portrait.dataset.avatarPipelineMs=String(data.pipeline.firstSegmentMs??"");}
@@ -376,6 +378,8 @@ function prepareStreamingNeuralSpeech(text,emotion,batch,behavior={action:"idle"
   })().catch(error=>{failure=error;ended=true;wake();});
   const stream={
     get firstSegmentReadyAt(){return firstSegmentReadyAt;},
+    get receivedAudioMs(){return receivedAudioMs;},
+    get expectedAudioMs(){return expectedAudioMs;},
     commit(){commitRequested=true;if(serverStreamId)fetch(`/api/dinet/stream/${encodeURIComponent(serverStreamId)}/commit`,{method:"POST"}).catch(()=>{});},
     cancel(){controller.abort();skipVisualSentence();if(serverStreamId)fetch(`/api/dinet/stream/${encodeURIComponent(serverStreamId)}/cancel`,{method:"POST",keepalive:true}).catch(()=>{});activeStreamingSpeech.delete(stream);},
     async next(){
@@ -502,7 +506,7 @@ function closeVisualTurn(id){
 async function reply(message) {
   sendButton.disabled = true; showTyping(); setEmotion("curious"); setVoiceState("thinking","正在理解你刚才说的话"); statusText.textContent = "正在想…";
   const controller = new AbortController(); activeReplyController = controller;
-  const batch = speechBatch; activeReplyStartedAt=performance.now();realSpeechTimelineMs=0;delete portrait.dataset.chatFirstSentenceMs;delete portrait.dataset.avatarFirstSegmentMs;delete portrait.dataset.ttsFirstAudioMs;delete portrait.dataset.avatarPipelineMs;let article, streamedText = "", currentEmotion = "calm",currentAction="idle",spokenSentenceCount=0,firstTtsConnectionId="",waitingPreview=null;
+  const batch = speechBatch; activeReplyStartedAt=performance.now();realSpeechTimelineMs=0;delete portrait.dataset.chatFirstSentenceMs;delete portrait.dataset.avatarFirstSegmentMs;delete portrait.dataset.ttsFirstAudioMs;delete portrait.dataset.avatarPipelineMs;let article, streamedText = "", currentEmotion = "calm",currentAction="idle",spokenSentenceCount=0,firstTtsConnectionId="",waitingPreview=null,backchannelVisual=null,actionFrameBias=0,biasedAction="";
   const streamTurn=streamingAvatarExperiment&&neuralAvatarProfile?new AvatarStreamTurn({
     isCurrent:()=>batch===speechBatch,
     onEnd:({audioMs,lingerMs})=>{
@@ -511,11 +515,17 @@ async function reply(message) {
       closeVisualTurn(streamTurn.id);
     }
   }):null;
-  const backchannelPlan=data=>({action:data.action||"nod",emotion:data.emotion||currentEmotion,intensity:.35,head:data.action==="thinking"?"slight-left":"center",gaze:"user",holdMs:1400,frameOffset:0,continuation:false});
+  const backchannelPlan=data=>({action:data.action||"nod",emotion:data.emotion||currentEmotion,intensity:.35,head:data.action==="thinking"?"slight-left":"center",gaze:"user",holdMs:Math.max(1400,Number(data.audioMs)||0),frameOffset:0,continuation:false});
   const backchannelGate=new BackchannelGate({delayMs:500,
     onPrepare:data=>{
       if(batch!==speechBatch||!neuralAvatarProfile||!streamingAvatarExperiment)return null;
-      const plan=backchannelPlan(data);
+      let plan=backchannelPlan(data);
+      if(waitingPreview&&avatarMode!=="anime"){
+        const previewTimeMs=waitingPreview.observedAt
+          ?waitingPreview.mediaTimeMs+performance.now()-waitingPreview.observedAt
+          :performance.now()-waitingPreview.startedAt;
+        plan=continueActionPlan(plan,{action:waitingPreview.action,elapsedMs:previewTimeMs,leadMs:600});
+      }
       return{plan,work:prepareSpeechWork(data.text,plan.emotion,batch,plan,streamTurn,{preferPrewarmed:true,speculative:true})};
     },
     onCancel:(_data,prepared)=>prepared?.work?.preparation?.cancel?.(),
@@ -524,6 +534,7 @@ async function reply(message) {
     if(waitingPreview){waitingPreview=null;activeWaitingPreview=null;delete portrait.dataset.waitingPreview;}
     const plan=prepared?.plan||backchannelPlan(data);
     prepared?.work?.preparation?.commit?.();
+    if(plan.continuation&&avatarMode!=="anime")backchannelVisual={action:plan.action,frameOffset:plan.frameOffset,holdMs:plan.holdMs,stream:prepared?.work?.preparation};
     const readyAt=prepared?.work?.preparation?.firstSegmentReadyAt;
     if(readyAt)portrait.dataset.backchannelPreparedLeadMs=String(Math.max(0,Math.round(performance.now()-readyAt)));
     portrait.dataset.backchannel=JSON.stringify({text:data.text,atMs:Math.round(performance.now()-activeReplyStartedAt),...plan});
@@ -562,11 +573,22 @@ async function reply(message) {
             const previewTimeMs=waitingPreview.observedAt
               ?waitingPreview.mediaTimeMs+performance.now()-waitingPreview.observedAt
               :performance.now()-waitingPreview.startedAt;
-            sentencePlan={...sentencePlan,continuation:true,...(avatarMode!=="anime"?{frameOffset:Math.max(sentencePlan.frameOffset,Math.round((previewTimeMs+600)/40))}:{})};
+            sentencePlan=avatarMode!=="anime"?continueActionPlan(sentencePlan,{action:waitingPreview.action,elapsedMs:previewTimeMs,leadMs:600}):{...sentencePlan,continuation:true};
+            if(avatarMode!=="anime"){actionFrameBias=sentencePlan.frameOffset;biasedAction=sentencePlan.action;}
           }
           else digitalHumanFrame?.contentWindow?.postMessage({type:"wav2lip-preview-clear"},location.origin);
           waitingPreview=null;activeWaitingPreview=null;delete portrait.dataset.waitingPreview;
         }
+        else if(sentenceIndex===0&&backchannelVisual&&avatarMode!=="anime"){
+          const elapsedMs=Math.max(backchannelVisual.holdMs,backchannelVisual.stream?.expectedAudioMs||0,backchannelVisual.stream?.receivedAudioMs||0);
+          sentencePlan=continueActionPlan(sentencePlan,{action:backchannelVisual.action,baseFrameOffset:backchannelVisual.frameOffset,elapsedMs});
+          if(sentencePlan.continuation){actionFrameBias=sentencePlan.frameOffset;biasedAction=sentencePlan.action;}
+          backchannelVisual=null;
+        }
+        else if(actionFrameBias&&sentencePlan.continuation&&sentencePlan.action===biasedAction){
+          sentencePlan={...sentencePlan,frameOffset:sentencePlan.frameOffset+actionFrameBias};
+        }
+        else if(sentencePlan.action!==biasedAction){actionFrameBias=0;biasedAction="";}
         const sentenceAction=sentencePlan.action;portrait.dataset.behavior=JSON.stringify(sentencePlan);
         if(sentenceAction!=="idle"&&!sentencePlan.continuation)setDigitalHumanAction(sentenceAction,{force:true,hold:true,behavior:sentencePlan}).catch(()=>{});
         const ttsConnectionId=sentenceIndex===0?firstTtsConnectionId:"";

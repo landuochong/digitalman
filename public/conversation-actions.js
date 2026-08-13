@@ -27,6 +27,13 @@ const ACTION_BEHAVIOR={
 function spokenLength(text){return String(text||"").replace(/[，,、。！？!?；;\s]/g,"").length;}
 function estimatedSpeechMs(text){return Math.max(650,Math.min(5200,spokenLength(text)*180));}
 
+export function continueActionPlan(plan,{action,baseFrameOffset=0,elapsedMs=0,leadMs=0,fps=25}={}){
+  if(!plan||plan.deferred||plan.action!==action)return plan;
+  const frameMs=1000/Math.max(1,Number(fps)||25);
+  const continuationOffset=Math.max(0,Number(baseFrameOffset)||0)+Math.max(0,Math.round((Math.max(0,Number(elapsedMs)||0)+Math.max(0,Number(leadMs)||0))/frameMs));
+  return{...plan,continuation:true,frameOffset:Math.max(Math.max(0,Number(plan.frameOffset)||0),continuationOffset)};
+}
+
 export class ConversationActionScheduler{
   constructor({cooldownMs=3000,clock=()=>Date.now()}={}){
     this.cooldownMs=cooldownMs;this.clock=clock;this.lastHighEnergyAt=-Infinity;this.reset();
