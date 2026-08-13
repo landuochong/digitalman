@@ -18,6 +18,7 @@ import { EphemeralPcmStore } from "./src/ephemeral-pcm-store.mjs";
 import { VisualTurnGate } from "./src/visual-turn-gate.mjs";
 import { BACKCHANNEL_OFFER_MS } from "./src/backchannel-timing.mjs";
 import { resolveWaitingActionPreview } from "./src/real-actions.mjs";
+import { bindClientAbort } from "./src/client-abort.mjs";
 
 function loadLocalEnv() {
   try {
@@ -113,6 +114,13 @@ function takeTtsConnection(id){
   return entry.connection;
 }
 
+function discardTtsConnection(id){
+  const entry=preparedTtsConnections.get(String(id||""));
+  if(!entry)return false;
+  preparedTtsConnections.delete(String(id));clearTimeout(entry.timer);entry.connection.close();
+  return true;
+}
+
 function miniMaxSpeechCacheKey({text,voice,emotion}){
   return JSON.stringify([miniMaxTtsModel,voice,String(emotion||""),String(text||"").trim()]);
 }
@@ -125,9 +133,9 @@ function collectMiniMaxPcm({text,voice,emotion,signal}={}){
   }).then(metrics=>({pcm:Buffer.concat(chunks),metrics}));
 }
 
-function prewarmMiniMaxPcm({text,voice,emotion}){
+function prewarmMiniMaxPcm({text,voice,emotion,signal}){
   const resolvedVoice=voiceCatalog.resolve(voice),key=miniMaxPcmCacheKey({text,voice:resolvedVoice,emotion});
-  const cached=miniMaxPcmCache.getOrCreate(key,()=>collectMiniMaxPcm({text,voice:resolvedVoice,emotion}));
+  const cached=miniMaxPcmCache.getOrCreate(key,()=>collectMiniMaxPcm({text,voice:resolvedVoice,emotion,signal}));
   void cached.value.then(({pcm})=>miniMaxSpeechCache.set(miniMaxSpeechCacheKey({text,voice:resolvedVoice,emotion}),encodePcm16Wav(pcm))).catch(()=>{});
   return {key,resolvedVoice,...cached};
 }
@@ -235,10 +243,17 @@ async function warmupMiniMaxChat() {
 }
 
 async function miniMaxChatStream(message, history, persona, memories, companionState, userId, res, fastSpeech = false, responsiveSpeech = false, prewarmPcm = false, voice = "", trace) {
+  const client=bindClientAbort(res);
+  let backchannelTimer=null;
   const initialState=inferCompanionState(message,"",companionState);
   const waitingPreview=fastSpeech?resolveWaitingActionPreview(initialState.action):null;
   if(fastSpeech)prepareAvatarAction(initialState.action,trace);
   const ttsConnectionId=fastSpeech?prepareTtsConnection():"";
+  client.signal.addEventListener("abort",()=>{
+    if(backchannelTimer)clearTimeout(backchannelTimer);
+    discardTtsConnection(ttsConnectionId);
+    trace.status="cancelled";trace.finishedAt=new Date().toISOString();trace.timings.cancelledMs=Math.round(performance.now()-trace._startedMs);
+  },{once:true});
   const requestPayload=buildMiniMaxChatPayload({ model:miniMaxTextModel, message, history, stream:true, persona, memories, companionState });
   trace.providerRequest={url:`${miniMaxBaseUrl}/chat/completions`,payload:requestPayload};
   res.writeHead(200, {
@@ -251,15 +266,15 @@ async function miniMaxChatStream(message, history, persona, memories, companionS
   sendEvent(res, "meta", { ...initialState, mode:"minimax", ...(ttsConnectionId?{ttsConnectionId}:{}), ...(waitingPreview?{waitingPreview}:{}) });
   let firstSentenceEmitted=false,backchannel=responsiveSpeech?buildResponsiveBackchannel(message,initialState):null,backchannelWarmup=null;
   if(backchannel&&prewarmPcm){
-    const pcmWarmup=prewarmMiniMaxPcm({text:backchannel.text,voice,emotion:backchannel.emotion});
+    const pcmWarmup=prewarmMiniMaxPcm({text:backchannel.text,voice,emotion:backchannel.emotion,signal:client.signal});
     trace.backchannelPcm={voice:pcmWarmup.resolvedVoice,cacheHit:pcmWarmup.hit,status:"preparing"};
     backchannelWarmup=pcmWarmup.value.then(result=>{
       trace.backchannelPcm={...trace.backchannelPcm,status:"ready",audioMs:result.metrics.audioMs,readyMs:Math.round(performance.now()-trace._startedMs)};
       return result;
-    }).catch(error=>{trace.backchannelPcm={...trace.backchannelPcm,status:"failed",error:error.message};return null;});
+    }).catch(error=>{trace.backchannelPcm={...trace.backchannelPcm,status:client.signal.aborted?"cancelled":"failed",...(client.signal.aborted?{}:{error:error.message})};return null;});
   }
-  const backchannelTimer=responsiveSpeech?setTimeout(()=>{
-    if(firstSentenceEmitted||res.writableEnded)return;
+  backchannelTimer=responsiveSpeech?setTimeout(()=>{
+    if(firstSentenceEmitted||res.writableEnded||client.signal.aborted)return;
     if(!backchannel)return;
     // Do not wait for the PCM warmup here. The avatar's speculative request
     // reads the same in-flight cache promise, so sending the semantic cue now
@@ -270,11 +285,11 @@ async function miniMaxChatStream(message, history, persona, memories, companionS
     trace.backchannel=backchannel;
     sendEvent(res,"backchannel",backchannel);
   },BACKCHANNEL_OFFER_MS):null;
-  res.once("close",()=>{if(backchannelTimer)clearTimeout(backchannelTimer);});
   const response = await fetch(`${miniMaxBaseUrl}/chat/completions`, {
     method:"POST",
     headers:{ authorization:`Bearer ${apiKey}`, "content-type":"application/json" },
-    body:JSON.stringify(requestPayload)
+    body:JSON.stringify(requestPayload),
+    signal:client.signal
   });
   trace.timings.upstreamConnectedMs=Math.round(performance.now()-trace._startedMs);
   if (!response.ok || !response.body) throw new Error(`MiniMax 流式文案接口失败 (${response.status})`);
@@ -301,7 +316,7 @@ async function miniMaxChatStream(message, history, persona, memories, companionS
       firstSentenceEmitted=true;if(backchannelTimer)clearTimeout(backchannelTimer);
       trace.timings.firstSentenceMs??=Math.round(performance.now()-trace._startedMs);
       trace.emittedSentences.push(safeSentence);
-      if(safeSentence.replace(/[，。！？!?；;、\s]/g,"")!==backchannel?.text?.replace(/[，。！？!?；;、\s]/g,""))sendEvent(res, "sentence", { text:safeSentence, emotion:sentenceResult.emotion, action:sentenceResult.action });
+      if(!client.signal.aborted&&safeSentence.replace(/[，。！？!?；;、\s]/g,"")!==backchannel?.text?.replace(/[，。！？!?；;、\s]/g,""))sendEvent(res, "sentence", { text:safeSentence, emotion:sentenceResult.emotion, action:sentenceResult.action });
     }
     sentenceBuffer = remainder;
   };
@@ -335,6 +350,7 @@ async function miniMaxChatStream(message, history, persona, memories, companionS
   }
 
   emitAvailable(true);
+  if(client.signal.aborted)return;
   trace.rawModelText=rawText;
   trace.providerStream={
     finishReason,
@@ -350,6 +366,7 @@ async function miniMaxChatStream(message, history, persona, memories, companionS
   if(backchannelTimer)clearTimeout(backchannelTimer);
   finishChatTrace(trace,result,"minimax-stream");
   sendEvent(res, "done", { ...result, mode:"minimax" });
+  client.complete();
   res.end();
   void memoryStore.remember(userId,message);
   void memoryStore.updateCompanionState(userId,result.emotion);
@@ -688,6 +705,7 @@ export const server = http.createServer(async (req, res) => {
     if (req.method === "GET" || req.method === "HEAD") return await staticFile(req, res);
     json(res, 405, { error: "请求方法不支持" });
   } catch (error) {
+    if(error.name==="AbortError"&&(req.aborted||res.destroyed||res.writableEnded))return;
     console.error(error.message);
     if (res.headersSent) {
       sendEvent(res, "error", { error:error.message || "服务暂时不可用" });

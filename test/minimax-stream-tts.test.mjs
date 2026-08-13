@@ -60,3 +60,12 @@ test("reuses a connection established while reply text is still pending",async()
   assert.equal(result.connectionWaitMs,0);
   await assert.rejects(()=>streamMiniMaxPcm({apiKey:"secret",text:"重复",voice:"voice",connection,onAudio:()=>{}}),/已经使用/);
 });
+
+test("cancels a speculative connection before it starts speaking",async()=>{
+  class WaitingSocket extends FakeWebSocket{
+    constructor(...args){super(...args);this.queue=[];}
+  }
+  const controller=new AbortController(),work=streamMiniMaxPcm({apiKey:"secret",text:"我在。",voice:"voice",WebSocketImpl:WaitingSocket,signal:controller.signal,onAudio:()=>{}});
+  controller.abort();
+  await assert.rejects(work,/提前关闭|cancelled/);
+});
