@@ -16,6 +16,21 @@ export class BackchannelGate{
 
 export function normalizeBackchannelText(value){return String(value||"").replace(/[，。！？!?；;、\s]/g,"");}
 
+export function remainingAfterSpokenBackchannel(spoken,formal){
+  const prefix=[...normalizeBackchannelText(spoken)],value=String(formal||"");
+  if(!prefix.length||!value)return null;
+  let matched=0,index=0;
+  for(;index<value.length&&matched<prefix.length;index++){
+    const character=value[index];if(/[，。！？!?；;、\s]/.test(character))continue;
+    if(character!==prefix[matched])return null;
+    matched++;
+  }
+  if(matched!==prefix.length)return null;
+  const suffix=value.slice(index);
+  if(!/^[，；;、\s]/.test(suffix))return null;
+  return suffix.replace(/^[，；;、\s]+/,"").trim();
+}
+
 export class BackchannelPlayback{
   constructor(text){this.text=String(text||"");this.started=false;this.completed=false;this.claimed=false;this.closed=false;this.cancelled=false;this.startListeners=[];this.completeListeners=[];this.cancelListeners=[];}
   start(){if(this.started||this.cancelled)return;this.started=true;for(const listener of this.startListeners.splice(0))listener();}

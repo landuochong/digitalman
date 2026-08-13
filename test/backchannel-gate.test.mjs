@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { BackchannelGate,BackchannelPlayback } from "../public/backchannel-gate.js";
+import { BackchannelGate,BackchannelPlayback,remainingAfterSpokenBackchannel } from "../public/backchannel-gate.js";
 
 function fakeClock(){let task=null;return{set(fn){task=fn;return 1;},clear(){task=null;},fire(){const fn=task;task=null;fn?.();}};}
 
@@ -77,4 +77,16 @@ test("allows a speculative preparation to detach its cancellation listener",()=>
   const playback=new BackchannelPlayback("嗯。"),events=[];
   const unregister=playback.onCancel(()=>events.push("cancel"));unregister();
   assert.equal(playback.cancelBeforeStart(),true);assert.deepEqual(events,[]);
+});
+
+test("removes only an already spoken backchannel prefix from a formal reply",()=>{
+  assert.equal(remainingAfterSpokenBackchannel("听着呢。","听着呢，什么事？"),"什么事？");
+  assert.equal(remainingAfterSpokenBackchannel("我想想。","我想想，这件事可以分两步。"),"这件事可以分两步。");
+  assert.equal(remainingAfterSpokenBackchannel("我在。","我在认真听。"),null);
+});
+
+test("does not trim different wording or a longer backchannel",()=>{
+  assert.equal(remainingAfterSpokenBackchannel("嗯。","听着呢，什么事？"),null);
+  assert.equal(remainingAfterSpokenBackchannel("听着呢。","听着。"),null);
+  assert.equal(remainingAfterSpokenBackchannel("听着呢。","听着呢。"),null);
 });
