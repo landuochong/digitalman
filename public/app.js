@@ -350,6 +350,10 @@ function prepareStreamingNeuralSpeech(text,emotion,batch,behavior={action:"idle"
   const queue=[],waiters=[];let ended=false,failure=null,firstSegmentObserved=false,firstSegmentReadyAt=null,serverStreamId=null,commitRequested=false;
   const wake=()=>{while(waiters.length&&(queue.length||ended||failure))waiters.shift()();};
   const controller=new AbortController();
+  const skipVisualSentence=()=>{
+    if(!options.speculative||!behavior?.visualTurnId||!Number.isSafeInteger(Number(behavior?.visualSentenceIndex)))return;
+    fetch(`/api/dinet/visual-turn/${encodeURIComponent(behavior.visualTurnId)}/skip`,{method:"POST",keepalive:true,headers:{"content-type":"application/json"},body:JSON.stringify({index:Number(behavior.visualSentenceIndex)})}).catch(()=>{});
+  };
   const consume=(async()=>{
     const response=await fetch("/api/dinet/speech-stream",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({text,emotion,voice:voiceProfile,action,frameOffset,externalAudio,binaryAudio:externalAudio,fragmentedVideo,renderBackpressure:fragmentedVideo,preferPrewarmed:options.preferPrewarmed===true,speculative:options.speculative===true,visualTurnId:behavior?.visualTurnId,visualSentenceIndex:behavior?.visualSentenceIndex}),signal:controller.signal});
     if(!response.ok||!response.body){const data=await response.json().catch(()=>({}));throw new Error(data.error||"流式回答准备失败");}
@@ -372,7 +376,7 @@ function prepareStreamingNeuralSpeech(text,emotion,batch,behavior={action:"idle"
   const stream={
     get firstSegmentReadyAt(){return firstSegmentReadyAt;},
     commit(){commitRequested=true;if(serverStreamId)fetch(`/api/dinet/stream/${encodeURIComponent(serverStreamId)}/commit`,{method:"POST"}).catch(()=>{});},
-    cancel(){controller.abort();if(serverStreamId)fetch(`/api/dinet/stream/${encodeURIComponent(serverStreamId)}/cancel`,{method:"POST",keepalive:true}).catch(()=>{});activeStreamingSpeech.delete(stream);},
+    cancel(){controller.abort();skipVisualSentence();if(serverStreamId)fetch(`/api/dinet/stream/${encodeURIComponent(serverStreamId)}/cancel`,{method:"POST",keepalive:true}).catch(()=>{});activeStreamingSpeech.delete(stream);},
     async next(){
       while(!queue.length&&!ended&&!failure)await new Promise(resolve=>waiters.push(resolve));
       if(failure)throw failure;
@@ -509,7 +513,7 @@ async function reply(message) {
   const backchannelPlan=data=>({action:data.action||"nod",emotion:data.emotion||currentEmotion,intensity:.35,head:data.action==="thinking"?"slight-left":"center",gaze:"user",holdMs:1400,frameOffset:0,continuation:false});
   const backchannelGate=new BackchannelGate({delayMs:500,
     onPrepare:data=>{
-      if(batch!==speechBatch||!neuralAvatarProfile)return null;
+      if(batch!==speechBatch||!neuralAvatarProfile||!streamingAvatarExperiment)return null;
       const plan=backchannelPlan(data);
       return{plan,work:prepareSpeechWork(data.text,plan.emotion,batch,plan,streamTurn,{preferPrewarmed:true,speculative:true})};
     },

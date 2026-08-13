@@ -155,6 +155,12 @@ test("stream endpoint reports TTS and first playable segment timing",async()=>{
   assert.match(server,/visualTurns\.wait\(visualTurnId,visualSentenceIndex/);
   assert.match(server,/visualTurns\.finish\(visualTurnId,visualSentenceIndex\)/);
   assert.match(server,/dinetRenders\.closeVisualTurn/);
+  assert.match(server,/\(finish\|skip\)/);
+  assert.match(server,/visualTurns\.finish\(turnId,index\)/);
+  assert.match(server,/function skipVisualSentence\(turnId,index\)/);
+  assert.match(server,/await dinetRenders\.closeVisualTurn\?\.\(turnId\);\s*visualTurns\.finish\(turnId,index\)/);
+  assert.match(server,/speculativeState&&!speculativeState\.committed\)await skipVisualSentence/);
+  assert.match(server,/if\(!controller\.signal\.aborted\)sendEvent\(res,"error"/);
   const worker=await readFile(new URL("../scripts/dinet_worker.py",import.meta.url),"utf8");
   assert.match(worker,/frag_keyframe\+empty_moov\+default_base_moof/);
   assert.match(worker,/"-g", "20", "-keyint_min", "20", "-sc_threshold", "0"/);

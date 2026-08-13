@@ -32,6 +32,7 @@ test("main voice page offers real and anime modes in one conversation",async()=>
   assert.match(app,/speculative:true/);
   assert.match(app,/preparedWork:prepared\?\.work/);
   assert.match(app,/backchannelPreparedLeadMs/);
+  assert.match(app,/visual-turn\/\$\{encodeURIComponent\(behavior\.visualTurnId\)\}\/skip/);
   assert.match(app,/backchannelGate\.cancel\(\)/);
   assert.match(app,/frameOffset/);
   assert.match(app,/portrait\.dataset\.behavior=JSON\.stringify\(sentencePlan\)/);

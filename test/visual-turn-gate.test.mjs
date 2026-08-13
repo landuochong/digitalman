@@ -19,3 +19,15 @@ test("remembers an earlier completion when requests arrive out of order",async()
   const gate=new VisualTurnGate();gate.finish("turn",0);
   await gate.wait("turn",1);gate.finish("turn",1);gate.close("turn");
 });
+
+test("a skipped speculative sentence releases the real sentence",async()=>{
+  const gate=new VisualTurnGate(),events=[];
+  const real=gate.wait("turn",1).then(()=>events.push("real"));
+  await Promise.resolve();assert.deepEqual(events,[]);
+  gate.finish("turn",0);await real;assert.deepEqual(events,["real"]);gate.close("turn");
+});
+
+test("repeated completion of an old sentence remains harmless",async()=>{
+  const gate=new VisualTurnGate();await gate.wait("turn",0);gate.finish("turn",0);gate.finish("turn",0);
+  await gate.wait("turn",1);gate.finish("turn",1);gate.close("turn");
+});

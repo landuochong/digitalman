@@ -41,6 +41,7 @@ const dinetRenders = new DINetRenderStore({ projectRoot });
 const ephemeralPcm=new EphemeralPcmStore();
 const visualTurns=new VisualTurnGate();
 const speculativeStreams=new Map();
+const visualSkipTasks=new Map();
 const dinetStreams = new DINetStreamSessionStore({
   renderer:dinetRenders,
   publishAudio:payload=>ephemeralPcm.put(payload.pcm,payload),
@@ -69,6 +70,21 @@ const recentChatTraces=[];
 const miniMaxSpeechCache=new BoundedAsyncCache(64);
 const miniMaxPcmCache=new BoundedAsyncCache(64);
 let chatTraceSequence=0;
+
+function skipVisualSentence(turnId,index){
+  const key=`${turnId}:${index}`;
+  if(visualSkipTasks.has(key))return visualSkipTasks.get(key);
+  const task=(async()=>{
+    // Clearing and releasing are one ordered operation: a real sentence must
+    // never enter the worker before the unseen speculative frame is removed.
+    await dinetRenders.closeVisualTurn?.(turnId);
+    visualTurns.finish(turnId,index);
+    return{id:turnId,index,skipped:true};
+  })();
+  visualSkipTasks.set(key,task);
+  const timer=setTimeout(()=>visualSkipTasks.delete(key),60_000);timer.unref?.();
+  return task;
+}
 
 function miniMaxPcmCacheKey({text,voice,emotion}){
   return JSON.stringify([miniMaxTtsModel,voice,normalizeMiniMaxTtsEmotion(emotion),String(text||"").trim()]);
@@ -550,19 +566,29 @@ export const server = http.createServer(async (req, res) => {
         }});
         closed=true;res.end();
       }catch(error){
-        dinetStreams.cancel(session.id);sendEvent(res,"error",{error:error.message||"流式人物生成失败"});closed=true;res.end();
+        dinetStreams.cancel(session.id);if(!controller.signal.aborted)sendEvent(res,"error",{error:error.message||"流式人物生成失败"});closed=true;res.end();
       }finally{
-        if(orderedSentence)visualTurns.finish(visualTurnId,visualSentenceIndex);
+        if(orderedSentence){
+          if(speculativeState&&!speculativeState.committed)await skipVisualSentence(visualTurnId,visualSentenceIndex);
+          else visualTurns.finish(visualTurnId,visualSentenceIndex);
+        }
         speculativeStreams.delete(session.id);
       }
       return;
     }
-    const visualTurnMatch=pathname.match(/^\/api\/dinet\/visual-turn\/([0-9a-f-]{8,64})\/finish$/i);
+    const visualTurnMatch=pathname.match(/^\/api\/dinet\/visual-turn\/([0-9a-f-]{8,64})\/(finish|skip)$/i);
     if(visualTurnMatch&&req.method==="POST"){
       if(!isLoopbackAddress(req.socket.remoteAddress))return json(res,403,{error:"本地人物轮次接口仅允许本机访问"});
-      visualTurns.close(visualTurnMatch[1]);
-      await dinetRenders.closeVisualTurn?.(visualTurnMatch[1]);
-      return json(res,200,{id:visualTurnMatch[1],closed:true});
+      const[,turnId,command]=visualTurnMatch;
+      if(command==="skip"){
+        const data=await body(req),index=Number(data.index);
+        if(!Number.isSafeInteger(index)||index<0)return json(res,400,{error:"视觉句序号无效"});
+        return json(res,200,await skipVisualSentence(turnId,index));
+      }
+      visualTurns.close(turnId);
+      for(const key of visualSkipTasks.keys())if(key.startsWith(`${turnId}:`))visualSkipTasks.delete(key);
+      await dinetRenders.closeVisualTurn?.(turnId);
+      return json(res,200,{id:turnId,closed:true});
     }
     if (pathname === "/api/dinet/stream/start" && req.method === "POST") {
       if (!isLoopbackAddress(req.socket.remoteAddress)) return json(res, 403, { error:"本地 DINet 流式接口仅允许本机访问" });

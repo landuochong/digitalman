@@ -21,6 +21,7 @@ export class VisualTurnGate {
   finish(turnId,index) {
     turnId=String(turnId||"");index=Number(index);if(!turnId||!Number.isSafeInteger(index)||index<0)return;
     const turn=this.#turn(turnId);turn.finished.add(index);
+    if(index<turn.next){turn.finished.delete(index);this.#retain(turnId,turn);return;}
     while(turn.finished.has(turn.next)){turn.finished.delete(turn.next);turn.next++;}
     for(const waiter of [...turn.waiters])if(waiter.index<=turn.next)waiter.resolve();
     this.#retain(turnId,turn);
