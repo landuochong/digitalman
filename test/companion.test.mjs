@@ -184,6 +184,7 @@ test("removes only redundant planning confirmation questions",()=>{
   assert.equal(isRedundantClosingQuestion("今天怎么样","你觉得这样可以吗？",true),false);
   assert.equal(isRedundantClosingQuestion(message,"你觉得这样节奏可以吗？",false),false);
   assert.equal(buildMiniMaxReply("周六上午学习，下午运动。你觉得这样节奏可以吗？",message).reply,"周六上午学习，下午运动。");
+  assert.equal(buildMiniMaxReply("我喜欢傍晚去湖边走走。你今天工作那么累，想不想放松一下？","你平时有什么爱好？").reply,"我喜欢傍晚去湖边走走。");
 });
 test("does not turn an ordinary life share into an unnecessary interview",()=>{
   const share="今天路上看到一棵很高的树";
@@ -242,6 +243,8 @@ test("infers natural daily phrases for VRM gestures", () => {
   assert.deepEqual(inferCompanionState("你开心吗？"),{emotion:"curious",action:"thinking"});
   assert.deepEqual(inferCompanionState("你平时有什么爱好？"),{emotion:"happy",action:"nod"});
   assert.deepEqual(inferCompanionState("你喜欢怎样度过周末？"),{emotion:"happy",action:"nod"});
+  assert.deepEqual(inferCompanionState("你平时有什么爱好？","你今天工作那么累，想不想也放松一下？",{mood:"caring",moodIntensity:.7}),{emotion:"happy",action:"nod"});
+  assert.deepEqual(inferCompanionState("今天工作有点累。","我平时喜欢听音乐。"),{emotion:"caring",action:"caring"});
   assert.deepEqual(inferCompanionState("今天路上看到一棵很高的树","哇，高高的树看着就很治愈吧。"),{emotion:"calm",action:"idle"});
   assert.deepEqual(inferCompanionState("我随便说件小事","哇，真没想到这么特别。"),{emotion:"calm",action:"idle"});
   assert.deepEqual(inferCompanionState("我随便说件小事","恭喜你完成了，真开心。"),{emotion:"calm",action:"idle"});

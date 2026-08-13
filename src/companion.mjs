@@ -201,13 +201,17 @@ export function inferExplicitActionRequest(message){
 }
 
 export function inferCompanionState(message, reply = "", companionState=null) {
-  const text = `${message} ${reply}`;
-  if (/自杀|不想活|活不下去|伤害自己|结束生命/.test(text)) {
+  const userMessage=String(message);
+  if (/自杀|不想活|活不下去|伤害自己|结束生命/.test(userMessage)) {
     return { emotion:"caring", action:"caring" };
   }
   const explicitAction=inferExplicitActionRequest(message);
   if(explicitAction)return explicitAction;
-  const distressText=text.replace(/(?:不|没)(?:会)?(?:太|很|那么|怎么)?累|无压力|没压力|不烦/g,"");
+  // Distress is a high-priority state only when it belongs to the user's
+  // current message. A reply can mention an older tired/sad turn while
+  // answering a new light topic; scanning that echo made the avatar jump from
+  // the current nod into a stale caring pose midway through the answer.
+  const distressText=userMessage.replace(/(?:不|没)(?:会)?(?:太|很|那么|怎么)?累|无压力|没压力|不烦/g,"");
   if (/难过|伤心|焦虑|崩溃|害怕|担心|累|饿|困|不舒服|生病|疼|压力|烦|委屈|孤独|失落/.test(distressText)) return { emotion:"caring", action:"caring" };
   if (/欢呼|欢呼一下|举手庆祝|加油打气|冲啊/.test(String(message))) return { emotion:"excited", action:"cheer" };
   if (/(?:给你|送你|买给你|为你买|特意给你).{0,10}(?:礼物|礼品|花|鲜花|小惊喜)|(?:礼物|礼品|花|鲜花).{0,8}(?:给你|送你)|这是给你的/.test(String(message))) return { emotion:"happy", action:"caring" };
@@ -220,7 +224,6 @@ export function inferCompanionState(message, reply = "", companionState=null) {
   if (/害羞|脸红|不好意思|真可爱|好可爱|你.{0,6}(?:可爱|漂亮|好看|温柔|贴心|优秀|真棒|厉害)|喜欢你|夸夸你/.test(String(message))) return { emotion:"happy", action:"shy" };
   if (/你(?:真的)?(?:很|太)(?:棒|厉害|优秀|善良|贴心|了不起)|(?:真|很)(?:棒|厉害|优秀|善良|贴心|了不起)|做得(?:很好|真棒)|为你(?:感到)?骄傲/.test(String(reply))) return { emotion:"happy", action:"thumbs_up" };
   if (/(?:挺|很)(?:好|不错|有心)|真(?:不错|有心)/.test(String(reply))) return { emotion:"happy", action:"nod" };
-  const userMessage=String(message);
   if (/鼓掌|拍手|庆祝一下|帮我庆祝|为我庆祝|成功|搞定|太好了|好消息|恭喜|完成|做到了|通过了|赢了|录取|升职|顺利|终于/.test(userMessage)) {
     return { emotion:"excited", action:"clap" };
   }
@@ -295,6 +298,7 @@ const ordinaryInterviewQuestion=/(?:什么(?:样|颜色|形状|茶|歌|花|树|�
 export function isRedundantClosingQuestion(message,sentence,hasSubstantiveAnswer=false){
   if(!hasSubstantiveAnswer)return false;
   const input=String(message||""),closing=String(sentence||"").trim();
+  if(isPersonalPreferenceQuestion(input)&&/[？?]$/.test(closing))return true;
   if(directPlanningRequest.test(input)&&genericPlanConfirmation.test(closing))return true;
   return ordinaryLifeShare.test(input)&&!asksForHelpOrAnswer.test(input)&&!distressOrCrisis.test(input)&&ordinaryInterviewQuestion.test(closing);
 }
