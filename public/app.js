@@ -1,4 +1,4 @@
-import { ConversationActionScheduler, continueActionPlan } from "./conversation-actions.js?v=20260813-action-continuity-v14";
+import { ConversationActionScheduler, continueActionPlan } from "./conversation-actions.js?v=20260813-action-cycle-v15";
 import { buildWav2LipPlaybackMessage } from "./avatar-protocol.js?v=20260813-video-handoff-v11";
 import { AvatarStreamTurn } from "./avatar-stream-turn.js?v=20260813-video-handoff-v11";
 import { RecognitionTurnGate,recognitionResumeDelayMs,recognitionSilenceMs } from "./recognition-turn-gate.js?v=20260813-listen-resume-v16";

@@ -7,6 +7,7 @@ test("continues a matching action from its visible source frame",()=>{
   assert.deepEqual(continueActionPlan(plan,{action:"caring",baseFrameOffset:40,elapsedMs:800,leadMs:200}),{...plan,continuation:true,frameOffset:65});
   assert.equal(continueActionPlan(plan,{action:"thinking",elapsedMs:800}),plan);
   assert.equal(continueActionPlan({...plan,deferred:true},{action:"caring",elapsedMs:800}).deferred,true);
+  assert.equal(continueActionPlan(plan,{action:"caring",baseFrameOffset:220,elapsedMs:200}).frameOffset,3);
 });
 
 test("moves a subtle gesture after an unnaturally short spoken opener",()=>{
@@ -40,6 +41,17 @@ test("keeps ordinary idle sentences on one source-video timeline",()=>{
   assert.equal(first.frameOffset,0);
   assert.ok(second.frameOffset>0);
   assert.equal(second.startAtMs,first.durationMs);
+});
+
+test("keeps gestures within one authored motion cycle",()=>{
+  const scheduler=new ConversationActionScheduler();
+  scheduler.startTurn({message:"我今天有点累",action:"caring"});
+  const first=scheduler.planForSentence("我知道你今天确实已经辛苦很久很久了，所以现在就先安心停下来好好休息。",0,"caring");
+  const second=scheduler.planForSentence("现在先休息一下吧。",1,"caring");
+  assert.ok(first.holdMs>conversationActionPolicy.naturalGestureCycleMs);
+  assert.equal(first.maxContinuousMs,conversationActionPolicy.naturalGestureCycleMs);
+  assert.equal(second.action,"idle");
+  assert.ok(first.frameOffset<conversationActionPolicy.sourceFrames);
 });
 
 test("limits repeated large inferred gestures but preserves explicit requests",()=>{
