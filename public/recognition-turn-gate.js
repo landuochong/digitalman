@@ -1,4 +1,8 @@
 export function recognitionSilenceMs(isFinal){return isFinal?450:650;}
+export function recognitionResumeDelayMs({preciseAudioTail=false,outputLatencyMs=0}={}){
+  if(!preciseAudioTail)return 180;
+  return Math.min(180,Math.max(80,Math.ceil(Math.max(0,Number(outputLatencyMs)||0)+40)));
+}
 
 export class RecognitionTurnGate {
   constructor({onCommit=()=>{},finalizeDelayMs=90,now=()=>performance.now(),setTimer=setTimeout,clearTimer=clearTimeout}={}){

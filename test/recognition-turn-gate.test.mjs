@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { RecognitionTurnGate,recognitionSilenceMs } from "../public/recognition-turn-gate.js";
+import { RecognitionTurnGate,recognitionResumeDelayMs,recognitionSilenceMs } from "../public/recognition-turn-gate.js";
 
 function harness(){
   let now=1_000,nextId=1;
@@ -32,6 +32,14 @@ test("commits a final recognition correction immediately after VAD stop",()=>{
 test("uses a shorter silence window only for a browser-final transcript",()=>{
   assert.equal(recognitionSilenceMs(false),650);
   assert.equal(recognitionSilenceMs(true),450);
+});
+
+test("resumes listening sooner only after a precise shared PCM tail",()=>{
+  assert.equal(recognitionResumeDelayMs({preciseAudioTail:true}),80);
+  assert.equal(recognitionResumeDelayMs({preciseAudioTail:true,outputLatencyMs:75}),115);
+  assert.equal(recognitionResumeDelayMs({preciseAudioTail:true,outputLatencyMs:300}),180);
+  assert.equal(recognitionResumeDelayMs({preciseAudioTail:false}),180);
+  assert.equal(recognitionResumeDelayMs(),180);
 });
 
 test("submits an already-final transcript at the VAD boundary without another timer",()=>{
