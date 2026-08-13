@@ -21,6 +21,7 @@ import { resolveWaitingActionPreview } from "./src/real-actions.mjs";
 import { bindClientAbort } from "./src/client-abort.mjs";
 import { shouldPrepareAvatarAction } from "./src/action-preparation.mjs";
 import { PreparedTtsLease, PREPARED_TTS_REFRESH_MS } from "./src/prepared-tts-lease.mjs";
+import { trimPcm16Silence } from "./src/pcm-silence.mjs";
 
 function loadLocalEnv() {
   try {
@@ -133,7 +134,10 @@ function collectMiniMaxPcm({text,voice,emotion,signal}={}){
   return streamMiniMaxPcm({
     apiKey,text,model:miniMaxTtsModel,voice,emotion,url:miniMaxTtsWsUrl,signal,
     onAudio:pcm=>chunks.push(Buffer.from(pcm))
-  }).then(metrics=>({pcm:Buffer.concat(chunks),metrics}));
+  }).then(metrics=>{
+    const trimmed=trimPcm16Silence(Buffer.concat(chunks));
+    return{pcm:trimmed.pcm,metrics:{...metrics,audioMs:Math.round(trimmed.pcm.length/32),trimmedLeadingMs:trimmed.trimmedLeadingMs,trimmedTrailingMs:trimmed.trimmedTrailingMs}};
+  });
 }
 
 function prewarmMiniMaxPcm({text,voice,emotion,signal}){

@@ -187,6 +187,7 @@ test("stream endpoint reports TTS and first playable segment timing",async()=>{
   assert.match(server,/signal:client\.signal/);
   assert.match(server,/ttsLease\?\.cancel\(\)/);
   assert.match(server,/prewarmMiniMaxPcm\(\{text:backchannel\.text,voice,emotion:backchannel\.emotion,signal:client\.signal\}\)/);
+  assert.match(server,/trimPcm16Silence\(Buffer\.concat\(chunks\)\)/);
   assert.match(server,/if\(client\.signal\.aborted\)return/);
   assert.match(server,/connection:preparedConnection/);
   assert.match(server,/renderBackpressure:data\.renderBackpressure===true/);
