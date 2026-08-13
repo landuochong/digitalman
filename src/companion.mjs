@@ -56,8 +56,26 @@ export function sanitizeReplyText(value) {
     .replace(new RegExp(`(?:^|\\n)\\s*(?:emotion|action)\\s*[:：]\\s*(?:${stateWords})\\s*(?=\\n|$)`, "gi"), "\n")
     .replace(/(?:^|(?<=[。！？!?；;\n]))(?:来[，,]?\s*)?(?:啪){2,}[～~！!，,。\s]*/gu, "")
     .replace(/^(?:(?:鼓掌|拍手)[～~！!，,。\s]*)+/u, "")
+    .replace(/(?:\*\*|__)([^\n]+?)(?:\*\*|__)/g,"$1")
+    .replace(/^\s{0,3}#{1,6}\s*/gm,"")
+    .replace(/^\s*[-*+]\s+/gm,"")
+    .replace(/`([^`]+)`/g,"$1")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
+}
+
+function requestedSentenceLimit(message){
+  const input=String(message||"");
+  if(/(?:两句话|两句|一两句)/.test(input))return 2;
+  if(/(?:一句话|一句)/.test(input))return 1;
+  if(/(?:简单|简短|简洁|精简|概括|大概).{0,8}(?:说|讲|回答|排|安排|规划|建议|分析|说明|一下)|(?:简单|简短|简洁|精简)(?:点|一点|一些)?/.test(input))return 3;
+  return 0;
+}
+
+export function limitReplyForRequest(reply,message){
+  const value=String(reply||"").trim(),limit=requestedSentenceLimit(message);if(!limit)return value;
+  const parts=value.match(/[^。！？!?；;\n]+[。！？!?；;]?/g)?.map(item=>item.trim()).filter(Boolean)||[];
+  return parts.length>limit?parts.slice(0,limit).join(""):value;
 }
 
 export function parseCompanionReply(text) {
@@ -175,7 +193,8 @@ export function inferCompanionState(message, reply = "", companionState=null) {
   }
   const explicitAction=inferExplicitActionRequest(message);
   if(explicitAction)return explicitAction;
-  if (/难过|伤心|焦虑|崩溃|害怕|担心|累|饿|困|不舒服|生病|疼|压力|烦|委屈|孤独|失落/.test(text)) return { emotion:"caring", action:"caring" };
+  const distressText=text.replace(/(?:不|没)(?:会)?(?:太|很|那么|怎么)?累|无压力|没压力|不烦/g,"");
+  if (/难过|伤心|焦虑|崩溃|害怕|担心|累|饿|困|不舒服|生病|疼|压力|烦|委屈|孤独|失落/.test(distressText)) return { emotion:"caring", action:"caring" };
   if (/欢呼|欢呼一下|举手庆祝|加油打气|冲啊/.test(String(message))) return { emotion:"excited", action:"cheer" };
   if (/(?:给你|送你|买给你|为你买|特意给你).{0,10}(?:礼物|礼品|花|鲜花|小惊喜)|(?:礼物|礼品|花|鲜花).{0,8}(?:给你|送你)|这是给你的/.test(String(message))) return { emotion:"happy", action:"caring" };
   if (/鞠躬|鞠个躬|行个礼|谢谢你|感谢你|辛苦了/.test(String(message))) return { emotion:"happy", action:"bow" };
@@ -192,7 +211,7 @@ export function inferCompanionState(message, reply = "", companionState=null) {
   }
   if (/惊讶|没想到|居然|竟然|真的假的|真的吗|不会吧|天啊|我的天|怎么可能|太夸张|吓我一跳|突然|意外|震惊|哇/.test(text)) return { emotion:"excited", action:"surprise" };
   if (/不确定|不知道|也许|可能吧/.test(text)) return { emotion:"curious", action:"shrug" };
-  if (/[?？]|为什么|怎么|如何|觉得|认为|怎么办|能不能|可以吗|要不要|推荐|帮我想|分析|选择|哪个好/.test(String(message))) return { emotion:"curious", action:"thinking" };
+  if (/[?？]|为什么|怎么|如何|觉得|认为|怎么办|能不能|可以吗|要不要|推荐|帮我想|分析|选择|哪个好|安排|规划|计划|排一下|排一排/.test(String(message))) return { emotion:"curious", action:"thinking" };
   if (/你好|嗨|哈喽|嘿|早上好|中午好|下午好|晚上好|在吗|hello|hi/i.test(String(message))) return { emotion:"happy", action:"wave_approval" };
   // Natural low-amplitude gestures inferred from the actual reply. These are
   // intentionally evaluated after explicit/high-energy user intents so they
@@ -238,9 +257,22 @@ export function buildResponsiveBackchannel(message,state=inferCompanionState(mes
   return {text:stableChoice(backchannelChoices.neutral,input),emotion:state.emotion||"calm",action:"nod"};
 }
 
+const directPlanningRequest=/(?:帮我|给我|替我|请你).{0,8}(?:安排|规划|计划|排(?:一)?下|排一排)|(?:安排|规划|计划).{0,8}(?:一下|简单|怎么)/;
+const genericPlanConfirmation=/^(?:你觉得|你看)(?:这样|这个|这么|这样的)?(?:安排|节奏|计划|方案)?(?:可以|行|合适|怎么样)(?:吗)?[？?。]?$/;
+
+export function isRedundantClosingQuestion(message,sentence,hasSubstantiveAnswer=false){
+  return Boolean(hasSubstantiveAnswer&&directPlanningRequest.test(String(message||""))&&genericPlanConfirmation.test(String(sentence||"").trim()));
+}
+
+function removeRedundantClosingQuestion(reply,message){
+  const value=String(reply||"").trim(),match=value.match(/([^。！？!?]*[？?。]?)$/u),closing=match?.[1]?.trim();
+  if(!closing||!isRedundantClosingQuestion(message,closing,value.slice(0,-closing.length).replace(/[\s，。！？!?；;、]/g,"").length>=8))return value;
+  return value.slice(0,-closing.length).trim();
+}
+
 export function buildMiniMaxReply(text, message, companionState=null, history=[]) {
   const parsed = parseCompanionReply(text);
-  let reply = sanitizeReplyText(parsed.reply);
+  let reply = limitReplyForRequest(removeRedundantClosingQuestion(sanitizeReplyText(parsed.reply),message),message);
   const scene=[...history.slice(-10).map(item=>String(item?.content||"")),String(message||"")].join(" ");
   if(staleDeviceReply.test(reply)||/(?:没办法|不能|无法).{0,12}(?:真的)?(?:下楼|出门|走到楼下|到你身边|陪你去)/.test(reply)){
     reply=/下楼|楼下/.test(scene)
@@ -351,7 +383,7 @@ export function buildMiniMaxChatPayload({ model, message, history = [], stream =
   return payload;
 }
 
-export function takeCompleteSentences(text, flush = false, includeClauses = false) {
+export function takeCompleteSentences(text, flush = false, includeClauses = false, minClauseCharacters=9) {
   const source = String(text ?? "");
   const sentences = [];
   let start = 0;
@@ -361,8 +393,8 @@ export function takeCompleteSentences(text, flush = false, includeClauses = fals
     const sentence = source.slice(start, end).trim();
     const terminal = /[。！？!?；;\n]/.test(match[0]);
     const spokenLength = sentence.replace(/[，,、。！？!?；;\s]/g, "").length;
-    if (includeClauses && !terminal && spokenLength < 9) continue;
-    if(includeClauses&&terminal&&spokenLength<=4&&sentences.length&&start>0){sentences[sentences.length-1]+=source.slice(start,end);start=end;continue;}
+    if (includeClauses && !terminal && spokenLength < Math.max(1,Number(minClauseCharacters)||9)) continue;
+    if(includeClauses&&terminal&&spokenLength<=8&&sentences.length&&start>0){sentences[sentences.length-1]+=source.slice(start,end);start=end;continue;}
     if (sentence) sentences.push(sentence);
     start = end;
   }

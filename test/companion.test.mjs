@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { buildChatPayload, buildMiniMaxChatPayload, buildMiniMaxReply, buildMiniMaxSpeechPayload, buildResponsiveBackchannel, buildSpeechPayload, companionContextPolicy, companionIdentityReply, companionPresenceReply, decodeMiniMaxAudio, demoReply, extractMiniMaxChatText, extractResponseText, inferCompanionState, inferExplicitActionRequest, isCompanionIdentityQuestion, isCompanionPresenceQuestion, normalizeAction, normalizeEmotion, normalizePersona, parseCompanionReply, sanitizeReplyText, takeCompleteSentences } from "../src/companion.mjs";
+import { buildChatPayload, buildMiniMaxChatPayload, buildMiniMaxReply, buildMiniMaxSpeechPayload, buildResponsiveBackchannel, buildSpeechPayload, companionContextPolicy, companionIdentityReply, companionPresenceReply, decodeMiniMaxAudio, demoReply, extractMiniMaxChatText, extractResponseText, inferCompanionState, inferExplicitActionRequest, isCompanionIdentityQuestion, isCompanionPresenceQuestion, isRedundantClosingQuestion, limitReplyForRequest, normalizeAction, normalizeEmotion, normalizePersona, parseCompanionReply, sanitizeReplyText, takeCompleteSentences } from "../src/companion.mjs";
 
 test("extracts Responses API output text", () => {
   assert.equal(extractResponseText({ output:[{ type:"message", content:[{ type:"output_text", text:"你好" }] }] }), "你好");
@@ -15,6 +15,7 @@ test("removes leaked internal state words from spoken replies", () => {
   assert.deepEqual(parseCompanionReply('结果如下：{"reply":"慢慢来，我陪你。（calm）","emotion":"calm","action":"idle"}'), { reply:"慢慢来，我陪你。", emotion:"calm", action:"idle" });
   assert.equal(sanitizeReplyText("啪啪啪～辛苦了，真的。"),"辛苦了，真的。");
   assert.equal(sanitizeReplyText("来，啪啪啪啪啪！你已经很努力了。"),"你已经很努力了。");
+  assert.equal(sanitizeReplyText("**周六**：学习。\n- 下午运动。\n`晚上休息`。"),"周六：学习。\n下午运动。\n晚上休息。");
 });
 test("normalizes unsafe emotion values", () => assert.equal(normalizeEmotion("angry"), "neutral"));
 test("normalizes unsupported actions", () => assert.equal(normalizeAction("dance"), "idle"));
@@ -30,6 +31,7 @@ test("builds short contextual backchannels without pretending they are answers",
   assert.equal(caring.emotion,"caring");assert.equal(caring.action,"caring");assert.equal(caring.text,"我在。");
   const thinking=buildResponsiveBackchannel("这个问题应该怎么办？");
   assert.equal(thinking.action,"thinking");assert.equal(thinking.text,"我想想。");
+  assert.deepEqual(buildResponsiveBackchannel("周末帮我安排学习和运动"),thinking);
   const excited=buildResponsiveBackchannel("我终于成功了");
   assert.equal(excited.action,"happy");assert.match(excited.text,/真的|哇/);
   assert.match(buildResponsiveBackchannel("我不想活了").text,/安全/);
@@ -131,6 +133,8 @@ test("builds streaming MiniMax payload and segments complete spoken sentences", 
   assert.deepEqual(takeCompleteSentences("辛苦了，今天先休息一下", false, true), { sentences:[], remainder:"辛苦了，今天先休息一下" });
   assert.deepEqual(takeCompleteSentences("辛苦了，今天先休息一下。", false, true), { sentences:["辛苦了，今天先休息一下。"], remainder:"" });
   assert.deepEqual(takeCompleteSentences("你已经撑了很久了，真的很棒。今晚早点休息，别硬扛。", false, true),{sentences:["你已经撑了很久了，真的很棒。","今晚早点休息，别硬扛。"],remainder:""});
+  assert.deepEqual(takeCompleteSentences("周六上午学习，下午运动，晚上早点休息；周日上午再复习。",false,true),{sentences:["周六上午学习，下午运动，晚上早点休息；周日上午再复习。"],remainder:""});
+  assert.deepEqual(takeCompleteSentences("这样学、动、歇都顾到了，也不会太满。",false,true,12),{sentences:["这样学、动、歇都顾到了，也不会太满。"],remainder:""});
   assert.equal(companionContextPolicy.minSpokenClauseCharacters,9);
 });
 
@@ -156,6 +160,23 @@ test("MiniMax speaks only the reply while state is inferred locally", () => {
   assert.deepEqual(buildMiniMaxReply("慢慢来，我陪着你。", "我今天很焦虑"), { reply:"慢慢来，我陪着你。", emotion:"caring", action:"caring" });
   assert.deepEqual(buildMiniMaxReply('{"reply":"你好呀","emotion":"neutral","action":"idle"}', "你好"), { reply:"你好呀", emotion:"happy", action:"wave_approval" });
 });
+test("removes only redundant planning confirmation questions",()=>{
+  const message="周末帮我简单安排一下学习和运动";
+  assert.equal(isRedundantClosingQuestion(message,"你觉得这样节奏可以吗？",true),true);
+  assert.equal(isRedundantClosingQuestion(message,"你周六几点有空？",true),false);
+  assert.equal(isRedundantClosingQuestion("今天怎么样","你觉得这样可以吗？",true),false);
+  assert.equal(isRedundantClosingQuestion(message,"你觉得这样节奏可以吗？",false),false);
+  assert.equal(buildMiniMaxReply("周六上午学习，下午运动。你觉得这样节奏可以吗？",message).reply,"周六上午学习，下午运动。");
+});
+test("honors explicit concise reply length without truncating normal analysis",()=>{
+  const long="第一句。第二句。第三句。第四句。";
+  assert.equal(limitReplyForRequest(long,"简单说一下"),"第一句。第二句。第三句。");
+  assert.equal(limitReplyForRequest(long,"请用两句话回答"),"第一句。第二句。");
+  assert.equal(limitReplyForRequest(long,"说一两句就好"),"第一句。第二句。");
+  assert.equal(limitReplyForRequest(long,"用一句话概括"),"第一句。");
+  assert.equal(limitReplyForRequest(long,"请认真详细分析"),long);
+  assert.equal(buildMiniMaxReply(long,"简单说一下").reply,"第一句。第二句。第三句。");
+});
 test("repairs device-confinement replies while continuing the shared scene",()=>{
   const history=[
     {role:"user",content:"带你出去玩"},
@@ -168,7 +189,10 @@ test("repairs device-confinement replies while continuing the shared scene",()=>
 });
 test("infers natural daily phrases for VRM gestures", () => {
   assert.deepEqual(inferCompanionState("我饿了"), { emotion:"caring", action:"caring" });
+  assert.deepEqual(inferCompanionState("帮我安排一下","这样节奏不累"),{emotion:"curious",action:"thinking"});
+  assert.deepEqual(inferCompanionState("帮我安排一下","这样不会太累，也没压力"),{emotion:"curious",action:"thinking"});
   assert.deepEqual(inferCompanionState("帮我分析一下应该选哪个好"), { emotion:"curious", action:"thinking" });
+  assert.deepEqual(inferCompanionState("周末帮我安排学习和运动"), { emotion:"curious", action:"thinking" });
   assert.deepEqual(inferCompanionState("天啊，不会吧"), { emotion:"excited", action:"surprise" });
   assert.deepEqual(inferCompanionState("哇，真的吗"), { emotion:"excited", action:"surprise" });
   assert.deepEqual(inferCompanionState("晚上好"), { emotion:"happy", action:"wave_approval" });

@@ -4,7 +4,7 @@ import { stat } from "node:fs/promises";
 import { createReadStream, readFileSync } from "node:fs";
 import { extname, join, normalize } from "node:path";
 import { fileURLToPath } from "node:url";
-import { buildChatPayload, buildMiniMaxChatPayload, buildMiniMaxReply, buildMiniMaxSpeechPayload, buildResponsiveBackchannel, buildSpeechPayload, companionIdentityReply, companionPresenceReply, decodeMiniMaxAudio, demoReply, extractMiniMaxChatText, extractResponseText, inferCompanionState, normalizePersona, parseCompanionReply, sanitizeReplyText, takeCompleteSentences } from "./src/companion.mjs";
+import { buildChatPayload, buildMiniMaxChatPayload, buildMiniMaxReply, buildMiniMaxSpeechPayload, buildResponsiveBackchannel, buildSpeechPayload, companionIdentityReply, companionPresenceReply, decodeMiniMaxAudio, demoReply, extractMiniMaxChatText, extractResponseText, inferCompanionState, isRedundantClosingQuestion, limitReplyForRequest, normalizePersona, parseCompanionReply, sanitizeReplyText, takeCompleteSentences } from "./src/companion.mjs";
 import { CompanionMemoryStore } from "./src/memory.mjs";
 import { buildVoiceCatalog } from "./src/voices.mjs";
 import { DhActionTaskStore, isLoopbackAddress, saveActionVideo } from "./src/dh-action-studio.mjs";
@@ -308,10 +308,13 @@ async function miniMaxChatStream(message, history, persona, memories, companionS
     }
     sentenceBuffer += clean.slice(observedCleanLength);
     observedCleanLength = clean.length;
-    const { sentences, remainder } = takeCompleteSentences(sentenceBuffer, flush, fastSpeech);
+    const includeClauses=fastSpeech&&!trace.emittedSentences.length;
+    const { sentences, remainder } = takeCompleteSentences(sentenceBuffer,flush,includeClauses,9);
     for (const sentence of sentences) {
       const sentenceResult=buildMiniMaxReply(sentence,message,companionState,history);
       const safeSentence=sentenceResult.reply;
+      if(isRedundantClosingQuestion(message,safeSentence,trace.emittedSentences.length>0))continue;
+      if(!limitReplyForRequest([...trace.emittedSentences,safeSentence].join(""),message).endsWith(safeSentence))continue;
       if(trace.emittedSentences.at(-1)===safeSentence&&safeSentence!==sentence)continue;
       firstSentenceEmitted=true;if(backchannelTimer)clearTimeout(backchannelTimer);
       trace.timings.firstSentenceMs??=Math.round(performance.now()-trace._startedMs);
