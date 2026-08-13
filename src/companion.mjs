@@ -216,6 +216,7 @@ export function inferCompanionState(message, reply = "", companionState=null) {
   if (/不确定|不知道|也许|可能吧/.test(userMessage)) return { emotion:"curious", action:"shrug" };
   if (/[?？]|为什么|怎么|如何|觉得|认为|怎么办|能不能|可以吗|要不要|推荐|帮我想|分析|选择|哪个好|安排|规划|计划|排一下|排一排/.test(String(message))&&!isPersonalPreferenceQuestion(userMessage)) return { emotion:"curious", action:"thinking" };
   if (/你好|嗨|哈喽|嘿|早上好|中午好|下午好|晚上好|在吗|hello|hi/i.test(String(message))) return { emotion:"happy", action:"wave_approval" };
+  if(isPersonalPreferenceQuestion(userMessage))return{emotion:"happy",action:"nod"};
   if(isPositiveLifeShare(userMessage))return {emotion:"happy",action:"nod"};
   if (/(?:我|今天|现在|刚刚|刚才).{0,8}(?:开心|高兴)|(?:开心|高兴)(?:极了|坏了|呀|啊|呢|！|!|。|$)|哈哈/.test(userMessage)) return { emotion:"happy", action:"happy" };
   // Natural low-amplitude gestures inferred from the actual reply. These are
@@ -263,7 +264,7 @@ export function buildResponsiveBackchannel(message,state=inferCompanionState(mes
   if(!input)return null;
   if(/自杀|不想活|活不下去|伤害自己|结束生命/.test(input))return {text:"我在，先保证自己现在是安全的。",emotion:"caring",action:"caring"};
   if(/你好|嗨|哈喽|嘿|早上好|中午好|下午好|晚上好|在吗|hello|hi/i.test(input))return {text:stableChoice(backchannelChoices.greeting,input),emotion:"happy",action:"wave_approval"};
-  if(isPersonalPreferenceQuestion(input))return{text:"这个嘛。",emotion:"calm",action:"nod"};
+  if(isPersonalPreferenceQuestion(input))return{text:"这个嘛。",emotion:"happy",action:"nod"};
   if(state.action==="caring")return {text:stableChoice(backchannelChoices.caring,input),emotion:"caring",action:"caring"};
   if(state.action==="thinking")return {text:stableChoice(backchannelChoices.thinking,input),emotion:"curious",action:"thinking"};
   if(["clap","cheer","surprise"].includes(state.action))return {text:stableChoice(backchannelChoices.excited,input),emotion:"excited",action:"happy"};

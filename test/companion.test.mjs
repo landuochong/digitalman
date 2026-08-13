@@ -32,7 +32,7 @@ test("builds short contextual backchannels without pretending they are answers",
   const thinking=buildResponsiveBackchannel("这个问题应该怎么办？");
   assert.equal(thinking.action,"thinking");assert.equal(thinking.text,"我想想。");
   assert.deepEqual(buildResponsiveBackchannel("周末帮我安排学习和运动"),thinking);
-  assert.deepEqual(buildResponsiveBackchannel("你平时有什么爱好？"),{text:"这个嘛。",emotion:"calm",action:"nod"});
+  assert.deepEqual(buildResponsiveBackchannel("你平时有什么爱好？"),{text:"这个嘛。",emotion:"happy",action:"nod"});
   assert.deepEqual(buildResponsiveBackchannel("今天傍晚的风很舒服。"),{text:"真好。",emotion:"happy",action:"nod"});
   assert.notEqual(buildResponsiveBackchannel("今天有点不舒服。")?.text,"真好。");
   assert.deepEqual(inferCompanionState("今天傍晚的风很舒服。"),{emotion:"happy",action:"nod"});
@@ -236,8 +236,8 @@ test("infers natural daily phrases for VRM gestures", () => {
   assert.deepEqual(inferCompanionState("我今天很开心"),{emotion:"happy",action:"happy"});
   assert.deepEqual(inferCompanionState("哈哈，挺有意思"),{emotion:"happy",action:"happy"});
   assert.deepEqual(inferCompanionState("你开心吗？"),{emotion:"curious",action:"thinking"});
-  assert.deepEqual(inferCompanionState("你平时有什么爱好？"),{emotion:"calm",action:"idle"});
-  assert.deepEqual(inferCompanionState("你喜欢怎样度过周末？"),{emotion:"calm",action:"idle"});
+  assert.deepEqual(inferCompanionState("你平时有什么爱好？"),{emotion:"happy",action:"nod"});
+  assert.deepEqual(inferCompanionState("你喜欢怎样度过周末？"),{emotion:"happy",action:"nod"});
   assert.deepEqual(inferCompanionState("今天路上看到一棵很高的树","哇，高高的树看着就很治愈吧。"),{emotion:"calm",action:"idle"});
   assert.deepEqual(inferCompanionState("我随便说件小事","哇，真没想到这么特别。"),{emotion:"calm",action:"idle"});
   assert.deepEqual(inferCompanionState("我随便说件小事","恭喜你完成了，真开心。"),{emotion:"calm",action:"idle"});

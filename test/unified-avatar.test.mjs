@@ -30,6 +30,8 @@ test("main voice page offers real and anime modes in one conversation",async()=>
   assert.match(app,/if\(!reusedBackchannel\)enqueueSpeech\(speechText,currentEmotion,batch,sentencePlan,streamTurn,\{ttsConnectionId,onStart:\(\)=>revealSentence\(transcriptIndex\),onComplete:\(\)=>finishSentence\(transcriptIndex\)\}\)/);
   assert.match(app,/new BackchannelGate\(\{delayMs:BACKCHANNEL_GRACE_MS/);
   assert.match(app,/new BackchannelPlayback\(data\.text\)/);
+  assert.match(app,/backchannelStartedMs=String\(Math\.round\(performance\.now\(\)-activeReplyStartedAt\)\)/);
+  assert.match(app,/backchannelCompleted="true"/);
   assert.match(app,/backchannelPlayback\?\.claim\(data\.text/);
   assert.match(app,/remainingAfterSpokenBackchannel\(backchannelPlayback\.text,data\.text\)/);
   assert.match(app,/backchannelPlayback\.close\(\);backchannelPlayback=null/);

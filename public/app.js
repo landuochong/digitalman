@@ -531,7 +531,7 @@ function closeVisualTurn(id){
 async function reply(message) {
   sendButton.disabled = true; showTyping(); setEmotion("curious"); setVoiceState("thinking","正在理解你刚才说的话"); statusText.textContent = "正在想…";
   const controller = new AbortController(); activeReplyController = controller;
-  const batch = speechBatch,transcript=new ReplyTranscript(); activeReplyStartedAt=performance.now();realSpeechTimelineMs=0;delete portrait.dataset.chatFirstSentenceMs;delete portrait.dataset.avatarFirstSegmentMs;delete portrait.dataset.ttsFirstAudioMs;delete portrait.dataset.avatarPipelineMs;delete portrait.dataset.backchannelContinuation;let article, streamedText = "", currentEmotion = "calm",currentAction="idle",spokenSentenceCount=0,firstTtsConnectionId="",waitingPreview=null,backchannelVisual=null,backchannelPlayback=null,actionFrameBias=0,biasedAction="";
+  const batch = speechBatch,transcript=new ReplyTranscript(); activeReplyStartedAt=performance.now();realSpeechTimelineMs=0;delete portrait.dataset.chatFirstSentenceMs;delete portrait.dataset.avatarFirstSegmentMs;delete portrait.dataset.ttsFirstAudioMs;delete portrait.dataset.avatarPipelineMs;delete portrait.dataset.backchannelContinuation;delete portrait.dataset.backchannelStartedMs;delete portrait.dataset.backchannelCompleted;let article, streamedText = "", currentEmotion = "calm",currentAction="idle",spokenSentenceCount=0,firstTtsConnectionId="",waitingPreview=null,backchannelVisual=null,backchannelPlayback=null,actionFrameBias=0,biasedAction="";
   const transcriptState={transcript,get article(){return article;},set article(value){article=value;}};activeReplyTranscript=transcriptState;
   const revealSentence=sentenceIndex=>{if(batch!==speechBatch)return;const spoken=transcript.start(sentenceIndex);if(!spoken)return;$("#typing")?.remove();article ||= addMessage("assistant","",false);article.querySelector("p").textContent=spoken;};
   const finishSentence=sentenceIndex=>{if(batch===speechBatch)transcript.finish(sentenceIndex);};
@@ -579,7 +579,10 @@ async function reply(message) {
     if(readyAt)portrait.dataset.backchannelPreparedLeadMs=String(Math.max(0,Math.round(performance.now()-readyAt)));
     portrait.dataset.backchannel=JSON.stringify({text:data.text,atMs:Math.round(performance.now()-activeReplyStartedAt),...plan});
     const playback=new BackchannelPlayback(data.text);backchannelPlayback=playback;playback.onCancel(()=>prepared?.work?.preparation?.cancel?.());
-    enqueueSpeech(data.text,plan.emotion,batch,plan,streamTurn,{preferPrewarmed:true,preparedWork:prepared?.work,cancellation:playback,onStart:()=>playback.start(),onComplete:()=>playback.complete()});
+    enqueueSpeech(data.text,plan.emotion,batch,plan,streamTurn,{preferPrewarmed:true,preparedWork:prepared?.work,cancellation:playback,
+      onStart:()=>{portrait.dataset.backchannelStartedMs=String(Math.round(performance.now()-activeReplyStartedAt));playback.start();},
+      onComplete:()=>{portrait.dataset.backchannelCompleted="true";playback.complete();}
+    });
   }});
   activeAvatarStreamTurn=streamTurn;
   try {
