@@ -181,6 +181,7 @@ test("stream endpoint reports TTS and first playable segment timing",async()=>{
   const streamHandler=server.slice(server.indexOf("async function miniMaxChatStream"),server.indexOf("async function chat(req"));
   assert.ok(streamHandler.indexOf("ttsLease.start()")<streamHandler.indexOf("response=await fetch(`${miniMaxBaseUrl}/chat/completions`"));
   assert.match(server,/firstSentenceEmitted=true;ttsLease\?\.freeze\(\)/);
+  assert.match(server,/cachedPromptTokens:Number\(streamUsage\.prompt_tokens_details\?\.cached_tokens\)\|\|0/);
   assert.match(streamHandler,/catch\(error\)\{\s*ttsLease\?\.cancel\(\);\s*throw error;/);
   assert.match(streamHandler,/if \(!response\.ok \|\| !response\.body\)\{ttsLease\?\.cancel\(\)/);
   assert.match(server,/signal:client\.signal/);

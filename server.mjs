@@ -392,6 +392,7 @@ async function miniMaxChatStream(message, history, persona, memories, companionS
     reasoningCharacters,
     ...(streamUsage?{
       promptTokens:Number(streamUsage.prompt_tokens)||0,
+      cachedPromptTokens:Number(streamUsage.prompt_tokens_details?.cached_tokens)||0,
       completionTokens:Number(streamUsage.completion_tokens)||0,
       reasoningTokens:Number(streamUsage.completion_tokens_details?.reasoning_tokens)||0
     }:{})

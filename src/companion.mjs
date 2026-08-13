@@ -216,6 +216,7 @@ export function inferCompanionState(message, reply = "", companionState=null) {
   if (/不确定|不知道|也许|可能吧/.test(userMessage)) return { emotion:"curious", action:"shrug" };
   if (/[?？]|为什么|怎么|如何|觉得|认为|怎么办|能不能|可以吗|要不要|推荐|帮我想|分析|选择|哪个好|安排|规划|计划|排一下|排一排/.test(String(message))) return { emotion:"curious", action:"thinking" };
   if (/你好|嗨|哈喽|嘿|早上好|中午好|下午好|晚上好|在吗|hello|hi/i.test(String(message))) return { emotion:"happy", action:"wave_approval" };
+  if(isPositiveLifeShare(userMessage))return {emotion:"happy",action:"nod"};
   if (/(?:我|今天|现在|刚刚|刚才).{0,8}(?:开心|高兴)|(?:开心|高兴)(?:极了|坏了|呀|啊|呢|！|!|。|$)|哈哈/.test(userMessage)) return { emotion:"happy", action:"happy" };
   // Natural low-amplitude gestures inferred from the actual reply. These are
   // intentionally evaluated after explicit/high-energy user intents so they
@@ -246,6 +247,12 @@ function stableChoice(values,text){
   return values[hash%values.length];
 }
 
+function isPositiveLifeShare(input){
+  const value=String(input||"");
+  if(/(?:不|没)(?:太|很|那么|怎么)?(?:好看|好听|舒服|治愈|惬意)/.test(value))return false;
+  return /(?:很好看|好漂亮|很舒服|真舒服|很好听|真好听|很治愈|很惬意)/.test(value);
+}
+
 // This is a short, locally generated conversational backchannel, not the final
 // answer. It is emitted only when the cloud model has not produced speech in
 // time, so the person can acknowledge the user without inventing an answer.
@@ -257,6 +264,7 @@ export function buildResponsiveBackchannel(message,state=inferCompanionState(mes
   if(state.action==="caring")return {text:stableChoice(backchannelChoices.caring,input),emotion:"caring",action:"caring"};
   if(state.action==="thinking")return {text:stableChoice(backchannelChoices.thinking,input),emotion:"curious",action:"thinking"};
   if(["clap","cheer","surprise"].includes(state.action))return {text:stableChoice(backchannelChoices.excited,input),emotion:"excited",action:"happy"};
+  if(!/[？?]|为什么|怎么|如何|怎么办|帮我|建议|推荐|分析/.test(input)&&isPositiveLifeShare(input))return{text:"真好。",emotion:"happy",action:"nod"};
   if(["happy","shy","nod","thumbs_up","wave_approval"].includes(state.action))return {text:stableChoice(backchannelChoices.happy,input),emotion:"happy",action:"nod"};
   return {text:stableChoice(backchannelChoices.neutral,input),emotion:state.emotion||"calm",action:"nod"};
 }
@@ -266,7 +274,7 @@ const genericPlanConfirmation=/^(?:你觉得|你看)(?:这样|这个|这么|这�
 const ordinaryLifeShare=/(?:今天|昨天|刚才|刚刚|路上|下班|到家|回来|散步|出门|吃完|看完|做完|完成|遇到|看到|听到|发现|买了|去了|来了)/;
 const asksForHelpOrAnswer=/(?:[？?]|为什么|怎么|如何|怎么办|能不能|可以吗|要不要|帮我|给我|请你|建议|推荐|分析|安排|规划|计划|想知道|告诉我)/;
 const distressOrCrisis=/(?:自杀|不想活|活不下去|伤害自己|结束生命|难过|伤心|焦虑|崩溃|害怕|担心|不舒服|生病|疼|压力|委屈|孤独|失落|累|疲惫|烦|饿|困)/;
-const ordinaryInterviewQuestion=/(?:什么样|怎么样|什么颜色|多(?:高|大|长|远)|哪(?:里|儿|个|种)|在(?:哪|什么地方)|什么时候|和谁|谁陪|好看吗|漂亮吗|特别吗|有趣吗|喜欢吗|是.{0,16}吗|有没有.{0,16})[^。！？!?]*[？?]$/;
+const ordinaryInterviewQuestion=/(?:什么(?:样|颜色|形状|茶|歌|花|树|东西|地方|时候)|怎么样|多(?:高|大|长|远)|哪(?:里|儿|个|种)|在(?:哪|什么地方)|什么时候|和谁|谁陪|好看吗|漂亮吗|特别吗|有趣吗|喜欢吗|是.{0,16}吗|有没有.{0,16})[^。！？!?]*[？?]$/;
 
 export function isRedundantClosingQuestion(message,sentence,hasSubstantiveAnswer=false){
   if(!hasSubstantiveAnswer)return false;
@@ -285,7 +293,12 @@ function removeRedundantClosingQuestion(reply,message){
   if(!closing)return value;
   const substantive=value.slice(0,-closing.length).replace(/[\s，。！？!?；;、]/g,"").length>=8;
   if(isRedundantClosingQuestion(message,closing,substantive))return value.slice(0,-closing.length).trim();
-  if(!substantive&&isOrdinaryLifeShare(message)&&ordinaryInterviewQuestion.test(closing))return "听起来挺特别的。";
+  if(!substantive&&isOrdinaryLifeShare(message)&&ordinaryInterviewQuestion.test(closing)){
+    const clause=closing.match(/^(.+?)[，,；;]\s*((?:什么|怎么样|多|哪|在|什么时候|和谁|谁陪|好看吗|漂亮吗|特别吗|有趣吗|喜欢吗|是|有没有).*[？?])$/u);
+    const response=clause?.[1]?.trim();
+    if(response&&response.replace(/[\s，。！？!?；;、]/g,"").length>=8)return `${response.replace(/[，,；;。]+$/u,"")}。`;
+    return "听起来挺特别的。";
+  }
   return value;
 }
 
@@ -398,7 +411,7 @@ export function buildMiniMaxChatPayload({ model, message, history = [], stream =
     max_completion_tokens:800,
     temperature:0.35
   };
-  if (stream) payload.stream = true;
+  if (stream) {payload.stream = true;payload.stream_options={include_usage:true};}
   return payload;
 }
 
@@ -421,7 +434,7 @@ export function takeCompleteSentences(text, flush = false, includeClauses = fals
       if(lookahead.length<2)continue;
       const clause=sentence.replace(/[\s，,、]+$/g,"").replace(/^(?:嗯|哦|哇|呀|啊|诶)[，,、]?/u,"");
       const dependentStart=/^(?:如果|假如|要是|因为|由于|虽然|尽管|即使|既然|只要|除非|当|等到|为了|听到|看到|想到|说到|提到|能让|让(?:我|你|人)|被|把)/u;
-      const dependentEnd=/(?:如果|因为|但是|而且|所以|然后|以及|或者|还是|的时候|之后|以前|的话|为了|以便|从而|而|并|又|也|就|才|都|还|更|很|太|真|非常|特别|比较|可能|应该|需要|可以|能够|想要|打算|准备|的|地|得)$/u;
+      const dependentEnd=/(?:如果|因为|但是|而且|所以|然后|以及|或者|还是|的时候|之后|以前|的话|为了|以便|从而|而|并|又|也|就|才|都|还|更|很|太|真|非常|特别|比较|可能|应该|需要|可以|能够|想要|打算|准备|舒服|好看|好听|开心|惬意|治愈|的|地|得)$/u;
       if(dependentStart.test(clause)||dependentEnd.test(clause))continue;
     }
     if(includeClauses&&terminal&&spokenLength<=4&&!sentences.length&&!flush)continue;

@@ -32,6 +32,10 @@ test("builds short contextual backchannels without pretending they are answers",
   const thinking=buildResponsiveBackchannel("这个问题应该怎么办？");
   assert.equal(thinking.action,"thinking");assert.equal(thinking.text,"我想想。");
   assert.deepEqual(buildResponsiveBackchannel("周末帮我安排学习和运动"),thinking);
+  assert.deepEqual(buildResponsiveBackchannel("今天傍晚的风很舒服。"),{text:"真好。",emotion:"happy",action:"nod"});
+  assert.notEqual(buildResponsiveBackchannel("今天有点不舒服。")?.text,"真好。");
+  assert.deepEqual(inferCompanionState("今天傍晚的风很舒服。"),{emotion:"happy",action:"nod"});
+  assert.deepEqual(inferCompanionState("今天有点不舒服。"),{emotion:"caring",action:"caring"});
   const excited=buildResponsiveBackchannel("我终于成功了");
   assert.equal(excited.action,"happy");assert.match(excited.text,/真的|哇/);
   assert.match(buildResponsiveBackchannel("我不想活了").text,/安全/);
@@ -126,7 +130,8 @@ test("builds MiniMax chat history with a system persona", () => {
   assert.ok(payload.messages[0].content.indexOf("直接回答用户") < payload.messages[0].content.indexOf("用户喜欢爵士乐"));
 });
 test("builds streaming MiniMax payload and segments complete spoken sentences", () => {
-  assert.equal(buildMiniMaxChatPayload({model:"m",message:"你好",stream:true}).stream, true);
+  const streaming=buildMiniMaxChatPayload({model:"m",message:"你好",stream:true});
+  assert.equal(streaming.stream,true);assert.deepEqual(streaming.stream_options,{include_usage:true});
   assert.deepEqual(takeCompleteSentences("第一句。第二句还没完"), { sentences:["第一句。"], remainder:"第二句还没完" });
   assert.deepEqual(takeCompleteSentences("最后一句", true), { sentences:["最后一句"], remainder:"" });
   assert.deepEqual(takeCompleteSentences("嗯，累了就说累，没什么的。", false, true), { sentences:["嗯，累了就说累，没什么的。"], remainder:"" });
@@ -139,6 +144,7 @@ test("builds streaming MiniMax payload and segments complete spoken sentences", 
   assert.deepEqual(takeCompleteSentences("哇，能让你特意停下来看，一定很高",false,true),{sentences:[],remainder:"哇，能让你特意停下来看，一定很高"});
   assert.deepEqual(takeCompleteSentences("如果明天天气不错，我们就出去走走",false,true),{sentences:[],remainder:"如果明天天气不错，我们就出去走走"});
   assert.deepEqual(takeCompleteSentences("听到你这么说，我也放心多了",false,true),{sentences:[],remainder:"听到你这么说，我也放心多了"});
+  assert.deepEqual(takeCompleteSentences("傍晚的风确实最舒服，不冷不热的。",false,true),{sentences:["傍晚的风确实最舒服，不冷不热的。"],remainder:""});
   assert.deepEqual(takeCompleteSentences("辛苦了，今天先休息一下。", false, true), { sentences:["辛苦了，今天先休息一下。"], remainder:"" });
   assert.deepEqual(takeCompleteSentences("你已经撑了很久了，真的很棒。今晚早点休息，别硬扛。", false, true),{sentences:["你已经撑了很久了，真的很棒。","今晚早点休息，别硬扛。"],remainder:""});
   assert.deepEqual(takeCompleteSentences("周六上午学习，下午运动，晚上早点休息；周日上午再复习。",false,true),{sentences:["周六上午学习，下午运动，晚上早点休息；周日上午再复习。"],remainder:""});
@@ -181,6 +187,9 @@ test("does not turn an ordinary life share into an unnecessary interview",()=>{
   assert.equal(isRedundantClosingQuestion(share,"今天天气怎么样，树是绿的吗？",true),true);
   assert.equal(buildMiniMaxReply("嗯，听起来挺让人眼前一亮的。今天天气怎么样，树是绿的吗？",share).reply,"嗯，听起来挺让人眼前一亮的。");
   assert.equal(buildMiniMaxReply("哇，什么样的树呀？",share).reply,"听起来挺特别的。");
+  assert.equal(buildMiniMaxReply("是啊，光是看着就觉得心情放松下来。你那边是什么形状的云？","今天窗外的云很好看。").reply,"是啊，光是看着就觉得心情放松下来。");
+  assert.equal(buildMiniMaxReply("热茶配傍晚刚刚好，什么茶呀？","刚才泡了一杯热茶。").reply,"热茶配傍晚刚刚好。");
+  assert.equal(buildMiniMaxReply("听歌的时候心情挺好的是吧，是什么歌呀？","刚才听到一首很好听的歌。").reply,"听歌的时候心情挺好的是吧。");
   assert.equal(isRedundantClosingQuestion("今天路上看到事故了，我很害怕","你现在安全了吗？",true),false);
   assert.equal(isRedundantClosingQuestion("今天工作有点累，事情特别多。","吃了没？",true),false);
   assert.equal(buildMiniMaxReply("吃了没？","今天工作有点累，事情特别多。").reply,"吃了没？");
