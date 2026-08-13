@@ -282,6 +282,7 @@ async function miniMaxChatStream(message, history, persona, memories, companionS
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
   let upstream = "", rawText = "", observedCleanLength = 0, sentenceBuffer = "";
+  let reasoningCharacters=0,finishReason=null,streamUsage=null;
   trace.emittedSentences=[];
 
   const emitAvailable = (flush = false) => {
@@ -316,7 +317,12 @@ async function miniMaxChatStream(message, history, persona, memories, companionS
       if (!data || data === "[DONE]") continue;
       try {
         const chunk = JSON.parse(data);
-        const delta = chunk?.choices?.[0]?.delta?.content;
+        const choice=chunk?.choices?.[0];
+        const delta = choice?.delta?.content;
+        const reasoning=choice?.delta?.reasoning_content;
+        if(typeof reasoning==="string")reasoningCharacters+=reasoning.length;
+        if(choice?.finish_reason)finishReason=choice.finish_reason;
+        if(chunk?.usage)streamUsage=chunk.usage;
         if (typeof delta === "string") {
           if(delta&&!trace.timings.firstTextDeltaMs)trace.timings.firstTextDeltaMs=Math.round(performance.now()-trace._startedMs);
           rawText += delta;
@@ -330,6 +336,16 @@ async function miniMaxChatStream(message, history, persona, memories, companionS
 
   emitAvailable(true);
   trace.rawModelText=rawText;
+  trace.providerStream={
+    finishReason,
+    textCharacters:rawText.length,
+    reasoningCharacters,
+    ...(streamUsage?{
+      promptTokens:Number(streamUsage.prompt_tokens)||0,
+      completionTokens:Number(streamUsage.completion_tokens)||0,
+      reasoningTokens:Number(streamUsage.completion_tokens_details?.reasoning_tokens)||0
+    }:{})
+  };
   const result = buildMiniMaxReply(rawText, message, companionState,history);
   if(backchannelTimer)clearTimeout(backchannelTimer);
   finishChatTrace(trace,result,"minimax-stream");

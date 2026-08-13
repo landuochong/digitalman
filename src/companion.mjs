@@ -340,7 +340,11 @@ export function buildMiniMaxChatPayload({ model, message, history = [], stream =
     model,
     messages:[{ role:"system", content:buildMiniMaxCompanionInstructions(persona,memories,companionState) }, ...conversation],
     reasoning_split:true,
-    max_completion_tokens:400,
+    // M3 counts hidden reasoning against this limit. A 400-token cap has
+    // produced finish_reason=length with no speakable content in real calls.
+    // This is a safety ceiling, not a requested reply length; the prompt still
+    // keeps the spoken answer to 1–3 short sentences.
+    max_completion_tokens:800,
     temperature:0.35
   };
   if (stream) payload.stream = true;

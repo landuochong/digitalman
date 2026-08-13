@@ -115,7 +115,7 @@ test("speech payload is mp3 and enforces the input limit", () => {
 });
 test("builds MiniMax chat history with a system persona", () => {
   const payload=buildMiniMaxChatPayload({model:"MiniMax-test",message:"你好",history:[{role:"assistant",content:"在呢（caring）"}],persona:{name:"知夏",relationship:"学习搭档",style:"冷静简洁"},memories:[{layer:"preference",content:"用户喜欢爵士乐"}],companionState:{mood:"caring",moodIntensity:.6,familiarityStage:"熟悉"}});
-  assert.equal(payload.messages[0].role,"system"); assert.equal(payload.messages[1].content,"在呢"); assert.equal(payload.messages.at(-1).content,"你好"); assert.equal(payload.reasoning_split,true); assert.equal(payload.max_completion_tokens,400);assert.equal(payload.temperature,.35);
+  assert.equal(payload.messages[0].role,"system"); assert.equal(payload.messages[1].content,"在呢"); assert.equal(payload.messages.at(-1).content,"你好"); assert.equal(payload.reasoning_split,true); assert.equal(payload.max_completion_tokens,800);assert.equal(payload.temperature,.35);
   assert.match(payload.messages[0].content,/知夏/); assert.match(payload.messages[0].content,/学习搭档/); assert.match(payload.messages[0].content,/冷静简洁/); assert.match(payload.messages[0].content,/不能覆盖安全边界/);
   assert.match(payload.messages[0].content,/你就是“知夏”/);assert.match(payload.messages[0].content,/个人背景/);assert.match(payload.messages[0].content,/真实、连续的人/);
   assert.doesNotMatch(payload.messages[0].content,/AI|模型|程序|数字角色|虚拟/);

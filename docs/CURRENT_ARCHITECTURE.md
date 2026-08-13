@@ -159,6 +159,8 @@ Audio2BlendShape 现已改为真正的会话状态：worker 为每轮语音保�
 
 首响诊断进一步细分为 `firstTextDeltaMs`、`firstCleanTextMs`、`firstSentenceMs`、TTS `ttsFirstAudioMs` 和 DINet `firstSegmentMs`。页面人物容器同步记录 `data-chat-first-sentence-ms`、`data-tts-first-audio-ms`、`data-avatar-pipeline-ms` 与从提交到首个 segment 的 `data-avatar-first-segment-ms`，不用再从两套日志手工对表。MiniMax 三轮热测中，首个正文 token 与首个可朗读短语只差 0–2 毫秒，说明当前中文标点/逗号分段没有增加首响延迟；主要波动发生在模型输出任何正文之前，不能靠更激进地切碎文案解决。
 
+M3 的 `max_completion_tokens` 同时包含隐藏推理和最终正文。真实请求曾在 400 上限内生成 1748 个推理字符后以 `finish_reason=length` 结束且没有正文；降低到 240 的对照也没有改善首正文延迟。当前上限因此设为 800，作用是保障短回答能在长推理后落出正文，而非鼓励更长文案，实际朗读长度仍由 1–3 句提示约束。当前账户的 `MiniMax-M2.7-highspeed` 三轮相同人物提示首正文均慢于 M3，因此不切换模型。本机诊断接口的 `providerStream` 记录 `finishReason`、正文/推理字符数及可用 token 统计，用于把模型推理波动与 TTS、DINet 耗时分开。
+
 DINet 动作素材采用“提前切换、单套常驻”，不缓存多套完整视频帧。单套 768×1152 RGBA 动作解码后内存很大，多动作 LRU 会带来不可控内存压力；而本地探针表明关心/待机切换只需 283–331 毫秒，同动作命中为 0 毫秒。服务在 M3 请求开始时用用户语义推断首动作，并把 `prepare_asset` 排入同一个常驻 worker；该切换与 M3 的 1.5–6 秒正文前等待并行，真正 TTS/DINet 渲染仍重新核对动作。身份、位置等本地直接回复也走同一预热入口。`/api/dinet/prepare-action` 只允许回环地址访问，用于不调用外部 AI 的冷热诊断。
 
 连续通话的浏览器识别收尾不再完全依赖 Web Speech 延迟不定的 `onend`。本地 VAD 检测到语音后的安静段时，若浏览器已给出最终转写，使用 450 毫秒停顿阈值并在阈值处直接提交；仍是临时转写时保留 650 毫秒，避免自然短停顿被截断，再设置最多 90 毫秒的最终修正窗口。最终 `result` 或 `onend` 先到就立即提交，否则窗口到期用最近转写发起聊天。单次提交门保证迟到事件不会造成重复回答，识别错误会取消待提交内容；`vadSilenceTargetMs`、`vadStopToSubmitMs` 和提交触发源写入人物容器，便于真机复测。该优化削减的是“用户说完到 M3 请求发起”的本地空等，不改变或掩盖 M3 首正文的云端波动。
