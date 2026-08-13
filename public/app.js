@@ -2,7 +2,7 @@ import { ConversationActionScheduler, continueActionPlan } from "./conversation-
 import { buildWav2LipPlaybackMessage } from "./avatar-protocol.js?v=20260813-video-handoff-v11";
 import { AvatarStreamTurn } from "./avatar-stream-turn.js?v=20260813-video-handoff-v11";
 import { RecognitionTurnGate,recognitionSilenceMs } from "./recognition-turn-gate.js?v=20260813-video-handoff-v11";
-import { BackchannelGate } from "./backchannel-gate.js?v=20260813-responsive-v12";
+import { BackchannelGate } from "./backchannel-gate.js?v=20260813-short-backchannel-v15";
 
 const $ = (selector) => document.querySelector(selector);
 const portrait = $("#portrait"), wave = $("#soundWave"), messages = $("#messages");
@@ -10,7 +10,7 @@ const input = $("#messageInput"), form = $("#chatForm"), sendButton = $("#sendBu
 const micButton = $("#micButton"), modeBanner = $("#modeBanner"), statusText = $("#statusText");
 const voiceButton = $("#voiceButton"), voicePrompt = $("#voicePrompt"), liveTranscript = $("#liveTranscript"), captionButton = $("#captionButton");
 const digitalHumanFrame = $("#digitalHumanFrame");
-const avatarRuntimeVersion="20260813-action-continuity-v14";
+const avatarRuntimeVersion="20260813-short-backchannel-v15";
 const avatarRuntimeUrl=path=>`${path}?v=${avatarRuntimeVersion}`;
 const avatarProfile = new URLSearchParams(location.search).get("profile");
 const selfRecordedProfile = avatarProfile === "self";
@@ -516,7 +516,7 @@ async function reply(message) {
     }
   }):null;
   const backchannelPlan=data=>({action:data.action||"nod",emotion:data.emotion||currentEmotion,intensity:.35,head:data.action==="thinking"?"slight-left":"center",gaze:"user",holdMs:Math.max(1400,Number(data.audioMs)||0),frameOffset:0,continuation:false});
-  const backchannelGate=new BackchannelGate({delayMs:500,
+  const backchannelGate=new BackchannelGate({delayMs:200,
     onPrepare:data=>{
       if(batch!==speechBatch||!neuralAvatarProfile||!streamingAvatarExperiment)return null;
       let plan=backchannelPlan(data);

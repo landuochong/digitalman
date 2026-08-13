@@ -184,12 +184,12 @@ export function inferCompanionState(message, reply = "", companionState=null) {
 }
 
 const backchannelChoices={
-  caring:["先别急，我在呢。","嗯，我陪着你。","我在，慢慢说。"],
-  thinking:["嗯，让我想想。","我想一下。","嗯，我认真想想。"],
-  happy:["嗯，我听着呢。","好呀，我在听。","嗯，你接着说。"],
-  excited:["真的呀？","哇，我听着呢。","好呀，快说说。"],
-  greeting:["嗨，我在呢。","嗯，我在呀。","我在，听见啦。"],
-  neutral:["嗯，我听着呢。","我在，你说。","嗯，你接着说。"]
+  caring:["我在。"],
+  thinking:["我想想。"],
+  happy:["嗯。","好呀。"],
+  excited:["真的呀？","哇。"],
+  greeting:["嗨。","我在。"],
+  neutral:["嗯。","听着呢。"]
 };
 
 function stableChoice(values,text){

@@ -25,14 +25,18 @@ test("demo responds empathetically to negative emotion", () => {
 });
 test("builds short contextual backchannels without pretending they are answers",()=>{
   const caring=buildResponsiveBackchannel("今天有点累");
-  assert.equal(caring.emotion,"caring");assert.equal(caring.action,"caring");assert.match(caring.text,/在|陪|慢慢/);
+  assert.equal(caring.emotion,"caring");assert.equal(caring.action,"caring");assert.equal(caring.text,"我在。");
   const thinking=buildResponsiveBackchannel("这个问题应该怎么办？");
-  assert.equal(thinking.action,"thinking");assert.match(thinking.text,/想/);
+  assert.equal(thinking.action,"thinking");assert.equal(thinking.text,"我想想。");
   const excited=buildResponsiveBackchannel("我终于成功了");
-  assert.equal(excited.action,"happy");assert.match(excited.text,/真的|哇|好呀/);
+  assert.equal(excited.action,"happy");assert.match(excited.text,/真的|哇/);
   assert.match(buildResponsiveBackchannel("我不想活了").text,/安全/);
   assert.equal(buildResponsiveBackchannel(""),null);
   assert.deepEqual(buildResponsiveBackchannel("今天有点累"),caring);
+  for(const message of ["你好","今天有点累","这个怎么处理？","我终于成功了","随便聊聊"]){
+    const backchannel=buildResponsiveBackchannel(message);
+    assert.ok([...backchannel.text.replace(/[，。！？!?\s]/g,"")].length<=5,`${message} 的接话过长：${backchannel.text}`);
+  }
 });
 test("demo maps the good-news suggestion to an excited response", () => {
   const result = demoReply("我有个好消息"); assert.equal(result.emotion, "excited"); assert.equal(result.action, "clap"); assert.match(result.reply, /开心|高兴/);

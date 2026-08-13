@@ -15,9 +15,9 @@ test("main voice page offers real and anime modes in one conversation",async()=>
   assert.match(html,/id="personaVoice"/);
   assert.match(html,/人物设置/);
   assert.match(app,/lumi-avatar-mode/);
-  assert.match(html,/app\.js\?v=20260813-action-continuity-v14/);
+  assert.match(html,/app\.js\?v=20260813-short-backchannel-v15/);
   assert.match(html,/aria-label="开始通话" aria-pressed="false"/);
-  assert.match(app,/avatarRuntimeVersion="20260813-action-continuity-v14"/);
+  assert.match(app,/avatarRuntimeVersion="20260813-short-backchannel-v15"/);
   assert.match(app,/get\("continuous"\) !== "0"/);
   assert.match(app,/lumi-vrm-look/);
   assert.match(app,/lumi-vrm-persona/);
@@ -27,7 +27,7 @@ test("main voice page offers real and anime modes in one conversation",async()=>
   assert.match(app,/action=\$\{encodeURIComponent\(action\)\}/);
   assert.match(app,/conversationActions\.planForSentence\(data\.text,sentenceIndex,data\.action\|\|currentAction,currentEmotion\)/);
   assert.match(app,/enqueueSpeech\(data\.text,currentEmotion,batch,sentencePlan,streamTurn,\{ttsConnectionId\}\)/);
-  assert.match(app,/new BackchannelGate\(\{delayMs:500/);
+  assert.match(app,/new BackchannelGate\(\{delayMs:200/);
   assert.match(app,/onPrepare:data=>/);
   assert.match(app,/speculative:true/);
   assert.match(app,/preparedWork:prepared\?\.work/);
