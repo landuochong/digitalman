@@ -1,6 +1,10 @@
 const HIGH_ENERGY_ACTIONS=new Set(["wave_approval","clap","cheer","surprise","bow","shrug","cross","confident_arms_crossed","shy"]);
 const DEFER_ON_SHORT_OPENER=new Set(["caring","thinking","shy","confident_arms_crossed"]);
 const HOLD_ACROSS_SENTENCES=new Set(["happy","caring","thinking"]);
+// Ordinary conversation should not look frozen, but applying a gesture to
+// every turn is just as mechanical. This restrained four-turn cadence gives
+// three low-amplitude responses and one genuinely quiet turn.
+const MICRO_GESTURE_CADENCE=["nod","idle","happy","nod"];
 const ACTION_INTENT_GROUPS=[
   new Set(["happy","nod","thumbs_up","clap","cheer"]),
   new Set(["thinking","shrug"]),
@@ -53,9 +57,9 @@ export function continueActionPlan(plan,{action,baseFrameOffset=0,elapsedMs=0,le
 
 export class ConversationActionScheduler{
   constructor({cooldownMs=3000,clock=()=>Date.now()}={}){
-    this.cooldownMs=cooldownMs;this.clock=clock;this.lastHighEnergyAt=-Infinity;this.reset();
+    this.cooldownMs=cooldownMs;this.clock=clock;this.lastHighEnergyAt=-Infinity;this.microTurnSequence=0;this.reset();
   }
-  reset(){this.primary="idle";this.requestedPrimary="idle";this.deferPrimary=false;this.secondaryUsed=false;this.explicit=false;this.started=false;this.emotion="calm";this.timeline=[];this.cursorMs=0;this.activeAction="idle";this.activeStartedAtMs=0;this.activeUntilMs=0;}
+  reset(){this.primary="idle";this.requestedPrimary="idle";this.deferPrimary=false;this.secondaryUsed=false;this.explicit=false;this.implicitMicroGesture=false;this.started=false;this.emotion="calm";this.timeline=[];this.cursorMs=0;this.activeAction="idle";this.activeStartedAtMs=0;this.activeUntilMs=0;}
   resolveBudget(action,explicit=this.explicit){
     const now=this.clock();let resolved=String(action||"idle");
     if(HIGH_ENERGY_ACTIONS.has(resolved)&&!explicit&&now-this.lastHighEnergyAt<this.cooldownMs)resolved=FALLBACK_ACTIONS[resolved]||"idle";
@@ -64,7 +68,10 @@ export class ConversationActionScheduler{
   }
   startTurn({message="",action="idle",emotion="calm"}={}){
     this.explicit=EXPLICIT_ACTION_WORDS.test(String(message));this.requestedPrimary=String(action||"idle");
-    this.primary=this.resolveBudget(this.requestedPrimary,this.explicit);this.deferPrimary=false;this.secondaryUsed=false;this.started=true;this.emotion=emotion;this.timeline=[];
+    const useCadence=!this.explicit&&this.requestedPrimary==="idle";
+    const cadenceAction=useCadence?MICRO_GESTURE_CADENCE[this.microTurnSequence++%MICRO_GESTURE_CADENCE.length]:this.requestedPrimary;
+    this.implicitMicroGesture=useCadence&&cadenceAction!==this.requestedPrimary;
+    this.primary=this.resolveBudget(cadenceAction,this.explicit);this.deferPrimary=false;this.secondaryUsed=false;this.started=true;this.emotion=emotion;this.timeline=[];
     return this.plan(this.primary,{emotion,explicit:this.explicit,preview:true});
   }
   plan(action,{emotion=this.emotion,index=0,text="",explicit=this.explicit,deferred=false,preview=false,continuation=false}={}){
@@ -82,7 +89,7 @@ export class ConversationActionScheduler{
     const frameOffset=resolved==="idle"
       ?normalizeSourceFrame(startAtMs/40)
       :continuing?normalizeSourceFrame((startAtMs-this.activeStartedAtMs)/40):0;
-    const plan={action:resolved,emotion,intensity:behavior.intensity,gaze:behavior.gaze,head:behavior.head,startAtMs,holdMs:Math.max(behavior.holdMs,durationMs),maxContinuousMs:behavior.maxContinuousMs,durationMs,frameOffset,continuation:continuing,explicit:Boolean(explicit),deferred:Boolean(deferred)};
+    const plan={action:resolved,emotion,intensity:behavior.intensity,gaze:behavior.gaze,head:behavior.head,startAtMs,holdMs:Math.max(behavior.holdMs,durationMs),maxContinuousMs:behavior.maxContinuousMs,durationMs,frameOffset,continuation:continuing,explicit:Boolean(explicit),deferred:Boolean(deferred),...(this.implicitMicroGesture&&resolved===this.primary?{implicitMicroGesture:true}:{})};
     if(!preview)this.cursorMs+=durationMs;
     this.timeline.push(plan);return plan;
   }
@@ -91,7 +98,7 @@ export class ConversationActionScheduler{
     let proposed=String(candidateAction||"idle");
     if(proposed===this.requestedPrimary)proposed=this.primary;
     if(index===0){
-      if(!this.explicit&&proposed!=="idle"&&!sameActionIntent(proposed,this.primary))this.primary=this.resolveBudget(proposed);
+      if(!this.explicit&&proposed!=="idle"&&!sameActionIntent(proposed,this.primary)){this.primary=this.resolveBudget(proposed);this.implicitMicroGesture=false;}
       this.deferPrimary=!this.explicit&&DEFER_ON_SHORT_OPENER.has(this.primary)&&spokenLength(text)<6;
       return this.plan(this.deferPrimary?"idle":this.primary,{emotion,index,text,deferred:this.deferPrimary});
     }
@@ -109,4 +116,4 @@ export class ConversationActionScheduler{
   finishTurn(){this.reset();return "idle";}
 }
 
-export const conversationActionPolicy=Object.freeze({cooldownMs:3000,shortOpenerCharacters:6,sourceFrames:REAL_SOURCE_FRAMES,sourceFps:REAL_SOURCE_FPS,sourceLoopMs:REAL_SOURCE_LOOP_MS,naturalGestureCycleMs:NATURAL_GESTURE_CYCLE_MS,holdAcrossSentences:[...HOLD_ACROSS_SENTENCES],intentGroups:ACTION_INTENT_GROUPS.map(group=>[...group]),behaviorActions:Object.keys(ACTION_BEHAVIOR)});
+export const conversationActionPolicy=Object.freeze({cooldownMs:3000,shortOpenerCharacters:6,sourceFrames:REAL_SOURCE_FRAMES,sourceFps:REAL_SOURCE_FPS,sourceLoopMs:REAL_SOURCE_LOOP_MS,naturalGestureCycleMs:NATURAL_GESTURE_CYCLE_MS,holdAcrossSentences:[...HOLD_ACROSS_SENTENCES],microGestureCadence:[...MICRO_GESTURE_CADENCE],intentGroups:ACTION_INTENT_GROUPS.map(group=>[...group]),behaviorActions:Object.keys(ACTION_BEHAVIOR)});

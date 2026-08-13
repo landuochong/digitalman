@@ -1,10 +1,10 @@
-import { ConversationActionScheduler, continueActionPlan } from "./conversation-actions.js?v=20260813-action-intent-v16";
+import { ConversationActionScheduler, continueActionPlan } from "./conversation-actions.js?v=20260813-micro-cadence-v17";
 import { buildWav2LipPlaybackMessage } from "./avatar-protocol.js?v=20260813-video-handoff-v11";
 import { AvatarStreamTurn } from "./avatar-stream-turn.js?v=20260813-video-handoff-v11";
 import { RecognitionTurnGate,recognitionResumeDelayMs,recognitionSilenceMs } from "./recognition-turn-gate.js?v=20260813-adaptive-endpoint-v23";
 import { BargeInDetector } from "./barge-in-detector.js?v=20260813-barge-in-v1";
 import { ReplyTranscript } from "./reply-transcript.js?v=20260813-spoken-history-v1";
-import { BackchannelGate,BackchannelPlayback,remainingAfterSpokenBackchannel } from "./backchannel-gate.js?v=20260813-action-intent-v29";
+import { BackchannelGate,BackchannelPlayback,remainingAfterSpokenBackchannel } from "./backchannel-gate.js?v=20260813-micro-cadence-v30";
 import { BACKCHANNEL_GRACE_MS } from "./backchannel-timing.js?v=20260813-backchannel-prep-v1";
 
 const $ = (selector) => document.querySelector(selector);
@@ -14,7 +14,7 @@ const micButton = $("#micButton"), modeBanner = $("#modeBanner"), statusText = $
 const voiceButton = $("#voiceButton"), voicePrompt = $("#voicePrompt"), liveTranscript = $("#liveTranscript"), captionButton = $("#captionButton");
 const digitalHumanFrame = $("#digitalHumanFrame");
 const AVATAR_FIRST_SEGMENT_LEAD_MS=400;
-const avatarRuntimeVersion="20260813-action-intent-v29";
+const avatarRuntimeVersion="20260813-micro-cadence-v30";
 const avatarRuntimeUrl=path=>`${path}?v=${avatarRuntimeVersion}`;
 const avatarProfile = new URLSearchParams(location.search).get("profile");
 const selfRecordedProfile = avatarProfile === "self";
@@ -580,6 +580,10 @@ async function reply(message) {
         firstTtsConnectionId=String(data.ttsConnectionId||"");
         const plan=conversationActions.startTurn({message,emotion:currentEmotion,action:data.action||"idle"});
         currentAction=plan.action;portrait.dataset.behavior=JSON.stringify(plan);
+        // The server can preheat semantic actions before emitting meta, while
+        // cadence gestures are chosen locally across neutral turns. Preload the
+        // latter immediately so its asset switch remains hidden behind M3.
+        if(plan.implicitMicroGesture&&avatarMode!=="anime")fetch("/api/dinet/prepare-action",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({action:plan.action}),signal:controller.signal}).catch(()=>{});
         if(data.waitingPreview?.url&&data.waitingPreview.action===plan.action){
           waitingPreview={action:plan.action,startedAt:performance.now(),mediaTimeMs:0,observedAt:0};activeWaitingPreview=waitingPreview;
           portrait.dataset.waitingPreview=plan.action;

@@ -27,6 +27,10 @@ test("plays a complete first-sentence gesture immediately",()=>{
 
 test("accepts one reply-derived micro gesture during a neutral turn",()=>{
   const scheduler=new ConversationActionScheduler();
+  // Advance to the cadence's deliberately quiet turn so this test continues
+  // to cover a reply-derived gesture rather than the turn-level micro gesture.
+  scheduler.startTurn({message:"上一轮普通聊天",action:"idle"});
+  scheduler.finishTurn();
   scheduler.startTurn({message:"我把事情做完了",action:"idle"});
   assert.equal(scheduler.actionForSentence("这件事处理得很稳。",0,"idle"),"idle");
   assert.equal(scheduler.actionForSentence("你做得很好。",1,"nod"),"nod");
@@ -50,6 +54,36 @@ test("still allows one genuinely different secondary intent",()=>{
   assert.equal(scheduler.planForSentence("太好了，恭喜你。",0,"thumbs_up").action,"clap");
   assert.equal(scheduler.planForSentence("不过下一步要认真想想。",1,"thinking").action,"thinking");
   assert.equal(scheduler.secondaryUsed,true);
+});
+
+test("gives ordinary conversation a restrained three-in-four micro-gesture cadence",()=>{
+  const scheduler=new ConversationActionScheduler();
+  const actions=[];
+  for(let index=0;index<4;index+=1){
+    const preview=scheduler.startTurn({message:`普通聊天 ${index}`,action:"idle",emotion:"calm"});
+    actions.push(preview.action);
+    assert.equal(preview.implicitMicroGesture,preview.action!=="idle"?true:undefined);
+    assert.equal(scheduler.planForSentence("我在认真听你说。",0,"idle").action,preview.action);
+    scheduler.finishTurn();
+  }
+  assert.deepEqual(actions,["nod","idle","happy","nod"]);
+  assert.equal(conversationActionPolicy.microGestureCadence.filter(action=>action!=="idle").length,3);
+});
+
+test("never replaces an explicit or semantic primary action with cadence",()=>{
+  const scheduler=new ConversationActionScheduler();
+  assert.equal(scheduler.startTurn({message:"给我鼓掌",action:"clap"}).action,"clap");
+  scheduler.finishTurn();
+  assert.equal(scheduler.startTurn({message:"我今天很累",action:"caring"}).action,"caring");
+});
+
+test("counts only neutral turns in the micro-gesture cadence",()=>{
+  const scheduler=new ConversationActionScheduler();
+  assert.equal(scheduler.startTurn({message:"普通聊天",action:"idle"}).action,"nod");
+  scheduler.finishTurn();
+  assert.equal(scheduler.startTurn({message:"我今天很累",action:"caring"}).action,"caring");
+  scheduler.finishTurn();
+  assert.equal(scheduler.startTurn({message:"继续闲聊",action:"idle"}).action,"idle");
 });
 
 test("keeps ordinary idle sentences on one source-video timeline",()=>{
