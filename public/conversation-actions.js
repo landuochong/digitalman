@@ -55,6 +55,10 @@ export function continueActionPlan(plan,{action,baseFrameOffset=0,elapsedMs=0,le
   return{...plan,continuation:true,frameOffset:normalizeSourceFrame(Math.max(Math.max(0,Number(plan.frameOffset)||0),continuationOffset))};
 }
 
+export function preparedPreviewCanStart(candidate,{activePreview,aborted=false,spokenSentenceCount=0}={}){
+  return Boolean(candidate&&candidate===activePreview&&!aborted&&Number(spokenSentenceCount)===0);
+}
+
 export class ConversationActionScheduler{
   constructor({cooldownMs=3000,clock=()=>Date.now()}={}){
     this.cooldownMs=cooldownMs;this.clock=clock;this.lastHighEnergyAt=-Infinity;this.microTurnSequence=0;this.reset();

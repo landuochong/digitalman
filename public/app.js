@@ -1,10 +1,10 @@
-import { ConversationActionScheduler, continueActionPlan } from "./conversation-actions.js?v=20260813-micro-cadence-v17";
+import { ConversationActionScheduler, continueActionPlan, preparedPreviewCanStart } from "./conversation-actions.js?v=20260813-thinking-preview-v18";
 import { buildWav2LipPlaybackMessage } from "./avatar-protocol.js?v=20260813-video-handoff-v11";
 import { AvatarStreamTurn } from "./avatar-stream-turn.js?v=20260813-video-handoff-v11";
 import { RecognitionTurnGate,recognitionResumeDelayMs,recognitionSilenceMs } from "./recognition-turn-gate.js?v=20260813-adaptive-endpoint-v23";
 import { BargeInDetector } from "./barge-in-detector.js?v=20260813-barge-in-v1";
 import { ReplyTranscript } from "./reply-transcript.js?v=20260813-spoken-history-v1";
-import { BackchannelGate,BackchannelPlayback,remainingAfterSpokenBackchannel } from "./backchannel-gate.js?v=20260813-micro-cadence-v30";
+import { BackchannelGate,BackchannelPlayback,remainingAfterSpokenBackchannel } from "./backchannel-gate.js?v=20260813-thinking-preview-v31";
 import { BACKCHANNEL_GRACE_MS } from "./backchannel-timing.js?v=20260813-backchannel-prep-v1";
 
 const $ = (selector) => document.querySelector(selector);
@@ -14,7 +14,7 @@ const micButton = $("#micButton"), modeBanner = $("#modeBanner"), statusText = $
 const voiceButton = $("#voiceButton"), voicePrompt = $("#voicePrompt"), liveTranscript = $("#liveTranscript"), captionButton = $("#captionButton");
 const digitalHumanFrame = $("#digitalHumanFrame");
 const AVATAR_FIRST_SEGMENT_LEAD_MS=400;
-const avatarRuntimeVersion="20260813-micro-cadence-v30";
+const avatarRuntimeVersion="20260813-thinking-preview-v31";
 const avatarRuntimeUrl=path=>`${path}?v=${avatarRuntimeVersion}`;
 const avatarProfile = new URLSearchParams(location.search).get("profile");
 const selfRecordedProfile = avatarProfile === "self";
@@ -544,11 +544,23 @@ async function reply(message) {
     }
   }):null;
   const backchannelPlan=data=>({action:data.action||"nod",emotion:data.emotion||currentEmotion,intensity:.35,head:data.action==="thinking"?"slight-left":"center",gaze:"user",holdMs:Math.max(1400,Number(data.audioMs)||0),frameOffset:0,continuation:false});
+  const beginWaitingPreview=(plan,descriptor,{pending=false}={})=>{
+    const preview={action:plan.action,startedAt:performance.now(),mediaTimeMs:0,observedAt:0,pending};
+    waitingPreview=preview;activeWaitingPreview=preview;portrait.dataset.waitingPreview=plan.action;
+    if(switchableAvatarProfile&&avatarMode==="anime"){
+      preview.pending=false;
+      setDigitalHumanAction(plan.action,{force:true,hold:true,behavior:{...plan,intensity:Math.min(.28,plan.intensity)}}).catch(()=>{});
+    }else if(descriptor?.url){
+      preview.pending=false;preview.startedAt=performance.now();
+      digitalHumanFrame?.contentWindow?.postMessage({type:"wav2lip-preview",...descriptor},location.origin);
+    }
+    return preview;
+  };
   const backchannelGate=new BackchannelGate({delayMs:BACKCHANNEL_GRACE_MS,
     onPrepare:data=>{
       if(batch!==speechBatch||!neuralAvatarProfile||!streamingAvatarExperiment)return null;
       let plan=backchannelPlan(data);
-      if(waitingPreview&&avatarMode!=="anime"){
+      if(waitingPreview&&!waitingPreview.pending&&avatarMode!=="anime"){
         const previewTimeMs=waitingPreview.observedAt
           ?waitingPreview.mediaTimeMs+performance.now()-waitingPreview.observedAt
           :performance.now()-waitingPreview.startedAt;
@@ -583,12 +595,18 @@ async function reply(message) {
         // The server can preheat semantic actions before emitting meta, while
         // cadence gestures are chosen locally across neutral turns. Preload the
         // latter immediately so its asset switch remains hidden behind M3.
-        if(plan.implicitMicroGesture&&avatarMode!=="anime")fetch("/api/dinet/prepare-action",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({action:plan.action}),signal:controller.signal}).catch(()=>{});
+        if(plan.implicitMicroGesture){
+          const localPreview=beginWaitingPreview(plan,null,{pending:avatarMode!=="anime"});
+          if(avatarMode!=="anime")fetch("/api/dinet/prepare-action",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({action:plan.action}),signal:controller.signal})
+            .then(response=>response.ok?response.json():null)
+            .then(result=>{
+              if(!result?.preview?.url||!preparedPreviewCanStart(localPreview,{activePreview:waitingPreview,aborted:controller.signal.aborted,spokenSentenceCount}))return;
+              localPreview.pending=false;localPreview.startedAt=performance.now();
+              digitalHumanFrame?.contentWindow?.postMessage({type:"wav2lip-preview",...result.preview},location.origin);
+            }).catch(()=>{});
+        }
         if(data.waitingPreview?.url&&data.waitingPreview.action===plan.action){
-          waitingPreview={action:plan.action,startedAt:performance.now(),mediaTimeMs:0,observedAt:0};activeWaitingPreview=waitingPreview;
-          portrait.dataset.waitingPreview=plan.action;
-          if(switchableAvatarProfile&&avatarMode==="anime")setDigitalHumanAction(plan.action,{force:true,hold:true,behavior:{...plan,intensity:Math.min(.28,plan.intensity)}}).catch(()=>{});
-          else digitalHumanFrame?.contentWindow?.postMessage({type:"wav2lip-preview",...data.waitingPreview},location.origin);
+          beginWaitingPreview(plan,data.waitingPreview);
         }
       }
       if(event==="speech-ready")firstTtsConnectionId=String(data.ttsConnectionId||"");
@@ -609,7 +627,7 @@ async function reply(message) {
         const sentenceIndex=spokenSentenceCount++;
         let sentencePlan=conversationActions.planForSentence(data.text,sentenceIndex,data.action||currentAction,currentEmotion);
         if(sentenceIndex===0&&waitingPreview){
-          const continuesPreview=!sentencePlan.deferred&&sentencePlan.action===waitingPreview.action;
+          const continuesPreview=!waitingPreview.pending&&!sentencePlan.deferred&&sentencePlan.action===waitingPreview.action;
           if(continuesPreview){
             const previewTimeMs=waitingPreview.observedAt
               ?waitingPreview.mediaTimeMs+performance.now()-waitingPreview.observedAt

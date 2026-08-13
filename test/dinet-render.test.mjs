@@ -216,5 +216,6 @@ test("action preparation diagnostic endpoint stays loopback-only",async()=>{
   assert.match(server,/pathname==="\/api\/dinet\/prepare-action"/);
   assert.match(server,/isLoopbackAddress\(req\.socket\.remoteAddress\)/);
   assert.match(server,/dinetRenders\.prepareAction/);
+  assert.match(server,/preview:resolveWaitingActionPreview\(action\)/);
   assert.match(server,/cache:await dinetRenders\.cacheStatus\(\)/);
 });

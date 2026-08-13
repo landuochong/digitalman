@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { ConversationActionScheduler, continueActionPlan, conversationActionPolicy } from "../public/conversation-actions.js";
+import { ConversationActionScheduler, continueActionPlan, conversationActionPolicy, preparedPreviewCanStart } from "../public/conversation-actions.js";
 
 test("continues a matching action from its visible source frame",()=>{
   const plan={action:"caring",frameOffset:0,deferred:false};
@@ -8,6 +8,14 @@ test("continues a matching action from its visible source frame",()=>{
   assert.equal(continueActionPlan(plan,{action:"thinking",elapsedMs:800}),plan);
   assert.equal(continueActionPlan({...plan,deferred:true},{action:"caring",elapsedMs:800}).deferred,true);
   assert.equal(continueActionPlan(plan,{action:"caring",baseFrameOffset:220,elapsedMs:200}).frameOffset,3);
+});
+
+test("starts an asynchronously prepared preview only before speech and while still current",()=>{
+  const preview={action:"nod"};
+  assert.equal(preparedPreviewCanStart(preview,{activePreview:preview}),true);
+  assert.equal(preparedPreviewCanStart(preview,{activePreview:{action:"nod"}}),false);
+  assert.equal(preparedPreviewCanStart(preview,{activePreview:preview,spokenSentenceCount:1}),false);
+  assert.equal(preparedPreviewCanStart(preview,{activePreview:preview,aborted:true}),false);
 });
 
 test("moves a subtle gesture after an unnaturally short spoken opener",()=>{

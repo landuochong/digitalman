@@ -569,7 +569,8 @@ export const server = http.createServer(async (req, res) => {
     if(pathname==="/api/dinet/prepare-action"&&req.method==="POST"){
       if(!isLoopbackAddress(req.socket.remoteAddress))return json(res,403,{error:"本地 DINet 动作预热仅允许本机访问"});
       const data=await body(req);
-      return json(res,200,await dinetRenders.prepareAction(String(data.action||"idle")));
+      const action=String(data.action||"idle"),prepared=await dinetRenders.prepareAction(action);
+      return json(res,200,{...prepared,preview:resolveWaitingActionPreview(action)});
     }
     if (pathname === "/api/dinet/render" && req.method === "POST") {
       if (!isLoopbackAddress(req.socket.remoteAddress)) return json(res, 403, { error:"本地 DINet 口型接口仅允许本机访问" });
