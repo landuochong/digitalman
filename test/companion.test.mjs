@@ -180,6 +180,7 @@ test("does not turn an ordinary life share into an unnecessary interview",()=>{
   const share="今天路上看到一棵很高的树";
   assert.equal(isRedundantClosingQuestion(share,"今天天气怎么样，树是绿的吗？",true),true);
   assert.equal(buildMiniMaxReply("嗯，听起来挺让人眼前一亮的。今天天气怎么样，树是绿的吗？",share).reply,"嗯，听起来挺让人眼前一亮的。");
+  assert.equal(buildMiniMaxReply("哇，什么样的树呀？",share).reply,"听起来挺特别的。");
   assert.equal(isRedundantClosingQuestion("今天路上看到事故了，我很害怕","你现在安全了吗？",true),false);
   assert.equal(isRedundantClosingQuestion("今天去了哪里比较好？","你更喜欢室内还是户外？",true),false);
   assert.equal(isRedundantClosingQuestion(share,"那棵树一定很显眼。",true),false);
@@ -216,6 +217,15 @@ test("infers natural daily phrases for VRM gestures", () => {
   assert.deepEqual(inferCompanionState("周末帮我安排学习和运动"), { emotion:"curious", action:"thinking" });
   assert.deepEqual(inferCompanionState("天啊，不会吧"), { emotion:"excited", action:"surprise" });
   assert.deepEqual(inferCompanionState("哇，真的吗"), { emotion:"excited", action:"surprise" });
+  assert.deepEqual(inferCompanionState("我突然想到一件事"),{emotion:"calm",action:"idle"});
+  assert.deepEqual(inferCompanionState("这有点意外"),{emotion:"calm",action:"idle"});
+  assert.deepEqual(inferCompanionState("我今天很开心"),{emotion:"happy",action:"happy"});
+  assert.deepEqual(inferCompanionState("哈哈，挺有意思"),{emotion:"happy",action:"happy"});
+  assert.deepEqual(inferCompanionState("你开心吗？"),{emotion:"curious",action:"thinking"});
+  assert.deepEqual(inferCompanionState("今天路上看到一棵很高的树","哇，高高的树看着就很治愈吧。"),{emotion:"calm",action:"idle"});
+  assert.deepEqual(inferCompanionState("我随便说件小事","哇，真没想到这么特别。"),{emotion:"calm",action:"idle"});
+  assert.deepEqual(inferCompanionState("我随便说件小事","恭喜你完成了，真开心。"),{emotion:"calm",action:"idle"});
+  assert.deepEqual(inferCompanionState("我随便说件小事","这个我也不知道。"),{emotion:"calm",action:"idle"});
   assert.deepEqual(inferCompanionState("晚上好"), { emotion:"happy", action:"wave_approval" });
   assert.deepEqual(inferCompanionState("我终于成功了"), { emotion:"excited", action:"clap" });
   assert.deepEqual(inferCompanionState("给我鼓鼓掌"), { emotion:"excited", action:"clap" });

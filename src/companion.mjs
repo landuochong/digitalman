@@ -208,13 +208,15 @@ export function inferCompanionState(message, reply = "", companionState=null) {
   if (/害羞|脸红|不好意思|真可爱|好可爱|你.{0,6}(?:可爱|漂亮|好看|温柔|贴心|优秀|真棒|厉害)|喜欢你|夸夸你/.test(String(message))) return { emotion:"happy", action:"shy" };
   if (/你(?:真的)?(?:很|太)(?:棒|厉害|优秀|善良|贴心|了不起)|(?:真|很)(?:棒|厉害|优秀|善良|贴心|了不起)|做得(?:很好|真棒)|为你(?:感到)?骄傲/.test(String(reply))) return { emotion:"happy", action:"thumbs_up" };
   if (/(?:挺|很)(?:好|不错|有心)|真(?:不错|有心)/.test(String(reply))) return { emotion:"happy", action:"nod" };
-  if (/鼓掌|拍手|庆祝一下|帮我庆祝|为我庆祝|开心|高兴|成功|搞定|太好了|哈哈|好消息|恭喜|完成|做到了|通过了|赢了|录取|升职|顺利|终于/.test(text)) {
+  const userMessage=String(message);
+  if (/鼓掌|拍手|庆祝一下|帮我庆祝|为我庆祝|成功|搞定|太好了|好消息|恭喜|完成|做到了|通过了|赢了|录取|升职|顺利|终于/.test(userMessage)) {
     return { emotion:"excited", action:"clap" };
   }
-  if (/惊讶|没想到|居然|竟然|真的假的|真的吗|不会吧|天啊|我的天|怎么可能|太夸张|吓我一跳|突然|意外|震惊|哇/.test(text)) return { emotion:"excited", action:"surprise" };
-  if (/不确定|不知道|也许|可能吧/.test(text)) return { emotion:"curious", action:"shrug" };
+  if (/惊讶|没想到|居然|竟然|真的假的|真的吗|不会吧|天啊|我的天|怎么可能|太夸张|吓我一跳|震惊|哇/.test(userMessage)) return { emotion:"excited", action:"surprise" };
+  if (/不确定|不知道|也许|可能吧/.test(userMessage)) return { emotion:"curious", action:"shrug" };
   if (/[?？]|为什么|怎么|如何|觉得|认为|怎么办|能不能|可以吗|要不要|推荐|帮我想|分析|选择|哪个好|安排|规划|计划|排一下|排一排/.test(String(message))) return { emotion:"curious", action:"thinking" };
   if (/你好|嗨|哈喽|嘿|早上好|中午好|下午好|晚上好|在吗|hello|hi/i.test(String(message))) return { emotion:"happy", action:"wave_approval" };
+  if (/(?:我|今天|现在|刚刚|刚才).{0,8}(?:开心|高兴)|(?:开心|高兴)(?:极了|坏了|呀|啊|呢|！|!|。|$)|哈哈/.test(userMessage)) return { emotion:"happy", action:"happy" };
   // Natural low-amplitude gestures inferred from the actual reply. These are
   // intentionally evaluated after explicit/high-energy user intents so they
   // enrich ordinary conversation without replacing clap, surprise or caring.
@@ -272,10 +274,18 @@ export function isRedundantClosingQuestion(message,sentence,hasSubstantiveAnswer
   return ordinaryLifeShare.test(input)&&!asksForHelpOrAnswer.test(input)&&!distressOrCrisis.test(input)&&/[？?]$/.test(closing);
 }
 
+function isOrdinaryLifeShare(message){
+  const input=String(message||"");
+  return ordinaryLifeShare.test(input)&&!asksForHelpOrAnswer.test(input)&&!distressOrCrisis.test(input);
+}
+
 function removeRedundantClosingQuestion(reply,message){
   const value=String(reply||"").trim(),match=value.match(/([^。！？!?]*[？?。]?)$/u),closing=match?.[1]?.trim();
-  if(!closing||!isRedundantClosingQuestion(message,closing,value.slice(0,-closing.length).replace(/[\s，。！？!?；;、]/g,"").length>=8))return value;
-  return value.slice(0,-closing.length).trim();
+  if(!closing)return value;
+  const substantive=value.slice(0,-closing.length).replace(/[\s，。！？!?；;、]/g,"").length>=8;
+  if(isRedundantClosingQuestion(message,closing,substantive))return value.slice(0,-closing.length).trim();
+  if(!substantive&&isOrdinaryLifeShare(message)&&/[？?]$/.test(closing))return "听起来挺特别的。";
+  return value;
 }
 
 export function buildMiniMaxReply(text, message, companionState=null, history=[]) {
