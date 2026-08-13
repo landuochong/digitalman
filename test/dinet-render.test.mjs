@@ -145,7 +145,10 @@ test("stream endpoint reports TTS and first playable segment timing",async()=>{
   assert.match(server,/sendEvent\(res,"audio-ready",\{audioMs:cached\.metrics\.audioMs\}\)/);
   assert.match(server,/firstSegmentMs:firstSegmentAt/);
   assert.match(server,/sendEvent\(res,"backchannel",backchannel\)/);
-  assert.match(server,/backchannel=\{\.\.\.backchannel,audioMs:warmed\.metrics\.audioMs\}/);
+  assert.match(server,/\},BACKCHANNEL_OFFER_MS\):null/);
+  assert.doesNotMatch(server,/const warmed=backchannelWarmup\?await backchannelWarmup:null/);
+  assert.match(server,/reads the same in-flight cache promise/);
+  assert.match(server,/backchannelPcm=\{\.\.\.trace\.backchannelPcm,status:"ready",audioMs:result\.metrics\.audioMs/);
   assert.match(server,/pipelineStartedAt/);
   assert.match(source,/queueMs:metrics\.queueMs/);
   assert.match(source,/fragmented-video:/);

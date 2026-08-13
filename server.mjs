@@ -16,6 +16,7 @@ import { BoundedAsyncCache } from "./src/audio-cache.mjs";
 import { cacheControlForStaticPath, parseByteRange } from "./src/static-media.mjs";
 import { EphemeralPcmStore } from "./src/ephemeral-pcm-store.mjs";
 import { VisualTurnGate } from "./src/visual-turn-gate.mjs";
+import { BACKCHANNEL_OFFER_MS } from "./src/backchannel-timing.mjs";
 import { resolveWaitingActionPreview } from "./src/real-actions.mjs";
 
 function loadLocalEnv() {
@@ -257,16 +258,18 @@ async function miniMaxChatStream(message, history, persona, memories, companionS
       return result;
     }).catch(error=>{trace.backchannelPcm={...trace.backchannelPcm,status:"failed",error:error.message};return null;});
   }
-  const backchannelTimer=responsiveSpeech?setTimeout(async()=>{
+  const backchannelTimer=responsiveSpeech?setTimeout(()=>{
     if(firstSentenceEmitted||res.writableEnded)return;
     if(!backchannel)return;
-    const warmed=backchannelWarmup?await backchannelWarmup:null;
-    if(firstSentenceEmitted||res.writableEnded)return;
-    if(warmed?.metrics?.audioMs)backchannel={...backchannel,audioMs:warmed.metrics.audioMs};
+    // Do not wait for the PCM warmup here. The avatar's speculative request
+    // reads the same in-flight cache promise, so sending the semantic cue now
+    // overlaps the remaining TTS work with request setup and action planning.
+    // Waiting used to move a nominal 500 ms offer to 1 s or later on a slow
+    // TTS first packet, defeating early preparation without avoiding any work.
     trace.timings.backchannelMs=Math.round(performance.now()-trace._startedMs);
     trace.backchannel=backchannel;
     sendEvent(res,"backchannel",backchannel);
-  },700):null;
+  },BACKCHANNEL_OFFER_MS):null;
   res.once("close",()=>{if(backchannelTimer)clearTimeout(backchannelTimer);});
   const response = await fetch(`${miniMaxBaseUrl}/chat/completions`, {
     method:"POST",
