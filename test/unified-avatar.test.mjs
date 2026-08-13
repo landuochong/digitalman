@@ -51,7 +51,7 @@ test("main voice page offers real and anime modes in one conversation",async()=>
   assert.match(app,/if\(silentAction\)\{if\(streamTurn\)await streamTurn\.waitForPlayback\(\);options\.onStart\?\.\(\);await playSilentNeuralAction/);
   assert.match(app,/\/wav2lip-avatar\/avatar\.html/);
   assert.match(app,/\/vrm-embed\.html/);
-  assert.match(app,/history:history\.slice\(0,-1\)\.slice\(-8\)/);
+  assert.match(app,/history:history\.slice\(0,-1\)\.slice\(-6\)/);
   assert.match(app,/responsiveSpeech:true/);
   assert.match(app,/prewarmPcm:mode==="minimax"/);
   assert.match(app,/firstTtsConnectionId=String\(data\.ttsConnectionId\|\|""\)/);
@@ -67,7 +67,8 @@ test("main voice page offers real and anime modes in one conversation",async()=>
   assert.match(app,/binaryAudio:externalAudio/);
   assert.match(app,/fragmentedVideo/);
   assert.match(app,/continuousVideoExperiment/);
-  assert.match(app,/content:String\(item\.content\|\|""\)\.slice\(-900\)/);
+  assert.match(app,/content:compactUploadedHistoryContent\(item\.content\)/);
+  assert.match(app,/content\.slice\(0,head\).*content\.slice\(-tail\)/s);
   assert.doesNotMatch(html,/lumi-realistic-v2\.png|class="realistic-avatar"/);
   assert.match(styles,/\.avatar-panel \.portrait[\s\S]*position: absolute/);
 });

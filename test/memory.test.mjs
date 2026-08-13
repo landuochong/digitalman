@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { CompanionMemoryStore, containsSensitiveInformation, extractMemoryCandidates, formatCompanionState, formatMemoryContext } from "../src/memory.mjs";
@@ -26,6 +26,12 @@ test("does not mistake memory questions for memory commands",()=>{
   assert.match(explicit[0].content,/周末喜欢睡懒觉/);
 });
 
+test("does not store a planning request as the user's future event",()=>{
+  assert.deepEqual(extractMemoryCandidates("帮我规划一下明天怎么安排？"),[]);
+  const actual=extractMemoryCandidates("明天要参加面试。");
+  assert.equal(actual.at(-1)?.layer,"open_loop");
+});
+
 test("persists, deduplicates and recalls local memories",async()=>{
   const directory=await mkdtemp(join(tmpdir(),"lumi-memory-")),path=join(directory,"memory.json");
   let store,reloaded;
@@ -39,6 +45,23 @@ test("persists, deduplicates and recalls local memories",async()=>{
     const disk=JSON.parse(await readFile(path,"utf8"));assert.equal(disk.users["user-1"].length,1);
     reloaded=new CompanionMemoryStore(path);assert.equal((await reloaded.recall("user-1","爵士乐")).length,1);
   }finally{await store?.flush();await reloaded?.flush();await rm(directory,{recursive:true,force:true});}
+});
+
+test("recalls open loops only when the current topic matches",async()=>{
+  const directory=await mkdtemp(join(tmpdir(),"lumi-loop-")),path=join(directory,"memory.json");const store=new CompanionMemoryStore(path);
+  try{
+    await store.remember("user-loop","明天要参加面试。");
+    assert.equal((await store.recall("user-loop","面试前需要准备什么"))[0]?.layer,"open_loop");
+    assert.deepEqual(await store.recall("user-loop","今天有点累，陪我聊聊"),[]);
+  }finally{await store.flush();await rm(directory,{recursive:true,force:true});}
+});
+
+test("never revives a legacy planning question stored as an open loop",async()=>{
+  const directory=await mkdtemp(join(tmpdir(),"lumi-legacy-loop-")),path=join(directory,"memory.json");
+  await writeFile(path,JSON.stringify({version:1,users:{legacy:[{id:"old",layer:"open_loop",content:"用户提到待跟进事项：明天怎么安排",weight:4,createdAt:new Date().toISOString(),lastUsedAt:new Date().toISOString()}]},relationships:{}}));
+  const store=new CompanionMemoryStore(path);
+  try{assert.deepEqual(await store.recall("legacy","明天怎么安排"),[]);}
+  finally{await store.flush();await rm(directory,{recursive:true,force:true});}
 });
 
 test("clears both semantic memory and companion continuity",async()=>{

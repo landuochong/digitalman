@@ -366,9 +366,15 @@ export function companionPresenceReply(message,persona){
   return {reply:`我就在这里陪你呀。你想说话的时候，${role.name}会认真听着。`,emotion:"caring",action:"caring"};
 }
 
-const RECENT_HISTORY_ITEMS=8;
-const RECENT_HISTORY_CHAR_BUDGET=3600;
-const RECENT_HISTORY_ITEM_CHARS=900;
+const RECENT_HISTORY_ITEMS=6;
+const RECENT_HISTORY_CHAR_BUDGET=1800;
+const RECENT_HISTORY_ITEM_CHARS=600;
+
+function compactHistoryContent(value,limit){
+  const content=String(value??"").trim();if(content.length<=limit)return content;
+  const head=Math.max(1,Math.round((limit-1)*.62)),tail=Math.max(1,limit-head-1);
+  return `${content.slice(0,head)}…${content.slice(-tail)}`;
+}
 
 function recentConversation(history,message){
   const current=String(message??"").trim().slice(-2000);
@@ -390,7 +396,7 @@ function recentConversation(history,message){
   let selectedStart=eligible.length;
   for(let index=eligible.length-1;index>=0&&selected.length<RECENT_HISTORY_ITEMS&&remaining>0;index--){
     const item=eligible[index],raw=String(item.content??"").trim();if(!raw)continue;
-    const limit=Math.min(RECENT_HISTORY_ITEM_CHARS,remaining),content=raw.slice(-limit);
+    const limit=Math.min(RECENT_HISTORY_ITEM_CHARS,remaining),content=compactHistoryContent(raw,limit);
     selected.unshift({...item,content});selectedStart=index;remaining-=content.length;
   }
   if(selectedStart>0&&eligible[selectedStart-1]?.role==="user"&&selected[0]?.role==="assistant")selected.shift();

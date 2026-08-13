@@ -528,6 +528,12 @@ function closeVisualTurn(id){
   fetch(`/api/dinet/visual-turn/${encodeURIComponent(id)}/finish`,{method:"POST",keepalive:true}).catch(()=>{});
 }
 
+function compactUploadedHistoryContent(value,limit=600){
+  const content=String(value||"").trim();if(content.length<=limit)return content;
+  const head=Math.round((limit-1)*.62),tail=limit-head-1;
+  return `${content.slice(0,head)}…${content.slice(-tail)}`;
+}
+
 async function reply(message) {
   sendButton.disabled = true; showTyping(); setEmotion("curious"); setVoiceState("thinking","正在理解你刚才说的话"); statusText.textContent = "正在想…";
   const controller = new AbortController(); activeReplyController = controller;
@@ -586,7 +592,7 @@ async function reply(message) {
   }});
   activeAvatarStreamTurn=streamTurn;
   try {
-    const response = await fetch("/api/chat/stream", { method:"POST", headers:{"content-type":"application/json"}, body:JSON.stringify({ message, history:history.slice(0,-1).slice(-8).map(item=>({...item,content:String(item.content||"").slice(-900)})), userId, persona, voice:voiceProfile, fastSpeech:neuralAvatarProfile, responsiveSpeech:true, prewarmPcm:mode==="minimax" }), signal:controller.signal });
+    const response = await fetch("/api/chat/stream", { method:"POST", headers:{"content-type":"application/json"}, body:JSON.stringify({ message, history:history.slice(0,-1).slice(-6).map(item=>({...item,content:compactUploadedHistoryContent(item.content)})), userId, persona, voice:voiceProfile, fastSpeech:neuralAvatarProfile, responsiveSpeech:true, prewarmPcm:mode==="minimax" }), signal:controller.signal });
     if (!response.ok || !response.body) { const data=await response.json().catch(()=>({})); throw new Error(data.error || "连接失败"); }
     await consumeEventStream(response, async (event, data) => {
       if (controller.signal.aborted) return;

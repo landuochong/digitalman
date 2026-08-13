@@ -43,7 +43,8 @@ export function extractMemoryCandidates(message){
   const explicitContent=explicit?.[1]||explicit?.[2]||explicit?.[3];
   if(explicitContent)result.push(candidate("user_fact",`用户明确要求记住：${explicitContent}`,5));
   const openLoop=text.match(/((?:明天|后天|今晚|待会儿|下周|周[一二三四五六日天]|下个月|过几天)(?:要|会|准备|打算|有)?[^，。！？,.]{2,60})/);
-  if(openLoop)result.push(candidate("open_loop",`用户提到待跟进事项：${openLoop[1]}`,4));
+  const planningQuestion=/(?:帮我|给我|替我|请你).{0,10}(?:安排|规划|计划)|(?:安排|规划|计划).{0,10}(?:一下|怎么|如何)|[？?]/.test(text);
+  if(openLoop&&!planningQuestion)result.push(candidate("open_loop",`用户提到待跟进事项：${openLoop[1]}`,4));
   return result.filter((item,index,items)=>item.content&&items.findIndex(other=>other.layer===item.layer&&other.content===item.content)===index);
 }
 
@@ -70,6 +71,15 @@ function relevance(memory,query){
   return memory.weight/5*.35+decayScore(memory)*.25+memorySimilarity(memory.content,query)*.45+layerBoost;
 }
 
+function openLoopMatchesQuery(memory,query){
+  const stored=cleanText(memory?.content,200).replace(/^用户提到待跟进事项：/ ,"");
+  if(/(?:怎么|如何).{0,10}(?:安排|规划|计划)|(?:安排|规划|计划).{0,10}(?:怎么|如何)/.test(stored))return false;
+  const topic=stored.replace(/(?:明天|后天|今晚|待会儿|下周|周[一二三四五六日天]|下个月|过几天|准备|打算|安排|计划|要|会|有)/g,"");
+  const topicGrams=grams(topic),queryGrams=grams(query);if(!topicGrams.size||!queryGrams.size)return false;
+  for(const token of topicGrams)if(queryGrams.has(token))return true;
+  return false;
+}
+
 export class CompanionMemoryStore{
   constructor(path){this.path=path;this.state={version:1,users:{},relationships:{}};this.writeQueue=Promise.resolve();this.ready=this.load();}
   async load(){
@@ -79,7 +89,8 @@ export class CompanionMemoryStore{
   async recall(userId,query,{limit=6}={}){
     await this.ready;const id=normalizeMemoryUserId(userId);if(!id)return[];
     const rows=this.state.users[id]||[],now=new Date().toISOString();
-    const selected=rows.map(memory=>({...memory,_score:relevance(memory,query)})).sort((a,b)=>b._score-a._score).slice(0,limit);
+    const eligible=rows.filter(memory=>memory.layer!=="open_loop"||openLoopMatchesQuery(memory,query));
+    const selected=eligible.map(memory=>({...memory,_score:relevance(memory,query)})).sort((a,b)=>b._score-a._score).slice(0,limit);
     const used=new Set(selected.map(item=>item.id));for(const memory of rows)if(used.has(memory.id))memory.lastUsedAt=now;
     if(selected.length)void this.scheduleWrite();
     return selected.map(({_score,...memory})=>memory);

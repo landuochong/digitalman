@@ -62,7 +62,7 @@ test("demo escalates self-harm language to immediate real-world support", () => 
 test("chat payload keeps the bounded latest history plus current input", () => {
   const history = Array.from({ length:12 }, (_,i) => ({ role:i%2 ? "assistant" : "user", content:`消息${i}` }));
   const payload = buildChatPayload({ model:"gpt-test", message:"现在", history, userId:"u-1" });
-  assert.equal(payload.input.length, companionContextPolicy.recentHistoryItems+1); assert.equal(payload.input[0].content, "消息4"); assert.equal(payload.input.at(-1).content, "现在");
+  assert.equal(payload.input.length, companionContextPolicy.recentHistoryItems+1); assert.equal(payload.input[0].content, "消息6"); assert.equal(payload.input.at(-1).content, "现在");
   assert.equal(payload.model, "gpt-test"); assert.equal(payload.safety_identifier, "u-1");
 });
 test("does not feed stale technical identity replies back into chat", () => {
@@ -178,11 +178,18 @@ test("bounds short-term chat context while preserving the latest user request",(
   assert.ok(conversation.at(-1).content.endsWith("新".repeat(50)));
 });
 
+test("keeps both the topic and conclusion when a long history reply is compacted",()=>{
+  const long=`周末安排先从睡到自然醒开始。${"中间细节".repeat(220)}最后记得十一点前睡觉。`;
+  const payload=buildMiniMaxChatPayload({model:"m",message:"今天有点累",history:[{role:"user",content:"帮我安排周末"},{role:"assistant",content:long}]});
+  const reply=payload.messages.find(item=>item.role==="assistant")?.content||"";
+  assert.match(reply,/周末安排先从/);assert.match(reply,/最后记得十一点前睡觉/);assert.match(reply,/…/);
+});
+
 test("does not start a budget-trimmed conversation with an orphan assistant reply",()=>{
   const history=Array.from({length:11},(_,index)=>({role:index%2?"assistant":"user",content:`消息${index}`}));
   const payload=buildMiniMaxChatPayload({model:"m",message:"继续",history});
   assert.equal(payload.messages[1].role,"user");
-  assert.equal(payload.messages[1].content,"消息4");
+  assert.equal(payload.messages[1].content,"消息6");
   assert.ok(payload.messages.at(-1).content.endsWith("继续"));
 });
 test("MiniMax speaks only the reply while state is inferred locally", () => {
