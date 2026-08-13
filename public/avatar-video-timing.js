@@ -19,3 +19,5 @@ export function continuousVideoSync(audioOrigin,audioTime,videoTime,duration,thr
   const driftMs=Math.round((expected-Number(videoTime))*1000);
   return{expected,driftMs,seekTo:driftMs>thresholdMs?Math.min(expected,Math.max(0,(Number(duration)||expected)-.01)):null};
 }
+
+export function scheduledAudioAhead(tail,currentTime){return Math.max(0,Number(tail)-Number(currentTime));}

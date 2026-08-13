@@ -183,6 +183,8 @@ DINet 生成目录使用有界磁盘缓存，而不是无限保留每个随机�
 
 连续视频现默认启用，`?continuous=0` 可一键回退原有普通 MP4 分层播放器。页面只有在共享 PCM 已解锁、`MediaSource` 存在且明确支持 `video/mp4; codecs="avc1.64001f"` 时才发送 `fragmentedVideo=true`；能力不足时也会自动回退。输出使用 `frag_keyframe+empty_moov+default_base_moof`、固定 20 帧 GOP和关闭场景切换关键帧，SPS/PPS 在实测三个分片中一致。浏览器解析每个文件的 MP4 box，首段只追加一次 `ftyp/moov`，随后把各自全部 `moof/mdat` 以 `SourceBuffer.mode="sequence"` 加入同一视频元素；首次 `play()` 由共享 Promise 去重。真实页面主执行环境完成三层验收：直接追加三段得到 2.48 秒连续缓冲、首帧 37 毫秒；正式人物 iframe 联调中三段只启动一次视频，首帧 40 毫秒、相对 PCM 边界迟到 4 毫秒、三次结束事件齐全且无错误；首段开始后中断，随后 1.4 秒没有任何旧播放事件。每个后续 fragment 追加后还会以首段 PCM 起点计算期望视频时间，偏差超过 25 毫秒才轻量追赶，最大漂移写入 `data-video-max-drift-ms`，避免一次网络迟到让整段长回答持续落后。临时同源验收页已删除。
 
+长回答使用双重有界缓冲。Web Audio 最多提前排程约 4 秒，MediaSource 最多提前追加约 4 秒；考虑当前 800 毫秒分片，观测上限约为 4.8 秒。视频播放点后方只保留约 3 秒，`SourceBuffer.remove()` 与 append 共用同一串行队列，不发生 updating 冲突。12 秒/15 分片页面压力测试中，视频最大前向缓冲 4.8 秒、音频 4.78 秒，历史视频累计回收 3.121 秒，单视频启动、15 个结束事件齐全且无错误。人物容器暴露 audio/video ahead、音源数、缓冲起点和累计回收秒数。SSE 仍是 HTTP 单向流，服务端可继续生成至 60 秒上限；未下载 PCM 由 60 秒 TTL、8 MiB 全局内存上限保护，未来若改双向 WebSocket 再把背压传递到 DINet 生成端。
+
 前端需维护少量背压：未播放内容目标保持 300–800 ms，超过上限暂停向 DINet 投递，低于下限才继续追加；不允许为了追赶而乱序播放。用户中断时同时关闭 M3 流、TTS WebSocket、PCM 解码器、DINet 会话和 MediaSource，并递增会话令牌，任何旧分片到达后直接丢弃。
 
 第一阶段的验收基线：

@@ -1,12 +1,17 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { VIDEO_PRESTART_LEAD_MS,continuousVideoSync,videoBoundaryDelayMs,videoCatchupSeconds,videoPrestartDelayMs } from "../public/avatar-video-timing.js";
+import { VIDEO_PRESTART_LEAD_MS,continuousVideoSync,scheduledAudioAhead,videoBoundaryDelayMs,videoCatchupSeconds,videoPrestartDelayMs } from "../public/avatar-video-timing.js";
 
 test("prestarts video decoding before but reveals at the audio boundary",()=>{
   assert.equal(VIDEO_PRESTART_LEAD_MS,32);
   assert.ok(Math.abs(videoPrestartDelayMs(10.1,10)-68)<1e-9);
   assert.ok(Math.abs(videoBoundaryDelayMs(10.1,10.08)-20)<1e-9);
   assert.equal(videoBoundaryDelayMs(10.1,10.12),0);
+});
+
+test("measures queued Web Audio duration against its monotonic clock",()=>{
+  assert.ok(Math.abs(scheduledAudioAhead(12.3,8.1)-4.2)<1e-9);
+  assert.equal(scheduledAudioAhead(8,9),0);
 });
 
 test("continuous video only catches up when it falls behind the PCM clock",()=>{

@@ -17,7 +17,7 @@ test("main voice page offers real and anime modes in one conversation",async()=>
   assert.match(app,/lumi-avatar-mode/);
   assert.match(html,/app\.js\?v=20260813-video-handoff-v11/);
   assert.match(html,/aria-label="开始通话" aria-pressed="false"/);
-  assert.match(app,/avatarRuntimeVersion="20260813-fmp4-v2"/);
+  assert.match(app,/avatarRuntimeVersion="20260813-bounded-stream-v3"/);
   assert.match(app,/get\("continuous"\) !== "0"/);
   assert.match(app,/lumi-vrm-look/);
   assert.match(app,/lumi-vrm-persona/);
@@ -143,6 +143,8 @@ test("streaming avatar experiment consumes ordered server segments and cancels s
   assert.match(app,/avatarPcmReady=event\.data\.mode==="pcm-ready"\|\|event\.data\.mode==="pcm"/);
   assert.match(app,/avatarFragmentedVideoReady=event\.data\.fragmentedVideo===true/);
   assert.match(app,/videoMaxDriftMs/);
+  assert.match(app,/videoPrunedSeconds/);
+  assert.match(app,/audioAheadSeconds/);
   assert.match(app,/action,frameOffset,externalAudio/);
   assert.match(app,/dataset\.chatFirstSentenceMs/);
   assert.match(app,/dataset\.avatarFirstSegmentMs/);

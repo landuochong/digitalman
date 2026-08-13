@@ -16,3 +16,16 @@ export function splitFragmentedMp4(input){
   const mediaEnd=boxes.reduce((end,box,index)=>index>=moofIndex&&(box.type==="moof"||box.type==="mdat")?box.end:end,boxes[moofIndex].end);
   return{init:bytes.slice(0,boxes[moofIndex].start),media:bytes.slice(boxes[moofIndex].start,mediaEnd),boxes:boxes.map(box=>box.type)};
 }
+
+export function removableVideoRange(buffered,currentTime,keepBehindSeconds=3){
+  if(!buffered?.length)return null;
+  const removeEnd=Math.min(Number(currentTime)-Math.max(0,Number(keepBehindSeconds)||0),buffered.end(buffered.length-1));
+  const removeStart=buffered.start(0);
+  return removeEnd-removeStart>.5?{start:removeStart,end:removeEnd}:null;
+}
+
+export function bufferedVideoAhead(buffered,currentTime){
+  if(!buffered?.length)return 0;
+  const time=Number(currentTime);for(let index=0;index<buffered.length;index++)if(time>=buffered.start(index)-.05&&time<=buffered.end(index)+.05)return Math.max(0,buffered.end(index)-time);
+  return 0;
+}

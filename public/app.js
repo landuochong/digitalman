@@ -10,7 +10,7 @@ const input = $("#messageInput"), form = $("#chatForm"), sendButton = $("#sendBu
 const micButton = $("#micButton"), modeBanner = $("#modeBanner"), statusText = $("#statusText");
 const voiceButton = $("#voiceButton"), voicePrompt = $("#voicePrompt"), liveTranscript = $("#liveTranscript"), captionButton = $("#captionButton");
 const digitalHumanFrame = $("#digitalHumanFrame");
-const avatarRuntimeVersion="20260813-fmp4-v2";
+const avatarRuntimeVersion="20260813-bounded-stream-v3";
 const avatarRuntimeUrl=path=>`${path}?v=${avatarRuntimeVersion}`;
 const avatarProfile = new URLSearchParams(location.search).get("profile");
 const selfRecordedProfile = avatarProfile === "self";
@@ -561,6 +561,8 @@ window.addEventListener("message",event=>{
   if(event.data?.type==="wav2lip-audio-mode"){portrait.dataset.audioMode=event.data.mode;portrait.dataset.audioGapMs=String(event.data.gapMs||0);avatarPcmReady=event.data.mode==="pcm-ready"||event.data.mode==="pcm";avatarFragmentedVideoReady=event.data.fragmentedVideo===true;portrait.dataset.fragmentedVideo=String(avatarFragmentedVideoReady);}
   if(event.data?.type==="wav2lip-started"&&Number.isFinite(Number(event.data.handoffLateMs))){portrait.dataset.videoFirstFrameMs=String(event.data.firstFrameMs||0);portrait.dataset.videoHandoffLateMs=String(event.data.handoffLateMs||0);}
   if(event.data?.type==="wav2lip-video-sync"){portrait.dataset.videoDriftMs=String(event.data.driftMs||0);portrait.dataset.videoMaxDriftMs=String(event.data.maxDriftMs||0);}
+  if(event.data?.type==="wav2lip-video-buffer"){portrait.dataset.videoAheadSeconds=String(event.data.aheadSeconds||0);portrait.dataset.videoBufferStart=String(event.data.bufferStart||0);portrait.dataset.videoPrunedSeconds=String(event.data.prunedSeconds||0);}
+  if(event.data?.type==="wav2lip-audio-buffer"){portrait.dataset.audioAheadSeconds=String(event.data.aheadSeconds||0);portrait.dataset.audioSources=String(event.data.sources||0);}
   if(event.data?.type==="wav2lip-ended"||event.data?.type==="wav2lip-error") pendingWav2LipPlaybacks.get(event.data.requestId)?.();
   if(event.data?.type==="dh-live-action-ready"||event.data?.type==="dh-live-action-error"){
     pendingActions.get(event.data.requestId)?.(); pendingActions.delete(event.data.requestId);

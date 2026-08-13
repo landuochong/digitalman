@@ -1,6 +1,6 @@
-import { continuousVideoSync,videoBoundaryDelayMs,videoCatchupSeconds,videoPrestartDelayMs } from "../avatar-video-timing.js?v=20260813-fmp4-v2";
+import { continuousVideoSync,scheduledAudioAhead,videoBoundaryDelayMs,videoCatchupSeconds,videoPrestartDelayMs } from "../avatar-video-timing.js?v=20260813-bounded-stream-v3";
 import { loadPcmBytes } from "../pcm-segment.js?v=20260813-binary-pcm-v1";
-import { splitFragmentedMp4 } from "../fmp4-segment.js?v=20260813-fmp4-v1";
+import { bufferedVideoAhead,removableVideoRange,splitFragmentedMp4 } from "../fmp4-segment.js?v=20260813-fmp4-v3";
 
 const idleVideo = document.querySelector("#avatar-idle");
 const speechVideo = document.querySelector("#avatar-speech");
@@ -24,6 +24,8 @@ let fragmentedAppendChain=Promise.resolve();
 let fragmentedPlayback=null;
 const streamAudioSources=new Set();
 const segmentQueue=[];
+const MAX_VIDEO_AHEAD_SECONDS=4;
+const MAX_AUDIO_AHEAD_SECONDS=4;
 
 function notify(type, data = {}) { parent.postMessage({ type, ...data }, location.origin); }
 function supportsFragmentedVideo(){return typeof MediaSource!=="undefined"&&MediaSource.isTypeSupported?.('video/mp4; codecs="avc1.64001f"')===true;}
@@ -69,19 +71,22 @@ async function scheduleSegmentAudio(item,pcmBytesPromise,token){
   const [context,bytes]=await Promise.all([ensureStreamAudio(),pcmBytesPromise]);
   if(token!==playToken)return false;
   if(!context){notify("wav2lip-audio-mode",{mode:"mp4",sequence:item.segment?.sequence,gapMs:0});return false;}
+  while(token===playToken&&scheduledAudioAhead(streamAudioTail,context.currentTime)>MAX_AUDIO_AHEAD_SECONDS)await new Promise(resolve=>setTimeout(resolve,80));
+  if(token!==playToken)return false;
   const buffer=pcmBuffer(context,item.segment?.audio,bytes);if(!buffer)return false;
   const source=context.createBufferSource();source.buffer=buffer;source.connect(context.destination);
   const when=Math.max(streamAudioTail,context.currentTime+.06);
   const gapMs=streamAudioTail?Math.max(0,Math.round((when-streamAudioTail)*1000)):0;
   item.audioStart=when;item.audioEnd=when+buffer.duration;streamAudioTail=item.audioEnd;
   source.onended=()=>streamAudioSources.delete(source);streamAudioSources.add(source);source.start(when);
+  notify("wav2lip-audio-buffer",{aheadSeconds:Number(scheduledAudioAhead(streamAudioTail,context.currentTime).toFixed(3)),sources:streamAudioSources.size});
   notify("wav2lip-audio-mode",{mode:"pcm",sequence:item.segment?.sequence,gapMs});return true;
 }
 
 function preloadSegment(item){
   if(item.fragmentedVideo){
-    const fragmentReady=fetch(item.url,{cache:"force-cache"}).then(async response=>response.ok?splitFragmentedMp4(await response.arrayBuffer()):null).catch(()=>null);
-    return{...item,fragmentReady,videoReady:fragmentReady};
+    const loadFragment=()=>fetch(item.url,{cache:"force-cache"}).then(async response=>response.ok?splitFragmentedMp4(await response.arrayBuffer()):null).catch(()=>null);
+    return{...item,loadFragment,videoReady:Promise.resolve()};
   }
   const video=document.createElement("video");
   video.className="avatar-layer speech-segment";video.playsInline=true;
@@ -95,6 +100,11 @@ function preloadSegment(item){
   return {...item,video,videoReady};
 }
 
+async function waitForFragmentCapacity(playback,token){
+  while(token===playToken&&bufferedVideoAhead(playback.sourceBuffer.buffered,playback.video.currentTime)>MAX_VIDEO_AHEAD_SECONDS)await new Promise(resolve=>setTimeout(resolve,80));
+  return token===playToken;
+}
+
 async function ensureFragmentedPlayback(token){
   if(fragmentedPlayback)return fragmentedPlayback;
   if(token!==playToken||!supportsFragmentedVideo())return null;
@@ -103,7 +113,7 @@ async function ensureFragmentedPlayback(token){
   await new Promise((resolve,reject)=>{mediaSource.addEventListener("sourceopen",resolve,{once:true});mediaSource.addEventListener("error",reject,{once:true});});
   if(token!==playToken){video.remove();URL.revokeObjectURL(url);return null;}
   const sourceBuffer=mediaSource.addSourceBuffer('video/mp4; codecs="avc1.64001f"');sourceBuffer.mode="sequence";
-  fragmentedPlayback={mediaSource,sourceBuffer,video,url,initAppended:false,started:false,startPromise:null,audioOrigin:null,maxDriftMs:0};return fragmentedPlayback;
+  fragmentedPlayback={mediaSource,sourceBuffer,video,url,initAppended:false,started:false,startPromise:null,audioOrigin:null,maxDriftMs:0,prunedSeconds:0};return fragmentedPlayback;
 }
 
 function appendFragmentBytes(sourceBuffer,bytes){
@@ -115,12 +125,25 @@ function appendFragmentBytes(sourceBuffer,bytes){
   });
 }
 
+function pruneFragmentedVideo(playback){
+  const range=removableVideoRange(playback.sourceBuffer.buffered,playback.video.currentTime);if(!range)return Promise.resolve(false);
+  return new Promise((resolve,reject)=>{
+    const done=()=>{cleanup();playback.prunedSeconds+=range.end-range.start;resolve(true);},fail=()=>{cleanup();reject(playback.sourceBuffer.error||new Error("fMP4 prune failed"));};
+    const cleanup=()=>{playback.sourceBuffer.removeEventListener("updateend",done);playback.sourceBuffer.removeEventListener("error",fail);};
+    playback.sourceBuffer.addEventListener("updateend",done,{once:true});playback.sourceBuffer.addEventListener("error",fail,{once:true});
+    try{playback.sourceBuffer.remove(range.start,range.end);}catch(error){cleanup();reject(error);}
+  });
+}
+
 function queueFragmentedVideo(item,token){
   return fragmentedAppendChain=fragmentedAppendChain.then(async()=>{
-    const [playback,fragment]=await Promise.all([ensureFragmentedPlayback(token),item.fragmentReady]);
-    if(token!==playToken||!playback||!fragment)return null;
+    const playback=await ensureFragmentedPlayback(token);if(!playback||!await waitForFragmentCapacity(playback,token))return null;
+    const fragment=await item.loadFragment();if(token!==playToken||!fragment)return null;
     if(!playback.initAppended){await appendFragmentBytes(playback.sourceBuffer,fragment.init);playback.initAppended=true;}
-    await appendFragmentBytes(playback.sourceBuffer,fragment.media);return playback;
+    await pruneFragmentedVideo(playback);await appendFragmentBytes(playback.sourceBuffer,fragment.media);
+    const buffered=playback.sourceBuffer.buffered,aheadSeconds=bufferedVideoAhead(buffered,playback.video.currentTime);
+    notify("wav2lip-video-buffer",{aheadSeconds:Number(aheadSeconds.toFixed(3)),bufferStart:buffered.length?Number(buffered.start(0).toFixed(3)):0,bufferEnd:buffered.length?Number(buffered.end(buffered.length-1).toFixed(3)):0,prunedSeconds:Number(playback.prunedSeconds.toFixed(3))});
+    return playback;
   }).catch(()=>null);
 }
 
