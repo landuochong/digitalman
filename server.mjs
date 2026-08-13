@@ -40,6 +40,7 @@ const wav2lipRenders = new Wav2LipRenderStore({ projectRoot });
 const dinetRenders = new DINetRenderStore({ projectRoot });
 const ephemeralPcm=new EphemeralPcmStore();
 const visualTurns=new VisualTurnGate();
+const speculativeStreams=new Map();
 const dinetStreams = new DINetStreamSessionStore({
   renderer:dinetRenders,
   publishAudio:payload=>ephemeralPcm.put(payload.pcm,payload),
@@ -496,13 +497,21 @@ export const server = http.createServer(async (req, res) => {
       res.writeHead(200,{"content-type":"text/event-stream; charset=utf-8","cache-control":"no-cache, no-transform","x-accel-buffering":"no"});
       const session=dinetStreams.start({action:String(data.action||"idle"),frameOffset:Number(data.frameOffset||0),videoOnly:data.externalAudio===true,binaryAudio:data.binaryAudio===true,fragmentedVideo:data.fragmentedVideo===true,renderBackpressure:data.renderBackpressure===true,visualTurnId:orderedSentence?visualTurnId:"",visualSentenceIndex:orderedSentence?visualSentenceIndex:0});
       sendEvent(res,"started",session);
+      const speculative=data.speculative===true;
+      const speculativeState=speculative?{committed:false,waiters:new Set()}:null;
+      if(speculativeState)speculativeStreams.set(session.id,speculativeState);
       let chunkSequence=0,renderChain=Promise.resolve(),firstSegmentSent=false,visualSlotPromise=null;
       const emitSegments=async(final=false)=>{
+        if(speculativeState&&firstSegmentSent&&!speculativeState.committed)await new Promise((resolve,reject)=>{
+          const wake=()=>{cleanup();resolve();},abort=()=>{cleanup();reject(Object.assign(new Error("cancelled"),{name:"AbortError"}));};
+          const cleanup=()=>{speculativeState.waiters.delete(wake);controller.signal.removeEventListener("abort",abort);};
+          speculativeState.waiters.add(wake);controller.signal.addEventListener("abort",abort,{once:true});
+        });
         if(orderedSentence)await(visualSlotPromise||=visualTurns.wait(visualTurnId,visualSentenceIndex,{signal:controller.signal}));
         const segments=await dinetStreams.drain(session.id,{final,signal:controller.signal,onSegment:segment=>{
           firstSegmentAt??=performance.now();
           firstSegmentSent=true;sendEvent(res,"segment",segment);
-        }});
+        },maxSegments:speculativeState&&!speculativeState.committed?1:Infinity});
         return segments.length;
       };
       try{
@@ -544,6 +553,7 @@ export const server = http.createServer(async (req, res) => {
         dinetStreams.cancel(session.id);sendEvent(res,"error",{error:error.message||"流式人物生成失败"});closed=true;res.end();
       }finally{
         if(orderedSentence)visualTurns.finish(visualTurnId,visualSentenceIndex);
+        speculativeStreams.delete(session.id);
       }
       return;
     }
@@ -558,16 +568,21 @@ export const server = http.createServer(async (req, res) => {
       if (!isLoopbackAddress(req.socket.remoteAddress)) return json(res, 403, { error:"本地 DINet 流式接口仅允许本机访问" });
       return json(res, 201, dinetStreams.start(await body(req)));
     }
-    const dinetStreamMatch = pathname.match(/^\/api\/dinet\/stream\/([0-9a-f-]+)\/(audio-chunk|finish|cancel|ack)$/i);
+    const dinetStreamMatch = pathname.match(/^\/api\/dinet\/stream\/([0-9a-f-]+)\/(audio-chunk|finish|cancel|ack|commit)$/i);
     if (dinetStreamMatch && req.method === "POST") {
       if (!isLoopbackAddress(req.socket.remoteAddress)) return json(res, 403, { error:"本地 DINet 流式接口仅允许本机访问" });
       const [, sessionId, command] = dinetStreamMatch;
+      if(command==="commit"){
+        const state=speculativeStreams.get(sessionId);if(!state)return json(res,404,{id:sessionId,committed:false});
+        state.committed=true;for(const wake of state.waiters)wake();state.waiters.clear();return json(res,200,{id:sessionId,committed:true});
+      }
       if (command === "audio-chunk") {
         const sequence = Number(req.headers["x-chunk-sequence"]);
         return json(res, 202, dinetStreams.append(sessionId, sequence, await binaryBody(req, 512_000)));
       }
       if(command==="ack"){const data=await body(req);return json(res,200,dinetStreams.acknowledge(sessionId,data.sequence));}
       if (command === "finish") return json(res, 200, await dinetStreams.finish(sessionId));
+      const speculativeState=speculativeStreams.get(sessionId);if(speculativeState){for(const wake of speculativeState.waiters)wake();speculativeState.waiters.clear();speculativeStreams.delete(sessionId);}
       return json(res, 200, dinetStreams.cancel(sessionId));
     }
     if (req.method === "GET" && pathname === "/api/health") return json(res, 200, { ok:true, mode:apiKey ? provider : "demo", memory:true, continuity:true, textModel:provider === "minimax" ? miniMaxTextModel : textModel, ttsModel:provider === "minimax" ? miniMaxTtsModel : ttsModel });

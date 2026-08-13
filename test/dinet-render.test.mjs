@@ -147,6 +147,9 @@ test("stream endpoint reports TTS and first playable segment timing",async()=>{
   assert.match(server,/binaryAudio:data\.binaryAudio===true/);
   assert.match(server,/fragmentedVideo:data\.fragmentedVideo===true/);
   assert.match(server,/renderBackpressure:data\.renderBackpressure===true/);
+  assert.match(server,/speculativeState&&firstSegmentSent/);
+  assert.match(server,/maxSegments:speculativeState&&!speculativeState\.committed\?1:Infinity/);
+  assert.match(server,/audio-chunk\|finish\|cancel\|ack\|commit/);
   assert.match(server,/audio-chunk\|finish\|cancel\|ack/);
   assert.match(server,/dinetStreams\.acknowledge/);
   assert.match(server,/visualTurns\.wait\(visualTurnId,visualSentenceIndex/);

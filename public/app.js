@@ -347,26 +347,32 @@ function prepareStreamingNeuralSpeech(text,emotion,batch,behavior={action:"idle"
   const frameOffset=typeof behavior==="object"?Math.max(0,Number(behavior?.frameOffset)||0):0;
   const externalAudio=avatarPcmReady&&avatarAudioContext?.state==="running";
   const fragmentedVideo=externalAudio&&avatarFragmentedVideoReady&&continuousVideoExperiment;
-  const queue=[],waiters=[];let ended=false,failure=null,firstSegmentObserved=false;
+  const queue=[],waiters=[];let ended=false,failure=null,firstSegmentObserved=false,firstSegmentReadyAt=null,serverStreamId=null,commitRequested=false;
   const wake=()=>{while(waiters.length&&(queue.length||ended||failure))waiters.shift()();};
   const controller=new AbortController();
   const consume=(async()=>{
-    const response=await fetch("/api/dinet/speech-stream",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({text,emotion,voice:voiceProfile,action,frameOffset,externalAudio,binaryAudio:externalAudio,fragmentedVideo,renderBackpressure:fragmentedVideo,preferPrewarmed:options.preferPrewarmed===true,visualTurnId:behavior?.visualTurnId,visualSentenceIndex:behavior?.visualSentenceIndex}),signal:controller.signal});
+    const response=await fetch("/api/dinet/speech-stream",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({text,emotion,voice:voiceProfile,action,frameOffset,externalAudio,binaryAudio:externalAudio,fragmentedVideo,renderBackpressure:fragmentedVideo,preferPrewarmed:options.preferPrewarmed===true,speculative:options.speculative===true,visualTurnId:behavior?.visualTurnId,visualSentenceIndex:behavior?.visualSentenceIndex}),signal:controller.signal});
     if(!response.ok||!response.body){const data=await response.json().catch(()=>({}));throw new Error(data.error||"流式回答准备失败");}
     await consumeEventStream(response,async(event,data)=>{
       if(batch!==speechBatch){controller.abort();return;}
+      if(event==="started"){
+        serverStreamId=data.id||null;
+        if(commitRequested&&serverStreamId)fetch(`/api/dinet/stream/${encodeURIComponent(serverStreamId)}/commit`,{method:"POST"}).catch(()=>{});
+      }
       if(event==="segment"){
-        if(!firstSegmentObserved){firstSegmentObserved=true;if(!portrait.dataset.avatarFirstSegmentMs)portrait.dataset.avatarFirstSegmentMs=String(Math.round(performance.now()-activeReplyStartedAt));}
+        if(!firstSegmentObserved){firstSegmentObserved=true;firstSegmentReadyAt=performance.now();if(!options.speculative&&!portrait.dataset.avatarFirstSegmentMs)portrait.dataset.avatarFirstSegmentMs=String(Math.round(firstSegmentReadyAt-activeReplyStartedAt));}
         queue.push(data);wake();
       }
-      if(event==="done"&&data.pipeline&&!portrait.dataset.avatarPipelineMs){portrait.dataset.ttsFirstAudioMs=String(data.pipeline.ttsFirstAudioMs??"");portrait.dataset.avatarPipelineMs=String(data.pipeline.firstSegmentMs??"");}
+      if(event==="done"&&data.pipeline&&!options.speculative&&!portrait.dataset.avatarPipelineMs){portrait.dataset.ttsFirstAudioMs=String(data.pipeline.ttsFirstAudioMs??"");portrait.dataset.avatarPipelineMs=String(data.pipeline.firstSegmentMs??"");}
       if(event==="error")throw new Error(data.error||"流式回答准备失败");
       if(event==="done"){ended=true;wake();}
     });
     ended=true;wake();
   })().catch(error=>{failure=error;ended=true;wake();});
   const stream={
-    cancel(){controller.abort();activeStreamingSpeech.delete(stream);},
+    get firstSegmentReadyAt(){return firstSegmentReadyAt;},
+    commit(){commitRequested=true;if(serverStreamId)fetch(`/api/dinet/stream/${encodeURIComponent(serverStreamId)}/commit`,{method:"POST"}).catch(()=>{});},
+    cancel(){controller.abort();if(serverStreamId)fetch(`/api/dinet/stream/${encodeURIComponent(serverStreamId)}/cancel`,{method:"POST",keepalive:true}).catch(()=>{});activeStreamingSpeech.delete(stream);},
     async next(){
       while(!queue.length&&!ended&&!failure)await new Promise(resolve=>waiters.push(resolve));
       if(failure)throw failure;
@@ -412,17 +418,23 @@ async function playSilentNeuralAction(url,batch){
   });
 }
 
-function enqueueSpeech(text, emotion, batch, behavior={action:"idle"},streamTurn=activeAvatarStreamTurn,options={}) {
+function prepareSpeechWork(text,emotion,batch,behavior,streamTurn,options={}){
   const action=typeof behavior==="string"?behavior:behavior?.action||"idle";
+  const silentAction=silentNeuralActions[action];
+  const visualSentence=streamingAvatarExperiment&&!silentAction&&streamTurn?streamTurn.allocateSentence():null;
+  const preparedBehavior=visualSentence?{...(typeof behavior==="object"?behavior:{action}),...visualSentence}:behavior;
+  const preparation=streamingAvatarExperiment&&!silentAction
+    ? prepareStreamingNeuralSpeech(text,emotion,batch,preparedBehavior,options)
+    : prepareNeuralSpeech(text,emotion,batch,silentAction?"idle":action);
+  return{action,silentAction,preparedBehavior,preparation};
+}
+
+function enqueueSpeech(text, emotion, batch, behavior={action:"idle"},streamTurn=activeAvatarStreamTurn,options={}) {
   if (neuralAvatarProfile) {
     // Start TTS and rendering immediately for every completed sentence. Playback
     // stays ordered, while later sentences prepare during the current sentence.
-    const silentAction=silentNeuralActions[action];
-    const visualSentence=streamingAvatarExperiment&&!silentAction&&streamTurn?streamTurn.allocateSentence():null;
-    const preparedBehavior=visualSentence?{...(typeof behavior==="object"?behavior:{action}),...visualSentence}:behavior;
-    const preparation = streamingAvatarExperiment&&!silentAction
-      ? prepareStreamingNeuralSpeech(text,emotion,batch,preparedBehavior,options)
-      : prepareNeuralSpeech(text, emotion, batch,silentAction?"idle":action);
+    const work=options.preparedWork||prepareSpeechWork(text,emotion,batch,behavior,streamTurn,options);
+    const{silentAction,preparedBehavior,preparation}=work;
     const schedule=streamTurn
       ? task=>streamTurn.enqueue(task)
       : task=>speechQueue=speechQueue.then(task);
@@ -494,11 +506,22 @@ async function reply(message) {
       closeVisualTurn(streamTurn.id);
     }
   }):null;
-  const backchannelGate=new BackchannelGate({delayMs:500,onSpeak:data=>{
-    if(batch!==speechBatch)return;
-    const plan={action:data.action||"nod",emotion:data.emotion||currentEmotion,intensity:.35,head:data.action==="thinking"?"slight-left":"center",gaze:"user",holdMs:1400,frameOffset:0,continuation:false};
+  const backchannelPlan=data=>({action:data.action||"nod",emotion:data.emotion||currentEmotion,intensity:.35,head:data.action==="thinking"?"slight-left":"center",gaze:"user",holdMs:1400,frameOffset:0,continuation:false});
+  const backchannelGate=new BackchannelGate({delayMs:500,
+    onPrepare:data=>{
+      if(batch!==speechBatch||!neuralAvatarProfile)return null;
+      const plan=backchannelPlan(data);
+      return{plan,work:prepareSpeechWork(data.text,plan.emotion,batch,plan,streamTurn,{preferPrewarmed:true,speculative:true})};
+    },
+    onCancel:(_data,prepared)=>prepared?.work?.preparation?.cancel?.(),
+    onSpeak:(data,prepared)=>{
+    if(batch!==speechBatch){prepared?.work?.preparation?.cancel?.();return;}
+    const plan=prepared?.plan||backchannelPlan(data);
+    prepared?.work?.preparation?.commit?.();
+    const readyAt=prepared?.work?.preparation?.firstSegmentReadyAt;
+    if(readyAt)portrait.dataset.backchannelPreparedLeadMs=String(Math.max(0,Math.round(performance.now()-readyAt)));
     portrait.dataset.backchannel=JSON.stringify({text:data.text,atMs:Math.round(performance.now()-activeReplyStartedAt),...plan});
-    enqueueSpeech(data.text,plan.emotion,batch,plan,streamTurn,{preferPrewarmed:true});
+    enqueueSpeech(data.text,plan.emotion,batch,plan,streamTurn,{preferPrewarmed:true,preparedWork:prepared?.work});
   }});
   activeAvatarStreamTurn=streamTurn;
   try {

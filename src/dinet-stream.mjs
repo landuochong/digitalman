@@ -113,7 +113,7 @@ export class DINetStreamSessionStore {
     }
   }
 
-  async drain(id, { final=false, onSegment, signal }={}) {
+  async drain(id, { final=false, onSegment, signal, maxSegments=Infinity }={}) {
     const session = this.#open(id);
     const bytesPerMs = session.sampleRate * session.channels * 2 / 1000;
     const minimumTailBytes = Math.round(MIN_TAIL_MS * bytesPerMs);
@@ -154,7 +154,7 @@ export class DINetStreamSessionStore {
       };
       results.push(result);
       await onSegment?.(result);
-      if (final) break;
+      if (final||results.length>=maxSegments) break;
     }
     return results;
   }

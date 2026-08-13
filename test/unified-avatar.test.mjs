@@ -28,6 +28,10 @@ test("main voice page offers real and anime modes in one conversation",async()=>
   assert.match(app,/conversationActions\.planForSentence\(data\.text,sentenceIndex,data\.action\|\|currentAction,currentEmotion\)/);
   assert.match(app,/enqueueSpeech\(data\.text,currentEmotion,batch,sentencePlan,streamTurn\)/);
   assert.match(app,/new BackchannelGate\(\{delayMs:500/);
+  assert.match(app,/onPrepare:data=>/);
+  assert.match(app,/speculative:true/);
+  assert.match(app,/preparedWork:prepared\?\.work/);
+  assert.match(app,/backchannelPreparedLeadMs/);
   assert.match(app,/backchannelGate\.cancel\(\)/);
   assert.match(app,/frameOffset/);
   assert.match(app,/portrait\.dataset\.behavior=JSON\.stringify\(sentencePlan\)/);
