@@ -4,7 +4,7 @@ import { AvatarStreamTurn } from "./avatar-stream-turn.js?v=20260813-video-hando
 import { RecognitionTurnGate,recognitionResumeDelayMs,recognitionSilenceMs } from "./recognition-turn-gate.js?v=20260813-adaptive-endpoint-v23";
 import { BargeInDetector } from "./barge-in-detector.js?v=20260813-barge-in-v1";
 import { ReplyTranscript } from "./reply-transcript.js?v=20260813-spoken-history-v1";
-import { BackchannelGate } from "./backchannel-gate.js?v=20260813-short-backchannel-v15";
+import { BackchannelGate,BackchannelPlayback } from "./backchannel-gate.js?v=20260813-backchannel-claim-v24";
 import { BACKCHANNEL_GRACE_MS } from "./backchannel-timing.js?v=20260813-backchannel-prep-v1";
 
 const $ = (selector) => document.querySelector(selector);
@@ -14,7 +14,7 @@ const micButton = $("#micButton"), modeBanner = $("#modeBanner"), statusText = $
 const voiceButton = $("#voiceButton"), voicePrompt = $("#voicePrompt"), liveTranscript = $("#liveTranscript"), captionButton = $("#captionButton");
 const digitalHumanFrame = $("#digitalHumanFrame");
 const AVATAR_FIRST_SEGMENT_LEAD_MS=480;
-const avatarRuntimeVersion="20260813-adaptive-endpoint-v23";
+const avatarRuntimeVersion="20260813-backchannel-claim-v24";
 const avatarRuntimeUrl=path=>`${path}?v=${avatarRuntimeVersion}`;
 const avatarProfile = new URLSearchParams(location.search).get("profile");
 const selfRecordedProfile = avatarProfile === "self";
@@ -527,7 +527,7 @@ function closeVisualTurn(id){
 async function reply(message) {
   sendButton.disabled = true; showTyping(); setEmotion("curious"); setVoiceState("thinking","正在理解你刚才说的话"); statusText.textContent = "正在想…";
   const controller = new AbortController(); activeReplyController = controller;
-  const batch = speechBatch,transcript=new ReplyTranscript(); activeReplyStartedAt=performance.now();realSpeechTimelineMs=0;delete portrait.dataset.chatFirstSentenceMs;delete portrait.dataset.avatarFirstSegmentMs;delete portrait.dataset.ttsFirstAudioMs;delete portrait.dataset.avatarPipelineMs;let article, streamedText = "", currentEmotion = "calm",currentAction="idle",spokenSentenceCount=0,firstTtsConnectionId="",waitingPreview=null,backchannelVisual=null,actionFrameBias=0,biasedAction="";
+  const batch = speechBatch,transcript=new ReplyTranscript(); activeReplyStartedAt=performance.now();realSpeechTimelineMs=0;delete portrait.dataset.chatFirstSentenceMs;delete portrait.dataset.avatarFirstSegmentMs;delete portrait.dataset.ttsFirstAudioMs;delete portrait.dataset.avatarPipelineMs;let article, streamedText = "", currentEmotion = "calm",currentAction="idle",spokenSentenceCount=0,firstTtsConnectionId="",waitingPreview=null,backchannelVisual=null,backchannelPlayback=null,actionFrameBias=0,biasedAction="";
   const transcriptState={transcript,get article(){return article;},set article(value){article=value;}};activeReplyTranscript=transcriptState;
   const revealSentence=sentenceIndex=>{if(batch!==speechBatch)return;const spoken=transcript.start(sentenceIndex);if(!spoken)return;$("#typing")?.remove();article ||= addMessage("assistant","",false);article.querySelector("p").textContent=spoken;};
   const finishSentence=sentenceIndex=>{if(batch===speechBatch)transcript.finish(sentenceIndex);};
@@ -562,7 +562,8 @@ async function reply(message) {
     const readyAt=prepared?.work?.preparation?.firstSegmentReadyAt;
     if(readyAt)portrait.dataset.backchannelPreparedLeadMs=String(Math.max(0,Math.round(performance.now()-readyAt)));
     portrait.dataset.backchannel=JSON.stringify({text:data.text,atMs:Math.round(performance.now()-activeReplyStartedAt),...plan});
-    enqueueSpeech(data.text,plan.emotion,batch,plan,streamTurn,{preferPrewarmed:true,preparedWork:prepared?.work});
+    const playback=new BackchannelPlayback(data.text);backchannelPlayback=playback;
+    enqueueSpeech(data.text,plan.emotion,batch,plan,streamTurn,{preferPrewarmed:true,preparedWork:prepared?.work,onStart:()=>playback.start(),onComplete:()=>playback.complete()});
   }});
   activeAvatarStreamTurn=streamTurn;
   try {
@@ -586,6 +587,8 @@ async function reply(message) {
         backchannelGate.cancel();
         if(!spokenSentenceCount)portrait.dataset.chatFirstSentenceMs=String(Math.round(performance.now()-activeReplyStartedAt));
         streamedText += data.text;
+        const transcriptIndex=transcript.receive(data.text);
+        const reusedBackchannel=backchannelPlayback?.claim(data.text,{onStart:()=>revealSentence(transcriptIndex),onComplete:()=>finishSentence(transcriptIndex)})===true;
         if(data.emotion){currentEmotion=data.emotion;setEmotion(currentEmotion);}
         const sentenceIndex=spokenSentenceCount++;
         let sentencePlan=conversationActions.planForSentence(data.text,sentenceIndex,data.action||currentAction,currentEmotion);
@@ -612,11 +615,10 @@ async function reply(message) {
         }
         else if(sentencePlan.action!==biasedAction){actionFrameBias=0;biasedAction="";}
         const sentenceAction=sentencePlan.action;portrait.dataset.behavior=JSON.stringify(sentencePlan);
-        if(sentenceAction!=="idle"&&!sentencePlan.continuation)setDigitalHumanAction(sentenceAction,{force:true,hold:true,behavior:sentencePlan}).catch(()=>{});
+        if(!reusedBackchannel&&sentenceAction!=="idle"&&!sentencePlan.continuation)setDigitalHumanAction(sentenceAction,{force:true,hold:true,behavior:sentencePlan}).catch(()=>{});
         const ttsConnectionId=sentenceIndex===0?firstTtsConnectionId:"";
         firstTtsConnectionId="";
-        const transcriptIndex=transcript.receive(data.text);
-        enqueueSpeech(data.text,currentEmotion,batch,sentencePlan,streamTurn,{ttsConnectionId,onStart:()=>revealSentence(transcriptIndex),onComplete:()=>finishSentence(transcriptIndex)});
+        if(!reusedBackchannel)enqueueSpeech(data.text,currentEmotion,batch,sentencePlan,streamTurn,{ttsConnectionId,onStart:()=>revealSentence(transcriptIndex),onComplete:()=>finishSentence(transcriptIndex)});
       }
       if(event==="backchannel"&&data.text)backchannelGate.offer(data);
       if (event === "error") throw new Error(data.error || "回答中断");

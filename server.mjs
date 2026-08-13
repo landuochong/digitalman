@@ -17,7 +17,6 @@ import { cacheControlForStaticPath, parseByteRange } from "./src/static-media.mj
 import { EphemeralPcmStore } from "./src/ephemeral-pcm-store.mjs";
 import { VisualTurnGate } from "./src/visual-turn-gate.mjs";
 import { BACKCHANNEL_OFFER_MS } from "./src/backchannel-timing.mjs";
-import { shouldEmitFormalSentence } from "./src/backchannel-dedup.mjs";
 import { resolveWaitingActionPreview } from "./src/real-actions.mjs";
 import { bindClientAbort } from "./src/client-abort.mjs";
 
@@ -265,7 +264,7 @@ async function miniMaxChatStream(message, history, persona, memories, companionS
   });
   res.flushHeaders?.();
   sendEvent(res, "meta", { ...initialState, mode:"minimax", ...(ttsConnectionId?{ttsConnectionId}:{}), ...(waitingPreview?{waitingPreview}:{}) });
-  let firstSentenceEmitted=false,backchannelOffered=false,backchannel=responsiveSpeech?buildResponsiveBackchannel(message,initialState):null,backchannelWarmup=null;
+  let firstSentenceEmitted=false,backchannel=responsiveSpeech?buildResponsiveBackchannel(message,initialState):null,backchannelWarmup=null;
   if(backchannel&&prewarmPcm){
     const pcmWarmup=prewarmMiniMaxPcm({text:backchannel.text,voice,emotion:backchannel.emotion,signal:client.signal});
     trace.backchannelPcm={voice:pcmWarmup.resolvedVoice,cacheHit:pcmWarmup.hit,status:"preparing"};
@@ -284,7 +283,6 @@ async function miniMaxChatStream(message, history, persona, memories, companionS
     // TTS first packet, defeating early preparation without avoiding any work.
     trace.timings.backchannelMs=Math.round(performance.now()-trace._startedMs);
     trace.backchannel=backchannel;
-    backchannelOffered=true;
     sendEvent(res,"backchannel",backchannel);
   },BACKCHANNEL_OFFER_MS):null;
   const response = await fetch(`${miniMaxBaseUrl}/chat/completions`, {
@@ -322,7 +320,7 @@ async function miniMaxChatStream(message, history, persona, memories, companionS
       firstSentenceEmitted=true;if(backchannelTimer)clearTimeout(backchannelTimer);
       trace.timings.firstSentenceMs??=Math.round(performance.now()-trace._startedMs);
       trace.emittedSentences.push(safeSentence);
-      if(!client.signal.aborted&&shouldEmitFormalSentence(safeSentence,backchannel,{offered:backchannelOffered}))sendEvent(res,"sentence",{text:safeSentence,emotion:sentenceResult.emotion,action:sentenceResult.action});
+      if(!client.signal.aborted)sendEvent(res,"sentence",{text:safeSentence,emotion:sentenceResult.emotion,action:sentenceResult.action});
       if(sentenceLimit&&completedReplySentenceCount(trace.emittedSentences.join(""))>=sentenceLimit){replyBudgetReached=true;trace.timings.localLengthReachedMs=Math.round(performance.now()-trace._startedMs);break;}
     }
     sentenceBuffer = remainder;

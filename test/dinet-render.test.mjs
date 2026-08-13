@@ -154,7 +154,7 @@ test("stream endpoint reports TTS and first playable segment timing",async()=>{
   assert.match(server,/if\(replyBudgetReached\)\{finishReason="local-length";void reader\.cancel\(\)\.catch\(\(\)=>\{\}\);break;\}/);
   assert.match(server,/const streamedReply=trace\.emittedSentences\.join\(""\)/);
   assert.match(server,/trace\.timings\.localLengthReachedMs/);
-  assert.match(server,/shouldEmitFormalSentence\(safeSentence,backchannel,\{offered:backchannelOffered\}\)/);
+  assert.match(server,/sendEvent\(res,"sentence",\{text:safeSentence,emotion:sentenceResult\.emotion,action:sentenceResult\.action\}\)/);
   assert.match(source,/queueMs:metrics\.queueMs/);
   assert.match(source,/fragmented-video:/);
   assert.match(server,/prepareAvatarAction\(initialState\.action,trace\)/);
