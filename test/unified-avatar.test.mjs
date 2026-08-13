@@ -15,9 +15,9 @@ test("main voice page offers real and anime modes in one conversation",async()=>
   assert.match(html,/id="personaVoice"/);
   assert.match(html,/人物设置/);
   assert.match(app,/lumi-avatar-mode/);
-  assert.match(html,/app\.js\?v=20260813-first-segment-v27/);
+  assert.match(html,/app\.js\?v=20260813-tts-prime-v28/);
   assert.match(html,/aria-label="开始通话" aria-pressed="false"/);
-  assert.match(app,/avatarRuntimeVersion="20260813-first-segment-v27"/);
+  assert.match(app,/avatarRuntimeVersion="20260813-tts-prime-v28"/);
   assert.match(app,/AVATAR_FIRST_SEGMENT_LEAD_MS=400/);
   assert.match(app,/get\("continuous"\) !== "0"/);
   assert.match(app,/lumi-vrm-look/);
@@ -53,6 +53,7 @@ test("main voice page offers real and anime modes in one conversation",async()=>
   assert.match(app,/responsiveSpeech:true/);
   assert.match(app,/prewarmPcm:mode==="minimax"/);
   assert.match(app,/firstTtsConnectionId=String\(data\.ttsConnectionId\|\|""\)/);
+  assert.match(app,/event==="speech-ready"/);
   assert.match(app,/ttsConnectionId:options\.ttsConnectionId/);
   assert.match(app,/type:"wav2lip-preview"/);
   assert.match(app,/data\.waitingPreview\?\.url/);

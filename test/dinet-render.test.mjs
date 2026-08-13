@@ -175,7 +175,8 @@ test("stream endpoint reports TTS and first playable segment timing",async()=>{
   assert.match(server,/CONTINUOUS_FIRST_SEGMENT_MS=400/);
   assert.match(server,/CONTINUOUS_MINIMUM_TAIL_MS=160/);
   assert.match(server,/continuousVideo\?\{firstSegmentMs:CONTINUOUS_FIRST_SEGMENT_MS,minimumTailMs:CONTINUOUS_MINIMUM_TAIL_MS\}:\{\}/);
-  assert.match(server,/ttsConnectionId=fastSpeech\?prepareTtsConnection\(\):""/);
+  assert.match(server,/ttsConnectionId=prepareTtsConnection\(\{voice,emotion:initialState\.emotion\}\)/);
+  assert.match(server,/sendEvent\(res,"speech-ready",\{ttsConnectionId\}\)/);
   assert.match(server,/signal:client\.signal/);
   assert.match(server,/discardTtsConnection\(ttsConnectionId\)/);
   assert.match(server,/prewarmMiniMaxPcm\(\{text:backchannel\.text,voice,emotion:backchannel\.emotion,signal:client\.signal\}\)/);

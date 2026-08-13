@@ -28,11 +28,12 @@ test("MiniMax websocket TTS requests PCM and yields audio before task completion
 
 test("only sends MiniMax-supported speech emotions",async()=>{
   assert.equal(normalizeMiniMaxTtsEmotion("happy"),"happy");
-  assert.equal(normalizeMiniMaxTtsEmotion("caring"),"");
+  assert.equal(normalizeMiniMaxTtsEmotion("excited"),"happy");
+  assert.equal(normalizeMiniMaxTtsEmotion("caring"),"neutral");
   const sockets=[];
   class InspectSocket extends FakeWebSocket{constructor(...args){super(...args);sockets.push(this);}}
   await streamMiniMaxPcm({apiKey:"secret",text:"慢慢来",voice:"voice",emotion:"caring",WebSocketImpl:InspectSocket,onAudio:()=>{}});
-  assert.equal("emotion" in sockets[0].sent.find(item=>item.event==="task_start").voice_setting,false);
+  assert.equal(sockets[0].sent.find(item=>item.event==="task_start").voice_setting.emotion,"neutral");
 });
 
 class EventWebSocket {
@@ -59,6 +60,20 @@ test("reuses a connection established while reply text is still pending",async()
   assert.equal(result.connectionReused,true);
   assert.equal(result.connectionWaitMs,0);
   await assert.rejects(()=>streamMiniMaxPcm({apiKey:"secret",text:"重复",voice:"voice",connection,onAudio:()=>{}}),/已经使用/);
+});
+
+test("primes the TTS task while reply text is still pending",async()=>{
+  const connection=prepareMiniMaxTtsConnection({apiKey:"secret",WebSocketImpl:FakeWebSocket,primeTask:true,model:"speech-2.8-turbo",voice:"voice",emotion:"happy"});
+  await connection.taskReady;
+  const result=await streamMiniMaxPcm({apiKey:"secret",text:"你好",model:"speech-2.8-turbo",voice:"voice",emotion:"happy",WebSocketImpl:FakeWebSocket,connection,onAudio:()=>{}});
+  assert.equal(result.connectionReused,true);
+  assert.equal(result.taskPrimed,true);
+  assert.equal(result.connectionWaitMs,0);
+  assert.equal(result.taskWaitMs,0);
+  const taskStart=connection.socket.sent.find(item=>item.event==="task_start");
+  assert.equal(taskStart.voice_setting.voice_id,"voice");
+  assert.equal(taskStart.voice_setting.emotion,"happy");
+  assert.deepEqual(connection.socket.sent.filter(item=>item.event==="task_start").length,1);
 });
 
 test("cancels a speculative connection before it starts speaking",async()=>{

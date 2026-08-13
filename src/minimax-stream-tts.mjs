@@ -1,11 +1,21 @@
 import WebSocket from "ws";
 
 const SUPPORTED_TTS_EMOTIONS=new Set(["happy","sad","angry","fearful","disgusted","surprised","neutral"]);
-export function normalizeMiniMaxTtsEmotion(emotion){return SUPPORTED_TTS_EMOTIONS.has(String(emotion||"").toLowerCase())?String(emotion).toLowerCase():"";}
+const TTS_EMOTION_ALIASES={excited:"happy",caring:"neutral",calm:"neutral",curious:"neutral"};
+export function normalizeMiniMaxTtsEmotion(emotion){const value=String(emotion||"").toLowerCase(),normalized=TTS_EMOTION_ALIASES[value]||value;return SUPPORTED_TTS_EMOTIONS.has(normalized)?normalized:"";}
 
 function decodeAudio(value) {
   const text=String(value||"");
   return /^[0-9a-f]+$/i.test(text)&&text.length%2===0 ? Buffer.from(text,"hex") : Buffer.from(text,"base64");
+}
+
+function taskStartMessage({model="speech-2.8-turbo",voice,emotion}={}){
+  const speechEmotion=normalizeMiniMaxTtsEmotion(emotion);
+  return{
+    event:"task_start",model,language_boost:"Chinese",
+    voice_setting:{voice_id:voice,speed:1,vol:1,pitch:0,...(speechEmotion?{emotion:speechEmotion}:{})},
+    audio_setting:{sample_rate:16000,bitrate:256000,format:"pcm",channel:1}
+  };
 }
 
 function messageInbox(socket) {
@@ -34,11 +44,11 @@ async function nextMessage(connection) {
 }
 
 export function prepareMiniMaxTtsConnection({
-  apiKey,url="wss://api.minimaxi.com/ws/v1/t2a_v2",WebSocketImpl=WebSocket
+  apiKey,url="wss://api.minimaxi.com/ws/v1/t2a_v2",WebSocketImpl=WebSocket,primeTask=false,model,voice,emotion
 }={}) {
   if(!apiKey)throw new Error("缺少 MiniMax API Key");
   const socket=new WebSocketImpl(url,{headers:{Authorization:`Bearer ${apiKey}`}}),inbox=messageInbox(socket),startedAt=performance.now();
-  const connection={socket,inbox,startedAt,ready:null,used:false,WebSocketImpl};
+  const connection={socket,inbox,startedAt,ready:null,taskReady:null,used:false,WebSocketImpl};
   connection.ready=(async()=>{
     while(true){
       const message=await nextMessage(connection);
@@ -50,6 +60,17 @@ export function prepareMiniMaxTtsConnection({
   // connection from becoming an unhandled promise while preserving rejection
   // for the eventual consumer.
   connection.ready.catch(()=>{});
+  if(primeTask){
+    connection.taskReady=connection.ready.then(async()=>{
+      socket.send(JSON.stringify(taskStartMessage({model,voice,emotion})));
+      while(true){
+        const message=await nextMessage(connection);
+        if(message.event==="task_started")return{taskStartedAt:performance.now()};
+        if(message.event==="task_failed")throw new Error(message?.base_resp?.status_msg||"MiniMax TTS 任务启动失败");
+      }
+    });
+    connection.taskReady.catch(()=>{});
+  }
   connection.close=()=>{if(socket.readyState===WebSocketImpl.OPEN)socket.close(1000,"unused");};
   return connection;
 }
@@ -63,24 +84,26 @@ export async function streamMiniMaxPcm({
   if(prepared.used)throw new Error("MiniMax TTS 预连接已经使用");
   prepared.used=true;
   const socket=prepared.socket;
-  const startedAt=performance.now();let firstAudioAt=null,totalBytes=0,connectionReadyAt=null;
+  const startedAt=performance.now();let firstAudioAt=null,totalBytes=0,connectionReadyAt=null,taskReadyAt=null;
   const abort=()=>socket.close(1000,"cancelled");
   signal?.addEventListener("abort",abort,{once:true});
   try{
     const ready=await prepared.ready;connectionReadyAt=ready.connectedAt;
-    const speechEmotion=normalizeMiniMaxTtsEmotion(emotion);
-    socket.send(JSON.stringify({
-      event:"task_start",model,language_boost:"Chinese",
-      voice_setting:{voice_id:voice,speed:1,vol:1,pitch:0,...(speechEmotion?{emotion:speechEmotion}: {})},
-      audio_setting:{sample_rate:16000,bitrate:256000,format:"pcm",channel:1}
-    }));
+    if(prepared.taskReady){const task=await prepared.taskReady;taskReadyAt=task.taskStartedAt;}
+    else{
+      socket.send(JSON.stringify(taskStartMessage({model,voice,emotion})));
+      while(true){
+        const message=await nextMessage(prepared);
+        onEvent?.(message.event||"audio",message);
+        if(message.event==="task_started"){taskReadyAt=performance.now();break;}
+        if(message.event==="task_failed")throw new Error(message?.base_resp?.status_msg||"MiniMax TTS 任务启动失败");
+      }
+    }
+    socket.send(JSON.stringify({event:"task_continue",text}));
+    socket.send(JSON.stringify({event:"task_finish"}));
     while(true){
       const message=await nextMessage(prepared);
       onEvent?.(message.event||"audio",message);
-      if(message.event==="task_started"){
-        socket.send(JSON.stringify({event:"task_continue",text}));
-        socket.send(JSON.stringify({event:"task_finish"}));
-      }
       const encoded=message?.data?.audio;
       if(encoded){
         const pcm=decodeAudio(encoded);
@@ -94,5 +117,5 @@ export async function streamMiniMaxPcm({
     if(socket.readyState===WebSocketImpl.OPEN)socket.close();
   }
   const completedAt=performance.now();
-  return {bytes:totalBytes,audioMs:Math.round(totalBytes/32),firstAudioMs:firstAudioAt?Math.round(firstAudioAt-startedAt):null,totalMs:Math.round(completedAt-startedAt),connectionReused:Boolean(connection),connectionWaitMs:connectionReadyAt?Math.max(0,Math.round(connectionReadyAt-startedAt)):null,connectionLeadMs:connectionReadyAt?Math.max(0,Math.round(startedAt-connectionReadyAt)):null};
+  return {bytes:totalBytes,audioMs:Math.round(totalBytes/32),firstAudioMs:firstAudioAt?Math.round(firstAudioAt-startedAt):null,totalMs:Math.round(completedAt-startedAt),connectionReused:Boolean(connection),taskPrimed:Boolean(connection?.taskReady),connectionWaitMs:connectionReadyAt?Math.max(0,Math.round(connectionReadyAt-startedAt)):null,connectionLeadMs:connectionReadyAt?Math.max(0,Math.round(startedAt-connectionReadyAt)):null,taskWaitMs:taskReadyAt?Math.max(0,Math.round(taskReadyAt-startedAt)):null,taskLeadMs:taskReadyAt?Math.max(0,Math.round(startedAt-taskReadyAt)):null};
 }

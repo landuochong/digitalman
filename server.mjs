@@ -97,12 +97,12 @@ function miniMaxPcmCacheKey({text,voice,emotion}){
   return JSON.stringify([miniMaxTtsModel,voice,normalizeMiniMaxTtsEmotion(emotion),String(text||"").trim()]);
 }
 
-function prepareTtsConnection(){
+function prepareTtsConnection({voice,emotion}={}){
   while(preparedTtsConnections.size>=16){
     const [oldestId,oldest]=preparedTtsConnections.entries().next().value;
     preparedTtsConnections.delete(oldestId);clearTimeout(oldest.timer);oldest.connection.close();
   }
-  const id=randomUUID(),connection=prepareMiniMaxTtsConnection({apiKey,url:miniMaxTtsWsUrl});
+  const id=randomUUID(),connection=prepareMiniMaxTtsConnection({apiKey,url:miniMaxTtsWsUrl,primeTask:true,model:miniMaxTtsModel,voice:voiceCatalog.resolve(voice),emotion});
   const timer=setTimeout(()=>{if(preparedTtsConnections.delete(id))connection.close();},15_000);timer.unref?.();
   preparedTtsConnections.set(id,{connection,timer});
   return id;
@@ -249,7 +249,7 @@ async function miniMaxChatStream(message, history, persona, memories, companionS
   const initialState=inferCompanionState(message,"",companionState);
   const waitingPreview=fastSpeech?resolveWaitingActionPreview(initialState.action):null;
   if(fastSpeech)prepareAvatarAction(initialState.action,trace);
-  const ttsConnectionId=fastSpeech?prepareTtsConnection():"";
+  let ttsConnectionId="";
   client.signal.addEventListener("abort",()=>{
     if(backchannelTimer)clearTimeout(backchannelTimer);
     discardTtsConnection(ttsConnectionId);
@@ -264,7 +264,7 @@ async function miniMaxChatStream(message, history, persona, memories, companionS
     "x-accel-buffering":"no"
   });
   res.flushHeaders?.();
-  sendEvent(res, "meta", { ...initialState, mode:"minimax", ...(ttsConnectionId?{ttsConnectionId}:{}), ...(waitingPreview?{waitingPreview}:{}) });
+  sendEvent(res, "meta", { ...initialState, mode:"minimax", ...(waitingPreview?{waitingPreview}:{}) });
   let firstSentenceEmitted=false,backchannel=responsiveSpeech?buildResponsiveBackchannel(message,initialState):null,backchannelWarmup=null;
   if(backchannel&&prewarmPcm){
     const pcmWarmup=prewarmMiniMaxPcm({text:backchannel.text,voice,emotion:backchannel.emotion,signal:client.signal});
@@ -294,6 +294,11 @@ async function miniMaxChatStream(message, history, persona, memories, companionS
   });
   trace.timings.upstreamConnectedMs=Math.round(performance.now()-trace._startedMs);
   if (!response.ok || !response.body) throw new Error(`MiniMax 流式文案接口失败 (${response.status})`);
+  if(fastSpeech&&!client.signal.aborted){
+    ttsConnectionId=prepareTtsConnection({voice,emotion:initialState.emotion});
+    trace.timings.ttsTaskPrepareMs=Math.round(performance.now()-trace._startedMs);
+    sendEvent(res,"speech-ready",{ttsConnectionId});
+  }
 
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
