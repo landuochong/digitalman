@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { buildChatPayload, buildMiniMaxChatPayload, buildMiniMaxReply, buildMiniMaxSpeechPayload, buildResponsiveBackchannel, buildSpeechPayload, companionContextPolicy, companionIdentityReply, companionPresenceReply, decodeMiniMaxAudio, demoReply, extractMiniMaxChatText, extractResponseText, inferCompanionState, isCompanionIdentityQuestion, isCompanionPresenceQuestion, normalizeAction, normalizeEmotion, normalizePersona, parseCompanionReply, sanitizeReplyText, takeCompleteSentences } from "../src/companion.mjs";
+import { buildChatPayload, buildMiniMaxChatPayload, buildMiniMaxReply, buildMiniMaxSpeechPayload, buildResponsiveBackchannel, buildSpeechPayload, companionContextPolicy, companionIdentityReply, companionPresenceReply, decodeMiniMaxAudio, demoReply, extractMiniMaxChatText, extractResponseText, inferCompanionState, inferExplicitActionRequest, isCompanionIdentityQuestion, isCompanionPresenceQuestion, normalizeAction, normalizeEmotion, normalizePersona, parseCompanionReply, sanitizeReplyText, takeCompleteSentences } from "../src/companion.mjs";
 
 test("extracts Responses API output text", () => {
   assert.equal(extractResponseText({ output:[{ type:"message", content:[{ type:"output_text", text:"你好" }] }] }), "你好");
@@ -13,6 +13,8 @@ test("removes leaked internal state words from spoken replies", () => {
   assert.equal(sanitizeReplyText("我在听。（caring）"), "我在听。");
   assert.equal(sanitizeReplyText("我在听。\nemotion: caring\naction: idle"), "我在听。");
   assert.deepEqual(parseCompanionReply('结果如下：{"reply":"慢慢来，我陪你。（calm）","emotion":"calm","action":"idle"}'), { reply:"慢慢来，我陪你。", emotion:"calm", action:"idle" });
+  assert.equal(sanitizeReplyText("啪啪啪～辛苦了，真的。"),"辛苦了，真的。");
+  assert.equal(sanitizeReplyText("来，啪啪啪啪啪！你已经很努力了。"),"你已经很努力了。");
 });
 test("normalizes unsafe emotion values", () => assert.equal(normalizeEmotion("angry"), "neutral"));
 test("normalizes unsupported actions", () => assert.equal(normalizeAction("dance"), "idle"));
@@ -125,10 +127,11 @@ test("builds streaming MiniMax payload and segments complete spoken sentences", 
   assert.equal(buildMiniMaxChatPayload({model:"m",message:"你好",stream:true}).stream, true);
   assert.deepEqual(takeCompleteSentences("第一句。第二句还没完"), { sentences:["第一句。"], remainder:"第二句还没完" });
   assert.deepEqual(takeCompleteSentences("最后一句", true), { sentences:["最后一句"], remainder:"" });
-  assert.deepEqual(takeCompleteSentences("嗯，累了就说累，没什么的。", false, true), { sentences:["嗯，累了就说累，", "没什么的。"], remainder:"" });
+  assert.deepEqual(takeCompleteSentences("嗯，累了就说累，没什么的。", false, true), { sentences:["嗯，累了就说累，没什么的。"], remainder:"" });
   assert.deepEqual(takeCompleteSentences("辛苦了，今天先休息一下", false, true), { sentences:[], remainder:"辛苦了，今天先休息一下" });
   assert.deepEqual(takeCompleteSentences("辛苦了，今天先休息一下。", false, true), { sentences:["辛苦了，今天先休息一下。"], remainder:"" });
-  assert.equal(companionContextPolicy.minSpokenClauseCharacters,6);
+  assert.deepEqual(takeCompleteSentences("你已经撑了很久了，真的很棒。今晚早点休息，别硬扛。", false, true),{sentences:["你已经撑了很久了，真的很棒。","今晚早点休息，别硬扛。"],remainder:""});
+  assert.equal(companionContextPolicy.minSpokenClauseCharacters,9);
 });
 
 test("bounds short-term chat context while preserving the latest user request",()=>{
@@ -193,6 +196,22 @@ test("infers explicit nod and smile requests", () => {
   assert.deepEqual(inferCompanionState("我今天帮陌生人搬东西","挺不错的呀。"), { emotion:"happy", action:"nod" });
   assert.deepEqual(inferCompanionState("我今天帮陌生人搬东西","挺好的。"), { emotion:"happy", action:"nod" });
   assert.deepEqual(inferCompanionState("笑一个"), { emotion:"happy", action:"happy" });
+});
+test("explicit action requests override ordinary emotional words",()=>{
+  assert.deepEqual(inferCompanionState("我很累，给我鼓掌鼓励一下","你很棒。"),{emotion:"excited",action:"clap"});
+  assert.deepEqual(inferCompanionState("今天很开心，请做个惊讶动作"),{emotion:"excited",action:"surprise"});
+  assert.deepEqual(inferExplicitActionRequest("请做个害羞动作"),{emotion:"happy",action:"shy"});
+  assert.equal(inferExplicitActionRequest("我有点害羞"),null);
+  assert.deepEqual(inferCompanionState("我不想活了，给我鼓掌"),{emotion:"caring",action:"caring"});
+});
+test("recognizes the complete explicit action command set",()=>{
+  const cases=new Map([
+    ["给我鼓鼓掌","clap"],["请欢呼一下","cheer"],["做个惊讶动作","surprise"],["给我鞠个躬","bow"],
+    ["请耸肩摊手","shrug"],["做个交叉手势","cross"],["摆个抱胸姿势","confident_arms_crossed"],
+    ["请做个害羞动作","shy"],["给我竖个大拇指","thumbs_up"],["请点点头","nod"],
+    ["向我挥挥手","wave_approval"],["请笑一个","happy"],["做个思考动作","thinking"],["做个关心动作","caring"]
+  ]);
+  for(const[message,action]of cases)assert.equal(inferExplicitActionRequest(message)?.action,action,message);
 });
 test("adds restrained gestures to ordinary reply language",()=>{
   assert.deepEqual(inferCompanionState("我把书看完了","嗯，我明白你的意思。"),{emotion:"happy",action:"nod"});

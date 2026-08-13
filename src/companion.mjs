@@ -54,6 +54,8 @@ export function sanitizeReplyText(value) {
     .replace(/^```(?:json)?\s*|\s*```$/gi, "")
     .replace(new RegExp(`(?:\\s*[（(]\\s*(?:${stateWords})\\s*[）)])+$`, "i"), "")
     .replace(new RegExp(`(?:^|\\n)\\s*(?:emotion|action)\\s*[:：]\\s*(?:${stateWords})\\s*(?=\\n|$)`, "gi"), "\n")
+    .replace(/(?:^|(?<=[。！？!?；;\n]))(?:来[，,]?\s*)?(?:啪){2,}[～~！!，,。\s]*/gu, "")
+    .replace(/^(?:(?:鼓掌|拍手)[～~！!，,。\s]*)+/u, "")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
 }
@@ -145,11 +147,35 @@ export function buildMiniMaxCompanionInstructions(persona,memories=[],companionS
 export const companionInstructions=buildCompanionInstructions();
 export const miniMaxCompanionInstructions=buildMiniMaxCompanionInstructions();
 
+export function inferExplicitActionRequest(message){
+  const input=String(message||"");
+  const requested=/(?:给我|帮我|请|做|来|摆|表演|可以|能不能|能否|想看你|让我看|向我)(?:.{0,8})/;
+  if(!requested.test(input))return null;
+  if(/欢呼|加油打气|举手庆祝/.test(input))return{emotion:"excited",action:"cheer"};
+  if(/鼓掌|拍手/.test(input))return{emotion:"excited",action:"clap"};
+  if(/惊讶|吃惊|捂嘴/.test(input))return{emotion:"excited",action:"surprise"};
+  if(/鞠躬|鞠个躬|行礼|行个礼/.test(input))return{emotion:"happy",action:"bow"};
+  if(/耸肩|摊手/.test(input))return{emotion:"curious",action:"shrug"};
+  if(/交叉手势|做个叉|叉手|拒绝姿势/.test(input))return{emotion:"calm",action:"cross"};
+  if(/抱胸|双臂交叉|自信姿势/.test(input))return{emotion:"happy",action:"confident_arms_crossed"};
+  if(/害羞|脸红/.test(input))return{emotion:"happy",action:"shy"};
+  if(/竖(?:个|一下)?大拇指|竖拇指|点赞|点个赞/.test(input))return{emotion:"happy",action:"thumbs_up"};
+  if(/点点头|点头/.test(input))return{emotion:"happy",action:"nod"};
+  if(/挥手|招手/.test(input))return{emotion:"happy",action:"wave_approval"};
+  if(/笑一个|笑一下|微笑|笑一笑/.test(input))return{emotion:"happy",action:"happy"};
+  if(/思考|想一想|想想/.test(input))return{emotion:"curious",action:"thinking"};
+  if(/关心|祈祷/.test(input))return{emotion:"caring",action:"caring"};
+  return null;
+}
+
 export function inferCompanionState(message, reply = "", companionState=null) {
   const text = `${message} ${reply}`;
-  if (/自杀|不想活|活不下去|伤害自己|结束生命|难过|伤心|焦虑|崩溃|害怕|担心|累|饿|困|不舒服|生病|疼|压力|烦|委屈|孤独|失落/.test(text)) {
+  if (/自杀|不想活|活不下去|伤害自己|结束生命/.test(text)) {
     return { emotion:"caring", action:"caring" };
   }
+  const explicitAction=inferExplicitActionRequest(message);
+  if(explicitAction)return explicitAction;
+  if (/难过|伤心|焦虑|崩溃|害怕|担心|累|饿|困|不舒服|生病|疼|压力|烦|委屈|孤独|失落/.test(text)) return { emotion:"caring", action:"caring" };
   if (/欢呼|欢呼一下|举手庆祝|加油打气|冲啊/.test(String(message))) return { emotion:"excited", action:"cheer" };
   if (/(?:给你|送你|买给你|为你买|特意给你).{0,10}(?:礼物|礼品|花|鲜花|小惊喜)|(?:礼物|礼品|花|鲜花).{0,8}(?:给你|送你)|这是给你的/.test(String(message))) return { emotion:"happy", action:"caring" };
   if (/鞠躬|鞠个躬|行个礼|谢谢你|感谢你|辛苦了/.test(String(message))) return { emotion:"happy", action:"bow" };
@@ -331,7 +357,8 @@ export function takeCompleteSentences(text, flush = false, includeClauses = fals
     const sentence = source.slice(start, end).trim();
     const terminal = /[。！？!?；;\n]/.test(match[0]);
     const spokenLength = sentence.replace(/[，,、。！？!?；;\s]/g, "").length;
-    if (includeClauses && !terminal && spokenLength < 6) continue;
+    if (includeClauses && !terminal && spokenLength < 9) continue;
+    if(includeClauses&&terminal&&spokenLength<=4&&sentences.length&&start>0){sentences[sentences.length-1]+=source.slice(start,end);start=end;continue;}
     if (sentence) sentences.push(sentence);
     start = end;
   }
@@ -340,7 +367,7 @@ export function takeCompleteSentences(text, flush = false, includeClauses = fals
   return { sentences, remainder };
 }
 
-export const companionContextPolicy=Object.freeze({recentHistoryItems:RECENT_HISTORY_ITEMS,recentHistoryCharBudget:RECENT_HISTORY_CHAR_BUDGET,recentHistoryItemChars:RECENT_HISTORY_ITEM_CHARS,minSpokenClauseCharacters:6});
+export const companionContextPolicy=Object.freeze({recentHistoryItems:RECENT_HISTORY_ITEMS,recentHistoryCharBudget:RECENT_HISTORY_CHAR_BUDGET,recentHistoryItemChars:RECENT_HISTORY_ITEM_CHARS,minSpokenClauseCharacters:9});
 
 export function extractMiniMaxChatText(payload) {
   const text = payload?.choices?.[0]?.message?.content;

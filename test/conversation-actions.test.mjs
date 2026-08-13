@@ -53,6 +53,30 @@ test("limits repeated large inferred gestures but preserves explicit requests",(
   assert.equal(conversationActionPolicy.cooldownMs,3000);
 });
 
+test("keeps an explicit user gesture on the first sentence",()=>{
+  const clap=new ConversationActionScheduler();
+  assert.equal(clap.startTurn({message:"我很累，给我鼓掌鼓励一下",action:"clap"}).explicit,true);
+  assert.equal(clap.planForSentence("你已经很棒了。",0,"thumbs_up").action,"clap");
+  const shy=new ConversationActionScheduler();
+  shy.startTurn({message:"请做个害羞动作",action:"shy"});
+  const opener=shy.planForSentence("好呀。",0,"happy");
+  assert.equal(opener.action,"shy");assert.equal(opener.deferred,false);
+});
+
+test("preserves every supported explicit gesture against reply-derived candidates",()=>{
+  const cases=[
+    ["给我鼓鼓掌","clap"],["请欢呼一下","cheer"],["做个惊讶动作","surprise"],["给我鞠个躬","bow"],
+    ["请耸肩摊手","shrug"],["做个交叉手势","cross"],["摆个抱胸姿势","confident_arms_crossed"],
+    ["请做个害羞动作","shy"],["给我竖个大拇指","thumbs_up"],["请点点头","nod"],
+    ["向我挥挥手","wave_approval"],["请笑一个","happy"],["做个思考动作","thinking"],["做个关心动作","caring"]
+  ];
+  for(const[message,action]of cases){
+    const scheduler=new ConversationActionScheduler();scheduler.startTurn({message,action});
+    const plan=scheduler.planForSentence("好呀。",0,action==="thumbs_up"?"clap":"thumbs_up");
+    assert.equal(plan.action,action,message);assert.equal(plan.explicit,true,message);assert.equal(plan.deferred,false,message);
+  }
+});
+
 test("builds an observable behavior timeline without another model call",()=>{
   const scheduler=new ConversationActionScheduler();
   const turn=scheduler.startTurn({message:"我今天有点累",action:"caring",emotion:"caring"});

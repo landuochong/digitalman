@@ -5,7 +5,7 @@ const FALLBACK_ACTIONS={
   wave_approval:"happy",clap:"happy",cheer:"happy",surprise:"idle",bow:"idle",
   shrug:"thinking",cross:"idle",confident_arms_crossed:"idle",shy:"happy"
 };
-const EXPLICIT_ACTION_WORDS=/挥手|招手|点头|竖拇指|大拇指|点赞|点个赞|鼓掌|拍手|欢呼|庆祝|鞠躬|行礼|耸肩|摊手|交叉手势|做个叉|叉手|抱胸|双臂交叉|害羞|捂嘴|惊讶动作|做.{0,3}(?:动作|姿势)/;
+const EXPLICIT_ACTION_WORDS=/(?:给我|帮我|请|做|来|摆|表演|可以|能不能|能否|想看你|让我看|向我).{0,8}(?:挥手|招手|点头|竖拇指|大拇指|点赞|赞|鼓掌|拍手|欢呼|庆祝|鞠(?:个)?躬|行礼|耸肩|摊手|交叉|叉手|抱胸|害羞|脸红|捂嘴|惊讶|吃惊|微笑|笑|思考|想想|关心|祈祷|动作|姿势)/;
 const ACTION_BEHAVIOR={
   idle:{intensity:.08,gaze:"user",head:"neutral",holdMs:0},
   happy:{intensity:.28,gaze:"user",head:"neutral",holdMs:2200},
@@ -71,8 +71,8 @@ export class ConversationActionScheduler{
     let proposed=String(candidateAction||"idle");
     if(proposed===this.requestedPrimary)proposed=this.primary;
     if(index===0){
-      if(proposed!=="idle"&&proposed!==this.primary)this.primary=this.resolveBudget(proposed);
-      this.deferPrimary=DEFER_ON_SHORT_OPENER.has(this.primary)&&spokenLength(text)<6;
+      if(!this.explicit&&proposed!=="idle"&&proposed!==this.primary)this.primary=this.resolveBudget(proposed);
+      this.deferPrimary=!this.explicit&&DEFER_ON_SHORT_OPENER.has(this.primary)&&spokenLength(text)<6;
       return this.plan(this.deferPrimary?"idle":this.primary,{emotion,index,text,deferred:this.deferPrimary});
     }
     if(index===1&&this.deferPrimary)return this.plan(this.primary,{emotion,index,text,deferred:true});
