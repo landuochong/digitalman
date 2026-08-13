@@ -10,7 +10,7 @@ const input = $("#messageInput"), form = $("#chatForm"), sendButton = $("#sendBu
 const micButton = $("#micButton"), modeBanner = $("#modeBanner"), statusText = $("#statusText");
 const voiceButton = $("#voiceButton"), voicePrompt = $("#voicePrompt"), liveTranscript = $("#liveTranscript"), captionButton = $("#captionButton");
 const digitalHumanFrame = $("#digitalHumanFrame");
-const avatarRuntimeVersion="20260813-listen-resume-v16";
+const avatarRuntimeVersion="20260813-video-audio-gate-v17";
 const avatarRuntimeUrl=path=>`${path}?v=${avatarRuntimeVersion}`;
 const avatarProfile = new URLSearchParams(location.search).get("profile");
 const selfRecordedProfile = avatarProfile === "self";
@@ -643,6 +643,7 @@ window.addEventListener("message",event=>{
   if(event.data?.type==="wav2lip-started"&&Number.isFinite(Number(event.data.handoffLateMs))){portrait.dataset.videoFirstFrameMs=String(event.data.firstFrameMs||0);portrait.dataset.videoHandoffLateMs=String(event.data.handoffLateMs||0);}
   if(event.data?.type==="wav2lip-video-sync"){portrait.dataset.videoDriftMs=String(event.data.driftMs||0);portrait.dataset.videoMaxDriftMs=String(event.data.maxDriftMs||0);}
   if(event.data?.type==="wav2lip-video-buffer"){portrait.dataset.videoAheadSeconds=String(event.data.aheadSeconds||0);portrait.dataset.videoBufferStart=String(event.data.bufferStart||0);portrait.dataset.videoPrunedSeconds=String(event.data.prunedSeconds||0);}
+  if(event.data?.type==="wav2lip-media-gate")portrait.dataset.videoAudioGateMs=String(event.data.mediaReadyMs||0);
   if(event.data?.type==="wav2lip-audio-buffer"){portrait.dataset.audioAheadSeconds=String(event.data.aheadSeconds||0);portrait.dataset.audioSources=String(event.data.sources||0);}
   if(event.data?.type==="wav2lip-ended"&&event.data.streamId&&Number.isSafeInteger(Number(event.data.sequence))){
     fetch(`/api/dinet/stream/${encodeURIComponent(event.data.streamId)}/ack`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({sequence:Number(event.data.sequence)})}).then(response=>response.ok?response.json():null).then(data=>{if(data?.acknowledged)portrait.dataset.renderUnacknowledged=String(data.unacknowledged||0);}).catch(()=>{});

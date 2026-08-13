@@ -1,6 +1,7 @@
 import { continuousVideoSync,scheduledAudioAhead,videoBoundaryDelayMs,videoCatchupSeconds,videoPrestartDelayMs } from "../avatar-video-timing.js?v=20260813-bounded-stream-v3";
 import { loadPcmBytes } from "../pcm-segment.js?v=20260813-binary-pcm-v1";
 import { bufferedVideoAhead,removableVideoRange,splitFragmentedMp4 } from "../fmp4-segment.js?v=20260813-fmp4-v3";
+import { scheduleAfterMediaReady } from "../media-audio-gate.js?v=20260813-media-audio-gate-v1";
 
 const idleVideo = document.querySelector("#avatar-idle");
 const speechVideo = document.querySelector("#avatar-speech");
@@ -347,10 +348,22 @@ window.addEventListener("message", async event => {
   if (event.data?.type === "wav2lip-clear") { playToken++; document.body.classList.remove("loading"); playIdle(); return; }
   if(event.data?.type==="wav2lip-enqueue"&&event.data.url){
     clearTimeout(idleRevealTimer);idleRevealTimer=0;streamEnded=false;
-    document.body.classList.add("loading");const item=preloadSegment({...event.data,playbackSequence:nextPlaybackSequence++});
+    document.body.classList.add("loading");const item=preloadSegment({...event.data,playbackSequence:nextPlaybackSequence++,receivedAt:performance.now()});
     const token=playToken,pcmBytesPromise=loadPcmBytes(item.segment?.audio).catch(()=>null);
-    item.audioReady=audioScheduleChain=audioScheduleChain.then(()=>scheduleSegmentAudio(item,pcmBytesPromise,token)).catch(()=>false);
     if(item.fragmentedVideo)item.fragmentReadyToPlay=queueFragmentedVideo(item,token);
+    // A shared PCM clock is only useful when the matching video is already in
+    // MediaSource. Scheduling audio first gave the browser just 60 ms to fetch,
+    // parse and append a fragment; a slow append made speech start ahead of the
+    // mouth and forced a visible catch-up seek. DINet renders the next 800 ms in
+    // roughly 240 ms, so gating each PCM segment on its video append preserves
+    // ample headroom without adding silence between segments.
+    item.audioReady=audioScheduleChain=audioScheduleChain.then(()=>scheduleAfterMediaReady({
+      fragmentedVideo:item.fragmentedVideo,fragmentReadyToPlay:item.fragmentReadyToPlay,
+      scheduleAudio:()=>{
+        if(item.fragmentedVideo)notify("wav2lip-media-gate",{sequence:item.playbackSequence,mediaReadyMs:Math.round(performance.now()-item.receivedAt)});
+        return scheduleSegmentAudio(item,pcmBytesPromise,token);
+      }
+    })).catch(()=>false);
     void dispatchSegment(item);return;
   }
   if(event.data?.type==="wav2lip-stream-end"){

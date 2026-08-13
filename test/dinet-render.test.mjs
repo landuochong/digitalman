@@ -98,7 +98,8 @@ test("neural avatar keeps a persistent idle layer behind speech", async () => {
   assert.match(script,/video\.muted=externalAudio/);
   assert.match(script,/streamAudioTail/);
   assert.match(script,/pcmBytesPromise=loadPcmBytes\(item\.segment\?\.audio\)/);
-  assert.match(script,/audioScheduleChain=audioScheduleChain\.then\(\(\)=>scheduleSegmentAudio\(item,pcmBytesPromise,token\)\)/);
+  assert.match(script,/scheduleAfterMediaReady/);
+  assert.match(script,/return scheduleSegmentAudio\(item,pcmBytesPromise,token\)/);
   assert.match(script,/Promise\.all\(\[ensureStreamAudio\(\),pcmBytesPromise\]\)/);
   assert.doesNotMatch(script,/audioScheduleChain\.then\(async\(\)=>\{await item\.videoReady/);
   assert.match(script,/stopStreamAudio/);
@@ -120,6 +121,9 @@ test("neural avatar keeps a persistent idle layer behind speech", async () => {
   assert.match(script,/scheduledAudioAhead\(streamAudioTail,context\.currentTime\)/);
   assert.match(script,/waitForFragmentCapacity\(playback,token\)/);
   assert.match(script,/playback\.startPromise\|\|=/);
+  assert.match(script,/fragmentReadyToPlay:item\.fragmentReadyToPlay/);
+  assert.match(script,/wav2lip-media-gate/);
+  assert.ok(script.indexOf("item.fragmentReadyToPlay=queueFragmentedVideo")<script.indexOf("item.audioReady=audioScheduleChain"));
   assert.match(script,/continuousVideoSync\(playback\.audioOrigin,streamAudioContext\.currentTime/);
   assert.match(script,/videoPrestartDelayMs/);
   assert.match(script,/videoBoundaryDelayMs/);
