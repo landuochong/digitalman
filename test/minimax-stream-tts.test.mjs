@@ -84,3 +84,19 @@ test("cancels a speculative connection before it starts speaking",async()=>{
   controller.abort();
   await assert.rejects(work,/提前关闭|cancelled/);
 });
+
+test("can trim only the leading silence before publishing streamed PCM",async()=>{
+  class PaddedSocket extends FakeWebSocket{
+    send(raw){
+      const message=JSON.parse(raw);this.sent??=[];this.sent.push(message);
+      if(message.event==="task_start")this.push({event:"task_started",base_resp:{status_code:0}});
+      if(message.event==="task_continue"){
+        const padded=Buffer.alloc(9600);for(let offset=6400;offset<padded.length;offset+=2)padded.writeInt16LE(1800,offset);
+        this.push({event:"task_continued",data:{audio:padded.toString("hex")},base_resp:{status_code:0}});
+      }
+      if(message.event==="task_finish")this.push({event:"task_finished",base_resp:{status_code:0}});
+    }
+  }
+  const chunks=[],result=await streamMiniMaxPcm({apiKey:"secret",text:"你好",voice:"voice",WebSocketImpl:PaddedSocket,trimLeadingSilence:true,onAudio:pcm=>chunks.push(pcm)});
+  assert.equal(result.trimmedLeadingMs,140);assert.equal(result.audioMs,160);assert.equal(Buffer.concat(chunks).length,5120);
+});

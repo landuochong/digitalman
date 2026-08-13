@@ -656,14 +656,14 @@ export const server = http.createServer(async (req, res) => {
           try{
             ttsMetrics=await streamMiniMaxPcm({
               apiKey,text,model:miniMaxTtsModel,voice:resolvedVoice,emotion:data.emotion,
-              url:miniMaxTtsWsUrl,signal:controller.signal,connection:preparedConnection,
+              url:miniMaxTtsWsUrl,signal:controller.signal,connection:preparedConnection,trimLeadingSilence:true,
               onAudio:appendPcm
             });
           }catch(error){
             if(!preparedConnection||chunkSequence||controller.signal.aborted)throw error;
             ttsMetrics=await streamMiniMaxPcm({
               apiKey,text,model:miniMaxTtsModel,voice:resolvedVoice,emotion:data.emotion,
-              url:miniMaxTtsWsUrl,signal:controller.signal,onAudio:appendPcm
+              url:miniMaxTtsWsUrl,signal:controller.signal,onAudio:appendPcm,trimLeadingSilence:true
             });
             ttsMetrics.connectionFallback=true;
           }

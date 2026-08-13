@@ -1,4 +1,5 @@
 import WebSocket from "ws";
+import { Pcm16LeadingSilenceGate } from "./pcm-silence.mjs";
 
 const SUPPORTED_TTS_EMOTIONS=new Set(["happy","sad","angry","fearful","disgusted","surprised","neutral"]);
 const TTS_EMOTION_ALIASES={excited:"happy",caring:"neutral",calm:"neutral",curious:"neutral"};
@@ -77,7 +78,7 @@ export function prepareMiniMaxTtsConnection({
 
 export async function streamMiniMaxPcm({
   apiKey,text,model="speech-2.8-turbo",voice,emotion,
-  url="wss://api.minimaxi.com/ws/v1/t2a_v2",signal,onAudio,onEvent,WebSocketImpl=WebSocket,connection=null
+  url="wss://api.minimaxi.com/ws/v1/t2a_v2",signal,onAudio,onEvent,WebSocketImpl=WebSocket,connection=null,trimLeadingSilence=false
 }) {
   if(!apiKey)throw new Error("缺少 MiniMax API Key");
   const prepared=connection||prepareMiniMaxTtsConnection({apiKey,url,WebSocketImpl});
@@ -85,6 +86,8 @@ export async function streamMiniMaxPcm({
   prepared.used=true;
   const socket=prepared.socket;
   const startedAt=performance.now();let firstAudioAt=null,totalBytes=0,connectionReadyAt=null,taskReadyAt=null;
+  const silenceGate=trimLeadingSilence?new Pcm16LeadingSilenceGate():null;
+  const emitAudio=async(pcm,message)=>{for(const output of silenceGate?silenceGate.push(pcm):[pcm]){if(!output.length)continue;firstAudioAt??=performance.now();totalBytes+=output.length;await onAudio?.(output,message);}};
   const abort=()=>socket.close(1000,"cancelled");
   signal?.addEventListener("abort",abort,{once:true});
   try{
@@ -107,15 +110,16 @@ export async function streamMiniMaxPcm({
       const encoded=message?.data?.audio;
       if(encoded){
         const pcm=decodeAudio(encoded);
-        if(pcm.length){firstAudioAt??=performance.now();totalBytes+=pcm.length;await onAudio?.(pcm,message);}
+        if(pcm.length)await emitAudio(pcm,message);
       }
       if(message.event==="task_finished")break;
       if(message.event==="task_failed")throw new Error(message?.base_resp?.status_msg||"MiniMax TTS 任务失败");
     }
+    if(silenceGate)for(const output of silenceGate.finish()){firstAudioAt??=performance.now();totalBytes+=output.length;await onAudio?.(output);}
   }finally{
     signal?.removeEventListener("abort",abort);
     if(socket.readyState===WebSocketImpl.OPEN)socket.close();
   }
   const completedAt=performance.now();
-  return {bytes:totalBytes,audioMs:Math.round(totalBytes/32),firstAudioMs:firstAudioAt?Math.round(firstAudioAt-startedAt):null,totalMs:Math.round(completedAt-startedAt),connectionReused:Boolean(connection),taskPrimed:Boolean(connection?.taskReady),connectionWaitMs:connectionReadyAt?Math.max(0,Math.round(connectionReadyAt-startedAt)):null,connectionLeadMs:connectionReadyAt?Math.max(0,Math.round(startedAt-connectionReadyAt)):null,taskWaitMs:taskReadyAt?Math.max(0,Math.round(taskReadyAt-startedAt)):null,taskLeadMs:taskReadyAt?Math.max(0,Math.round(startedAt-taskReadyAt)):null};
+  return {bytes:totalBytes,audioMs:Math.round(totalBytes/32),firstAudioMs:firstAudioAt?Math.round(firstAudioAt-startedAt):null,totalMs:Math.round(completedAt-startedAt),trimmedLeadingMs:silenceGate?.trimmedLeadingMs||0,connectionReused:Boolean(connection),taskPrimed:Boolean(connection?.taskReady),connectionWaitMs:connectionReadyAt?Math.max(0,Math.round(connectionReadyAt-startedAt)):null,connectionLeadMs:connectionReadyAt?Math.max(0,Math.round(startedAt-connectionReadyAt)):null,taskWaitMs:taskReadyAt?Math.max(0,Math.round(taskReadyAt-startedAt)):null,taskLeadMs:taskReadyAt?Math.max(0,Math.round(startedAt-taskReadyAt)):null};
 }
