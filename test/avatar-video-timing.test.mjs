@@ -3,8 +3,9 @@ import assert from "node:assert/strict";
 import { VIDEO_PRESTART_LEAD_MS,continuousVideoSync,scheduledAudioAhead,videoBoundaryDelayMs,videoCatchupSeconds,videoPrestartDelayMs } from "../public/avatar-video-timing.js";
 
 test("prestarts video decoding before but reveals at the audio boundary",()=>{
-  assert.equal(VIDEO_PRESTART_LEAD_MS,32);
-  assert.ok(Math.abs(videoPrestartDelayMs(10.1,10)-68)<1e-9);
+  assert.equal(VIDEO_PRESTART_LEAD_MS,60);
+  assert.ok(Math.abs(videoPrestartDelayMs(10.1,10)-40)<1e-9);
+  assert.ok(videoPrestartDelayMs(10.06,10)<1e-9);
   assert.ok(Math.abs(videoBoundaryDelayMs(10.1,10.08)-20)<1e-9);
   assert.equal(videoBoundaryDelayMs(10.1,10.12),0);
 });

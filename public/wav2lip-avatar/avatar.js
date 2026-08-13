@@ -202,11 +202,12 @@ async function playFragmentedSegment(item,token){
     if(!externalAudio||!playback)throw new Error("continuous-media-unavailable");
     playback.startPromise||=(async()=>{
       const waitMs=videoPrestartDelayMs(item.audioStart,streamAudioContext.currentTime);if(waitMs)await new Promise(resolve=>setTimeout(resolve,waitMs));
-      if(token!==playToken||item.cancelled||requestCancelled(item.requestId))return false;const playRequestedAt=performance.now();await playback.video.play();await waitForFirstVideoFrame(playback.video);
+      if(token!==playToken||item.cancelled||requestCancelled(item.requestId))return false;const playRequestedAt=performance.now();await playback.video.play();await waitForFirstVideoFrame(playback.video);playback.video.pause();
       const boundaryWaitMs=videoBoundaryDelayMs(item.audioStart,streamAudioContext.currentTime);if(boundaryWaitMs)await new Promise(resolve=>setTimeout(resolve,boundaryWaitMs));
       if(token!==playToken||item.cancelled||requestCancelled(item.requestId))return false;
       const catchup=videoCatchupSeconds(item.audioStart,streamAudioContext.currentTime,Number(playback.video.duration)||item.segment?.audioMs/1000||0);
       if(catchup)try{playback.video.currentTime=catchup;}catch{}
+      await playback.video.play();if(token!==playToken||item.cancelled||requestCancelled(item.requestId))return false;
       playback.audioOrigin=item.audioStart;playback.started=true;revealSegment(item,playback.video);
       notify("wav2lip-started",{requestId:item.requestId,sequence:item.playbackSequence,firstFrameMs:Math.round(performance.now()-playRequestedAt),handoffLateMs:Math.round(Math.max(0,(streamAudioContext.currentTime-item.audioStart)*1000)),continuousVideo:true});return true;
     })();

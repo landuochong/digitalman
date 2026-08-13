@@ -1,4 +1,7 @@
-export const VIDEO_PRESTART_LEAD_MS=32;
+// A first decoded frame takes 30–63 ms on the current browser path. Use the
+// whole 60 ms Web Audio scheduling cushion, then freeze that primed frame until
+// the exact audio boundary instead of letting hidden video advance early.
+export const VIDEO_PRESTART_LEAD_MS=60;
 
 export function videoPrestartDelayMs(audioStart,currentTime,leadMs=VIDEO_PRESTART_LEAD_MS){
   return Math.max(0,(Number(audioStart)-Number(currentTime))*1000-Math.max(0,Number(leadMs)||0));

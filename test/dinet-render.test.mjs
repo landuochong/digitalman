@@ -130,6 +130,7 @@ test("neural avatar keeps a persistent idle layer behind speech", async () => {
   assert.match(script,/scheduledAudioAhead\(streamAudioTail,context\.currentTime\)/);
   assert.match(script,/waitForFragmentCapacity\(playback,token\)/);
   assert.match(script,/playback\.startPromise\|\|=/);
+  assert.match(script,/waitForFirstVideoFrame\(playback\.video\);playback\.video\.pause\(\)/);
   assert.match(script,/fragmentReadyToPlay:item\.fragmentReadyToPlay/);
   assert.match(script,/wav2lip-media-gate/);
   assert.ok(script.indexOf("item.fragmentReadyToPlay=queueFragmentedVideo")<script.indexOf("item.audioReady=audioScheduleChain"));
