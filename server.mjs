@@ -20,6 +20,7 @@ import { BACKCHANNEL_OFFER_MS } from "./src/backchannel-timing.mjs";
 import { resolveWaitingActionPreview } from "./src/real-actions.mjs";
 import { bindClientAbort } from "./src/client-abort.mjs";
 import { shouldPrepareAvatarAction } from "./src/action-preparation.mjs";
+import { PreparedTtsLease, PREPARED_TTS_REFRESH_MS } from "./src/prepared-tts-lease.mjs";
 
 function loadLocalEnv() {
   try {
@@ -250,10 +251,10 @@ async function miniMaxChatStream(message, history, persona, memories, companionS
   const initialState=inferCompanionState(message,"",companionState);
   const waitingPreview=fastSpeech?resolveWaitingActionPreview(initialState.action):null;
   if(shouldPrepareAvatarAction(initialState.action,{fastSpeech}))prepareAvatarAction(initialState.action,trace);
-  let ttsConnectionId="";
+  let ttsLease=null;
   client.signal.addEventListener("abort",()=>{
     if(backchannelTimer)clearTimeout(backchannelTimer);
-    discardTtsConnection(ttsConnectionId);
+    ttsLease?.cancel();
     trace.status="cancelled";trace.finishedAt=new Date().toISOString();trace.timings.cancelledMs=Math.round(performance.now()-trace._startedMs);
   },{once:true});
   const requestPayload=buildMiniMaxChatPayload({ model:miniMaxTextModel, message, history, stream:true, persona, memories, companionState });
@@ -296,9 +297,17 @@ async function miniMaxChatStream(message, history, persona, memories, companionS
   trace.timings.upstreamConnectedMs=Math.round(performance.now()-trace._startedMs);
   if (!response.ok || !response.body) throw new Error(`MiniMax 流式文案接口失败 (${response.status})`);
   if(fastSpeech&&!client.signal.aborted){
-    ttsConnectionId=prepareTtsConnection({voice,emotion:initialState.emotion});
-    trace.timings.ttsTaskPrepareMs=Math.round(performance.now()-trace._startedMs);
-    sendEvent(res,"speech-ready",{ttsConnectionId});
+    ttsLease=new PreparedTtsLease({
+      prepare:()=>prepareTtsConnection({voice,emotion:initialState.emotion}),
+      discard:discardTtsConnection,
+      publish:(ttsConnectionId,issued)=>{
+        const issuedMs=Math.round(performance.now()-trace._startedMs);
+        trace.timings.ttsTaskPrepareMs??=issuedMs;
+        trace.ttsTaskLease={refreshMs:PREPARED_TTS_REFRESH_MS,issued,lastIssuedMs:issuedMs};
+        if(!client.signal.aborted)sendEvent(res,"speech-ready",{ttsConnectionId});
+      }
+    });
+    ttsLease.start();
   }
 
   const reader = response.body.getReader();
@@ -324,7 +333,7 @@ async function miniMaxChatStream(message, history, persona, memories, companionS
       const safeSentence=sentenceResult.reply;
       if(isRedundantClosingQuestion(message,safeSentence,trace.emittedSentences.length>0))continue;
       if(trace.emittedSentences.at(-1)===safeSentence&&safeSentence!==sentence)continue;
-      firstSentenceEmitted=true;if(backchannelTimer)clearTimeout(backchannelTimer);
+      firstSentenceEmitted=true;ttsLease?.freeze();if(backchannelTimer)clearTimeout(backchannelTimer);
       trace.timings.firstSentenceMs??=Math.round(performance.now()-trace._startedMs);
       trace.emittedSentences.push(safeSentence);
       if(!client.signal.aborted)sendEvent(res,"sentence",{text:safeSentence,emotion:sentenceResult.emotion,action:sentenceResult.action});
@@ -333,37 +342,43 @@ async function miniMaxChatStream(message, history, persona, memories, companionS
     sentenceBuffer = remainder;
   };
 
-  while (true) {
-    const { value, done } = await reader.read();
-    upstream += decoder.decode(value || new Uint8Array(), { stream:!done });
-    const lines = upstream.split(/\r?\n/);
-    upstream = lines.pop() || "";
-    for (const line of lines) {
-      if (!line.startsWith("data:")) continue;
-      const data = line.slice(5).trim();
-      if (!data || data === "[DONE]") continue;
-      try {
-        const chunk = JSON.parse(data);
-        const choice=chunk?.choices?.[0];
-        const delta = choice?.delta?.content;
-        const reasoning=choice?.delta?.reasoning_content;
-        if(typeof reasoning==="string")reasoningCharacters+=reasoning.length;
-        if(choice?.finish_reason)finishReason=choice.finish_reason;
-        if(chunk?.usage)streamUsage=chunk.usage;
-        if (typeof delta === "string") {
-          if(delta&&!trace.timings.firstTextDeltaMs)trace.timings.firstTextDeltaMs=Math.round(performance.now()-trace._startedMs);
-          rawText += delta;
-          if(!trace.timings.firstCleanTextMs&&sanitizeReplyText(rawText))trace.timings.firstCleanTextMs=Math.round(performance.now()-trace._startedMs);
-        }
-      } catch {}
+  try{
+    while (true) {
+      const { value, done } = await reader.read();
+      upstream += decoder.decode(value || new Uint8Array(), { stream:!done });
+      const lines = upstream.split(/\r?\n/);
+      upstream = lines.pop() || "";
+      for (const line of lines) {
+        if (!line.startsWith("data:")) continue;
+        const data = line.slice(5).trim();
+        if (!data || data === "[DONE]") continue;
+        try {
+          const chunk = JSON.parse(data);
+          const choice=chunk?.choices?.[0];
+          const delta = choice?.delta?.content;
+          const reasoning=choice?.delta?.reasoning_content;
+          if(typeof reasoning==="string")reasoningCharacters+=reasoning.length;
+          if(choice?.finish_reason)finishReason=choice.finish_reason;
+          if(chunk?.usage)streamUsage=chunk.usage;
+          if (typeof delta === "string") {
+            if(delta&&!trace.timings.firstTextDeltaMs)trace.timings.firstTextDeltaMs=Math.round(performance.now()-trace._startedMs);
+            rawText += delta;
+            if(!trace.timings.firstCleanTextMs&&sanitizeReplyText(rawText))trace.timings.firstCleanTextMs=Math.round(performance.now()-trace._startedMs);
+          }
+        } catch {}
+      }
+      emitAvailable(false);
+      if(replyBudgetReached){finishReason="local-length";void reader.cancel().catch(()=>{});break;}
+      if (done) break;
     }
-    emitAvailable(false);
-    if(replyBudgetReached){finishReason="local-length";void reader.cancel().catch(()=>{});break;}
-    if (done) break;
-  }
 
-  if(!replyBudgetReached)emitAvailable(true);
+    if(!replyBudgetReached)emitAvailable(true);
+  }catch(error){
+    ttsLease?.cancel();
+    throw error;
+  }
   if(client.signal.aborted)return;
+  if(!firstSentenceEmitted)ttsLease?.cancel();
   trace.rawModelText=rawText;
   trace.providerStream={
     finishReason,
