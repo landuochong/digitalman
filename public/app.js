@@ -4,7 +4,7 @@ import { AvatarStreamTurn } from "./avatar-stream-turn.js?v=20260813-video-hando
 import { RecognitionTurnGate,recognitionResumeDelayMs,recognitionSilenceMs } from "./recognition-turn-gate.js?v=20260813-adaptive-endpoint-v23";
 import { BargeInDetector } from "./barge-in-detector.js?v=20260813-barge-in-v1";
 import { ReplyTranscript } from "./reply-transcript.js?v=20260813-spoken-history-v1";
-import { BackchannelGate,BackchannelPlayback,backchannelContinuationMs,remainingAfterSpokenBackchannel } from "./backchannel-gate.js?v=20260813-restrained-action-v34";
+import { BackchannelGate,BackchannelPlayback,backchannelContinuationMs,remainingAfterSpokenBackchannel } from "./backchannel-gate.js?v=20260814-natural-gratitude-v35";
 import { BACKCHANNEL_GRACE_MS } from "./backchannel-timing.js?v=20260813-backchannel-prep-v1";
 import { ListeningGestureGate } from "./listening-gesture.js?v=20260814-listening-nod-v1";
 

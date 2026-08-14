@@ -33,6 +33,8 @@ test("builds short contextual backchannels without pretending they are answers",
   assert.equal(thinking.action,"thinking");assert.equal(thinking.text,"我想想。");
   assert.deepEqual(buildResponsiveBackchannel("周末帮我安排学习和运动"),thinking);
   assert.deepEqual(buildResponsiveBackchannel("你平时有什么爱好？"),{text:"这个嘛。",emotion:"happy",action:"nod"});
+  assert.deepEqual(buildResponsiveBackchannel("我给你准备了一个小礼物，希望你喜欢。"),{text:"谢谢你。",emotion:"happy",action:"caring"});
+  assert.notEqual(buildResponsiveBackchannel("我记得你平时喜欢看电影。")?.text,"这个嘛。");
   assert.deepEqual(buildResponsiveBackchannel("今天傍晚的风很舒服。"),{text:"真好。",emotion:"happy",action:"nod"});
   assert.notEqual(buildResponsiveBackchannel("今天有点不舒服。")?.text,"真好。");
   assert.deepEqual(inferCompanionState("今天傍晚的风很舒服。"),{emotion:"happy",action:"nod"});

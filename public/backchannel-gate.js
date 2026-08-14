@@ -17,7 +17,13 @@ export class BackchannelGate{
 export function normalizeBackchannelText(value){return String(value||"").replace(/[，。！？!?；;、\s]/g,"");}
 
 export function remainingAfterSpokenBackchannel(spoken,formal){
-  const prefix=[...normalizeBackchannelText(spoken)],value=String(formal||"");
+  const spokenText=normalizeBackchannelText(spoken),value=String(formal||"");
+  if(spokenText==="谢谢你"&&/^谢谢你/.test(value)){
+    if(/^谢谢你的/.test(value))return value.slice(2).trim();
+    const gratitudeRemainder=value.replace(/^谢谢你[呀啦啊]?[，,；;、\s]*/,"").trim();
+    if(gratitudeRemainder&&gratitudeRemainder!==value)return gratitudeRemainder;
+  }
+  const prefix=[...spokenText];
   if(!prefix.length||!value)return null;
   let matched=0,index=0;
   for(;index<value.length&&matched<prefix.length;index++){

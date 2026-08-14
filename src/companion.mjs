@@ -276,7 +276,15 @@ function isPositiveLifeShare(input){
   return /(?:很好看|好漂亮|很舒服|真舒服|很好听|真好听|很治愈|很惬意)/.test(value);
 }
 
-function isPersonalPreferenceQuestion(input){return /(?:你|平时|周末|平常).{0,8}(?:喜欢|爱好|兴趣|常做|会做|怎么过|如何过)/.test(String(input||""));}
+function isPersonalPreferenceQuestion(input){
+  const value=String(input||"");
+  return /(?:你|平时|周末|平常).{0,8}(?:喜欢|爱好|兴趣|常做|会做|怎么过|如何过)/.test(value)
+    && /(?:什么|哪些|哪种|怎么|如何|吗|呢|[？?])/.test(value);
+}
+
+function isGiftForCompanion(input){
+  return /(?:给你|送你|买给你|为你买|特意给你|为你准备|给你准备).{0,10}(?:礼物|礼品|花|鲜花|小惊喜)|(?:礼物|礼品|花|鲜花).{0,8}(?:给你|送你)|这是给你的/.test(String(input||""));
+}
 
 function isGreetingMessage(input){return /你好|嗨|哈喽|嘿|早上好|中午好|下午好|晚上好|在吗|hello|hi/i.test(String(input||""));}
 
@@ -313,6 +321,7 @@ export function buildResponsiveBackchannel(message,state=inferCompanionState(mes
   if(!input)return null;
   if(/自杀|不想活|活不下去|伤害自己|结束生命/.test(input))return {text:"我在，先保证自己现在是安全的。",emotion:"caring",action:"caring"};
   if(/你好|嗨|哈喽|嘿|早上好|中午好|下午好|晚上好|在吗|hello|hi/i.test(input))return {text:stableChoice(backchannelChoices.greeting,input),emotion:"happy",action:"wave_approval"};
+  if(isGiftForCompanion(input))return{text:"谢谢你。",emotion:"happy",action:"caring"};
   if(isPersonalPreferenceQuestion(input))return{text:"这个嘛。",emotion:"happy",action:"nod"};
   if(state.action==="caring")return {text:stableChoice(backchannelChoices.caring,input),emotion:"caring",action:"caring"};
   if(state.action==="thinking")return {text:stableChoice(backchannelChoices.thinking,input),emotion:"curious",action:"thinking"};
