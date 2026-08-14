@@ -584,7 +584,7 @@ export const server = http.createServer(async (req, res) => {
     }
     if (pathname === "/api/dinet/status" && req.method === "GET") {
       if (!isLoopbackAddress(req.socket.remoteAddress)) return json(res, 403, { error:"本地 DINet 口型接口仅允许本机访问" });
-      return json(res, 200, {...await dinetRenders.readiness(),cache:await dinetRenders.cacheStatus(),pcm:ephemeralPcm.snapshot()});
+      return json(res, 200, {...await dinetRenders.readiness(),cache:await dinetRenders.cacheStatus(),pcm:ephemeralPcm.snapshot(),streams:dinetStreams.snapshot()});
     }
     const pcmMatch=pathname.match(/^\/api\/dinet\/pcm\/([a-f0-9]{32})$/);
     if(pcmMatch&&req.method==="GET"){

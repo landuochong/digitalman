@@ -56,6 +56,27 @@ test("cancel releases buffered audio and makes late chunks harmless", () => {
   assert.deepEqual(store.cancel(session.id), { id:session.id, cancelled:false });
 });
 
+test("expires abandoned open sessions and exposes bounded resource metrics",async()=>{
+  let timerId=0;const timers=new Map(),cancelled=[],released=[];
+  const store=new DINetStreamSessionStore({sessionIdleMs:1000,schedule:fn=>{const id=++timerId;timers.set(id,fn);return id;},cancelSchedule:id=>timers.delete(id),renderer:{render:async()=>({}),cancelStream:async id=>cancelled.push(id)},releaseAudio:id=>released.push(id)});
+  const first=store.start();store.append(first.id,0,Buffer.alloc(3200));
+  assert.deepEqual(store.snapshot(),{sessions:1,open:1,completed:0,bufferedBytes:3200,sessionIdleMs:1000,acknowledgementRetentionMs:60_000});
+  const expiry=[...timers.values()].at(-1);expiry();await new Promise(resolve=>setImmediate(resolve));
+  assert.deepEqual(store.snapshot(),{sessions:0,open:0,completed:0,bufferedBytes:0,sessionIdleMs:1000,acknowledgementRetentionMs:60_000});
+  assert.deepEqual(cancelled,[first.id]);assert.deepEqual(released,[first.id]);
+  assert.throws(()=>store.append(first.id,1,Buffer.alloc(320)),error=>error.status===404);
+});
+
+test("refreshes the idle deadline when audio continues arriving",()=>{
+  let timerId=0;const timers=new Map();
+  const store=new DINetStreamSessionStore({sessionIdleMs:1000,schedule:fn=>{const id=++timerId;timers.set(id,fn);return id;},cancelSchedule:id=>timers.delete(id),renderer:{render:async()=>({})}});
+  const session=store.start(),firstTimer=[...timers.keys()].at(-1);
+  store.append(session.id,0,Buffer.alloc(320));const secondTimer=[...timers.keys()].at(-1);
+  assert.notEqual(firstTimer,secondTimer);assert.equal(timers.has(firstTimer),false);
+  store.append(session.id,1,Buffer.alloc(320));assert.equal(timers.has(secondTimer),false);
+  assert.equal(store.snapshot().sessions,1);store.cancel(session.id);
+});
+
 test("enforces the configured audio duration and PCM16 alignment", () => {
   const store = new DINetStreamSessionStore({ renderer:{ render:async()=>({}) }, maxAudioMs:10 });
   const first = store.start();

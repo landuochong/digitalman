@@ -9,6 +9,7 @@ const MIN_FIRST_SEGMENT_MS = 320;
 const DEFAULT_MIN_TAIL_MS = 240;
 const MIN_TAIL_MS = 160;
 const DEFAULT_MAX_UNACKNOWLEDGED_SEGMENTS=6;
+const DEFAULT_SESSION_IDLE_MS=60_000;
 
 function streamError(message, status) {
   return Object.assign(new Error(message), { status });
@@ -35,15 +36,17 @@ export function encodePcm16Wav(pcm, sampleRate = DEFAULT_SAMPLE_RATE, channels =
 }
 
 export class DINetStreamSessionStore {
-  constructor({ renderer, maxAudioMs = DEFAULT_MAX_AUDIO_MS, segmentMs = DEFAULT_SEGMENT_MS, firstSegmentMs = DEFAULT_FIRST_SEGMENT_MS, maxUnacknowledgedSegments=DEFAULT_MAX_UNACKNOWLEDGED_SEGMENTS, acknowledgementRetentionMs=60_000, now = () => performance.now(), publishAudio=null, releaseAudio=null }) {
+  constructor({ renderer, maxAudioMs = DEFAULT_MAX_AUDIO_MS, segmentMs = DEFAULT_SEGMENT_MS, firstSegmentMs = DEFAULT_FIRST_SEGMENT_MS, maxUnacknowledgedSegments=DEFAULT_MAX_UNACKNOWLEDGED_SEGMENTS, acknowledgementRetentionMs=60_000, sessionIdleMs=DEFAULT_SESSION_IDLE_MS, now = () => performance.now(), publishAudio=null, releaseAudio=null, schedule=setTimeout, cancelSchedule=clearTimeout }) {
     this.renderer = renderer;
     this.maxAudioMs = maxAudioMs;
     this.segmentMs = segmentMs;
     this.firstSegmentMs = firstSegmentMs;
     this.maxUnacknowledgedSegments=Math.max(1,Number(maxUnacknowledgedSegments)||DEFAULT_MAX_UNACKNOWLEDGED_SEGMENTS);
     this.acknowledgementRetentionMs=Math.max(1000,Number(acknowledgementRetentionMs)||60_000);
+    this.sessionIdleMs=Math.max(1000,Number(sessionIdleMs)||DEFAULT_SESSION_IDLE_MS);
     this.now = now;
     this.publishAudio=publishAudio;this.releaseAudio=releaseAudio;
+    this.schedule=schedule;this.cancelSchedule=cancelSchedule;
     this.sessions = new Map();
   }
 
@@ -64,8 +67,9 @@ export class DINetStreamSessionStore {
     this.sessions.set(id, {
       id, action, sampleRate, channels, startedAt,
       firstChunkAt:null, nextSequence:0, bytes:0, chunks:[], state:"open",
-      segmentSequence:0, acknowledgedSequence:-1,ackWaiters:new Set(),retentionTimer:null,frameOffset, renderedAudioMs:0,firstSegmentMs,minimumTailMs,videoOnly:Boolean(videoOnly),binaryAudio:Boolean(videoOnly&&binaryAudio),fragmentedVideo:Boolean(videoOnly&&fragmentedVideo),renderBackpressure:Boolean(videoOnly&&fragmentedVideo&&renderBackpressure),visualTurnId:String(visualTurnId||""),visualSentenceIndex:Math.max(0,Number(visualSentenceIndex)||0)
+      segmentSequence:0, acknowledgedSequence:-1,ackWaiters:new Set(),retentionTimer:null,idleTimer:null,frameOffset, renderedAudioMs:0,firstSegmentMs,minimumTailMs,videoOnly:Boolean(videoOnly),binaryAudio:Boolean(videoOnly&&binaryAudio),fragmentedVideo:Boolean(videoOnly&&fragmentedVideo),renderBackpressure:Boolean(videoOnly&&fragmentedVideo&&renderBackpressure),visualTurnId:String(visualTurnId||""),visualSentenceIndex:Math.max(0,Number(visualSentenceIndex)||0)
     });
+    this.#touch(this.sessions.get(id));
     return { id, action, sampleRate, channels, frameOffset,firstSegmentMs,minimumTailMs,videoOnly:Boolean(videoOnly),binaryAudio:Boolean(videoOnly&&binaryAudio),fragmentedVideo:Boolean(videoOnly&&fragmentedVideo),renderBackpressure:Boolean(videoOnly&&fragmentedVideo&&renderBackpressure),maxUnacknowledgedSegments:this.maxUnacknowledgedSegments,nextSequence:0, mode:"stateful-segments" };
   }
 
@@ -85,6 +89,7 @@ export class DINetStreamSessionStore {
       throw streamError(`流式音频不能超过 ${this.maxAudioMs / 1000} 秒`, 413);
     }
     session.firstChunkAt ??= this.now();
+    this.#touch(session);
     session.chunks.push(Buffer.from(chunk));
     session.bytes += chunk.length;
     session.nextSequence += 1;
@@ -116,13 +121,12 @@ export class DINetStreamSessionStore {
           totalMs:Math.round(completedAt - session.startedAt)
         }
       };
-    } finally {
-      this.sessions.delete(id);
-    }
+    } finally {this.#deleteSession(session);}
   }
 
   async drain(id, { final=false, onSegment, signal, maxSegments=Infinity }={}) {
     const session = this.#open(id);
+    this.#touch(session);
     const bytesPerMs = session.sampleRate * session.channels * 2 / 1000;
     const minimumTailBytes = Math.round(session.minimumTailMs * bytesPerMs);
     const results=[];
@@ -146,6 +150,8 @@ export class DINetStreamSessionStore {
         session.action,
         {frameOffset,outputFrames,streamId:id,streamFinal:final,videoOnly:session.videoOnly,fragmentedVideo:session.fragmentedVideo,...(session.visualTurnId?{visualTurnId:session.visualTurnId,visualSentenceIndex:session.visualSentenceIndex}:{})}
       );
+      if(this.sessions.get(id)!==session||session.state!=="open")throw streamError("流式会话已经取消",409);
+      this.#touch(session);
       const frames=Number(rendered?.metrics?.frames)||outputFrames;
       session.frameOffset+=frames;
       session.renderedAudioMs+=Math.round(take/bytesPerMs);
@@ -181,12 +187,13 @@ export class DINetStreamSessionStore {
   complete(id) {
     const session=this.sessions.get(id);
     if(!session)return {id,completed:false};
+    this.cancelSchedule(session.idleTimer);session.idleTimer=null;
     const result={id,completed:true,segments:session.segmentSequence,audioMs:session.renderedAudioMs};
     this.#wakeAckWaiters(session);
     const unacknowledged=Math.max(0,session.segmentSequence-session.acknowledgedSequence-1);
     if(session.renderBackpressure&&unacknowledged){
       session.state="completed";
-      session.retentionTimer=setTimeout(()=>this.#deleteSession(session,true),this.acknowledgementRetentionMs);session.retentionTimer.unref?.();
+      session.retentionTimer=this.schedule(()=>this.#deleteSession(session,true),this.acknowledgementRetentionMs);session.retentionTimer?.unref?.();
     }else this.#deleteSession(session,session.renderBackpressure);
     void this.renderer.cancelStream?.(id).catch?.(()=>{});
     return result;
@@ -201,6 +208,15 @@ export class DINetStreamSessionStore {
     this.#deleteSession(session,true);
     void this.renderer.cancelStream?.(id).catch?.(()=>{});
     return { id, cancelled:true };
+  }
+
+  snapshot(){
+    let bufferedBytes=0,open=0,completed=0;
+    for(const session of this.sessions.values()){
+      bufferedBytes+=session.chunks.reduce((total,chunk)=>total+chunk.length,0);
+      if(session.state==="completed")completed++;else open++;
+    }
+    return{sessions:this.sessions.size,open,completed,bufferedBytes,sessionIdleMs:this.sessionIdleMs,acknowledgementRetentionMs:this.acknowledgementRetentionMs};
   }
 
   #open(id) {
@@ -225,7 +241,16 @@ export class DINetStreamSessionStore {
   }
 
   #wakeAckWaiters(session){for(const wake of session.ackWaiters)wake();session.ackWaiters.clear();}
-  #deleteSession(session,releaseAudio=false){clearTimeout(session.retentionTimer);this.sessions.delete(session.id);if(releaseAudio)void this.releaseAudio?.(session.id);}
+  #touch(session){
+    if(!session||session.state!=="open")return;
+    this.cancelSchedule(session.idleTimer);
+    session.idleTimer=this.schedule(()=>{
+      if(this.sessions.get(session.id)!==session||session.state!=="open")return;
+      session.state="cancelled";session.chunks.length=0;this.#wakeAckWaiters(session);this.#deleteSession(session,true);
+      void this.renderer.cancelStream?.(session.id).catch?.(()=>{});
+    },this.sessionIdleMs);session.idleTimer?.unref?.();
+  }
+  #deleteSession(session,releaseAudio=false){this.cancelSchedule(session.idleTimer);this.cancelSchedule(session.retentionTimer);this.sessions.delete(session.id);if(releaseAudio)void this.releaseAudio?.(session.id);}
 
   async #waitForRenderSlot(session,signal){
     if(!session.renderBackpressure)return;

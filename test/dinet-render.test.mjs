@@ -213,6 +213,7 @@ test("stream endpoint reports TTS and first playable segment timing",async()=>{
   assert.match(worker,/"-g", "20", "-keyint_min", "20", "-sc_threshold", "0"/);
   assert.match(server,/^\s*const pcmMatch=pathname\.match/m);
   assert.match(server,/cache-control":"no-store"/);
+  assert.match(server,/streams:dinetStreams\.snapshot\(\)/);
 });
 
 test("prepares a resolved action through the serialized persistent worker",async()=>{
