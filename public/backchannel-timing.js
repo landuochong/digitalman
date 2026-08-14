@@ -1,5 +1,5 @@
-export const BACKCHANNEL_DECISION_MS=900;
-// This advances speculative preparation only. Speech still cannot start until
-// BACKCHANNEL_DECISION_MS, so a fast formal sentence retains the same window.
+export const BACKCHANNEL_DECISION_MS=700;
+// Preparation overlaps the grace window. If the media is not ready at the
+// decision point, a formal sentence can still cancel it until real playback.
 export const BACKCHANNEL_OFFER_MS=200;
 export const BACKCHANNEL_GRACE_MS=BACKCHANNEL_DECISION_MS-BACKCHANNEL_OFFER_MS;

@@ -5,7 +5,7 @@ import { RecognitionTurnGate,recognitionResumeDelayMs,recognitionSilenceMs } fro
 import { BargeInDetector } from "./barge-in-detector.js?v=20260813-barge-in-v1";
 import { ReplyTranscript } from "./reply-transcript.js?v=20260813-spoken-history-v1";
 import { BackchannelGate,BackchannelPlayback,backchannelContinuationMs,remainingAfterSpokenBackchannel } from "./backchannel-gate.js?v=20260814-natural-gratitude-v35";
-import { BACKCHANNEL_GRACE_MS } from "./backchannel-timing.js?v=20260813-backchannel-prep-v1";
+import { BACKCHANNEL_GRACE_MS } from "./backchannel-timing.js?v=20260814-faster-backchannel-v2";
 import { ListeningGestureGate } from "./listening-gesture.js?v=20260814-listening-nod-v1";
 
 const $ = (selector) => document.querySelector(selector);
