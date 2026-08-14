@@ -491,14 +491,20 @@ export function takeCompleteSentences(text, flush = false, includeClauses = fals
     const sentence = source.slice(start, end).trim();
     const terminal = /[。！？!?；;\n]/.test(match[0]);
     const spokenLength = sentence.replace(/[，,、。！？!?；;\s]/g, "").length;
-    if (includeClauses && !terminal && spokenLength < Math.max(1,Number(minClauseCharacters)||9)) continue;
+    const shortClause=sentence.replace(/[\s，,、]+$/g,"").replace(/^(?:嗯|哦|哇|呀|啊|诶)[，,、]?/u,"");
+    // A short clause is worth releasing early only when it is already an
+    // independently speakable action. This lets “睡到自然醒，然后……” start
+    // promptly without reopening the old “辛苦了，真的。” fragment problem or
+    // splitting enumerated schedules such as “周六上午学习，下午运动……”.
+    const actionableShortClause=spokenLength>=5&&/^(?:先|别|不用|不妨|试试|睡|吃|喝|去|找|挑|选|做|给自己|把)/u.test(shortClause);
+    if (includeClauses && !terminal && spokenLength < Math.max(1,Number(minClauseCharacters)||9)&&!actionableShortClause) continue;
     if(includeClauses&&!terminal&&!flush){
       // Do not commit at the exact moment a comma arrives. A tiny lookahead is
       // enough to distinguish an independent spoken clause from a predicate
       // that is still waiting for its subject or conclusion.
       const lookahead=source.slice(end).replace(/[\s，,、]/g,"");
       if(lookahead.length<2)continue;
-      const clause=sentence.replace(/[\s，,、]+$/g,"").replace(/^(?:嗯|哦|哇|呀|啊|诶)[，,、]?/u,"");
+      const clause=shortClause;
       const dependentStart=/^(?:如果|假如|要是|因为|由于|虽然|尽管|即使|既然|只要|除非|当|等到|为了|听到|看到|想到|说到|提到|我(?:喜欢|爱|平时|通常|经常)|能让|让(?:我|你|人)|被|把)/u;
       const dependentEnd=/(?:如果|因为|但是|而且|所以|然后|以及|或者|还是|的时候|之后|以前|的话|为了|以便|从而|而|并|又|也|就|才|都|还|更|很|太|真|非常|特别|比较|可能|应该|需要|可以|能够|想要|打算|准备|舒服|好看|好听|开心|惬意|治愈|的|地|得)$/u;
       if(dependentStart.test(clause)||dependentEnd.test(clause))continue;
