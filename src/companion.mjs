@@ -229,9 +229,12 @@ export function inferCompanionState(message, reply = "", companionState=null) {
   }
   if (/惊讶|没想到|居然|竟然|真的假的|真的吗|不会吧|天啊|我的天|怎么可能|太夸张|吓我一跳|震惊|哇/.test(userMessage)) return { emotion:"excited", action:"surprise" };
   if (/不确定|不知道|也许|可能吧/.test(userMessage)) return { emotion:"curious", action:"shrug" };
-  if ((/[?？]|为什么|怎么|如何|觉得|认为|怎么办|能不能|可以吗|要不要|推荐|帮我想|分析|选择|哪个好/.test(userMessage)||isPlanningRequest(userMessage))&&!isPersonalPreferenceQuestion(userMessage)) return { emotion:"curious", action:"thinking" };
-  if (/你好|嗨|哈喽|嘿|早上好|中午好|下午好|晚上好|在吗|hello|hi/i.test(String(message))) return { emotion:"happy", action:"wave_approval" };
+  const deliberativeQuestion=isDeliberativeQuestion(userMessage);
+  if (isGreetingMessage(userMessage)&&!deliberativeQuestion) return { emotion:"happy", action:"wave_approval" };
   if(isPersonalPreferenceQuestion(userMessage))return{emotion:"happy",action:"nod"};
+  if(isSocialCheckIn(userMessage)||isFriendlyInvitation(userMessage)||isPersonalAffirmationQuestion(userMessage))return{emotion:"happy",action:"nod"};
+  if(deliberativeQuestion)return { emotion:"curious", action:"thinking" };
+  if(/[?？]/.test(userMessage))return {emotion:"curious",action:"idle"};
   if(isPositiveLifeShare(userMessage))return {emotion:"happy",action:"nod"};
   if (/(?:我|今天|现在|刚刚|刚才).{0,8}(?:开心|高兴)|(?:开心|高兴)(?:极了|坏了|呀|啊|呢|！|!|。|$)|哈哈/.test(userMessage)) return { emotion:"happy", action:"happy" };
   // Natural low-amplitude gestures inferred from the actual reply. These are
@@ -270,6 +273,23 @@ function isPositiveLifeShare(input){
 }
 
 function isPersonalPreferenceQuestion(input){return /(?:你|平时|周末|平常).{0,8}(?:喜欢|爱好|兴趣|常做|会做|怎么过|如何过)/.test(String(input||""));}
+
+function isGreetingMessage(input){return /你好|嗨|哈喽|嘿|早上好|中午好|下午好|晚上好|在吗|hello|hi/i.test(String(input||""));}
+
+function isSocialCheckIn(input){
+  return /(?:你|今天|最近).{0,10}(?:好吗|怎么样|过得|忙吗|累吗|开心吗|睡得|吃饭|吃了吗|在干嘛|做什么)|(?:吃饭|吃东西|睡觉|休息)(?:了)?吗/.test(String(input||""));
+}
+
+function isFriendlyInvitation(input){
+  return /(?:要不要|想不想|愿不愿意|可以|能不能).{0,12}(?:一起|陪我|聊会|聊天|散步|走走|吃饭|看电影|听歌)/.test(String(input||""));
+}
+
+function isPersonalAffirmationQuestion(input){return /你觉得我.{0,12}(?:好看|漂亮|可爱|怎么样|合适|可以)(?:吗|呢|[？?])/.test(String(input||""));}
+
+function isDeliberativeQuestion(input){
+  const value=String(input||"");
+  return /为什么|怎么(?!样)|如何|怎样|怎么办|觉得|认为|推荐|帮我想|分析|选择|哪个好|区别|原因|什么意思|怎么回事/.test(value)||isPlanningRequest(value);
+}
 
 function isPlanningRequest(input){
   const value=String(input||"");

@@ -262,7 +262,7 @@ test("infers natural daily phrases for VRM gestures", () => {
   assert.deepEqual(inferCompanionState("这有点意外"),{emotion:"calm",action:"idle"});
   assert.deepEqual(inferCompanionState("我今天很开心"),{emotion:"happy",action:"happy"});
   assert.deepEqual(inferCompanionState("哈哈，挺有意思"),{emotion:"happy",action:"happy"});
-  assert.deepEqual(inferCompanionState("你开心吗？"),{emotion:"curious",action:"thinking"});
+  assert.deepEqual(inferCompanionState("你开心吗？"),{emotion:"happy",action:"nod"});
   assert.deepEqual(inferCompanionState("你平时有什么爱好？"),{emotion:"happy",action:"nod"});
   assert.deepEqual(inferCompanionState("你喜欢怎样度过周末？"),{emotion:"happy",action:"nod"});
   assert.deepEqual(inferCompanionState("你平时有什么爱好？","你今天工作那么累，想不想也放松一下？",{mood:"caring",moodIntensity:.7}),{emotion:"happy",action:"nod"});
@@ -287,6 +287,25 @@ test("infers natural daily phrases for VRM gestures", () => {
   assert.deepEqual(buildMiniMaxReply("听到你这么说，我真的很开心。", "你真的很温柔很贴心"), { reply:"听到你这么说，我真的很开心。", emotion:"happy", action:"shy" });
   assert.deepEqual(inferCompanionState("嗯，我知道了","",{mood:"caring",moodIntensity:.6}), { emotion:"caring", action:"idle" });
   assert.deepEqual(inferCompanionState("我终于成功了","",{mood:"caring",moodIntensity:.8}), { emotion:"excited", action:"clap" });
+});
+
+test("keeps social questions restrained while reserving thinking for deliberation",()=>{
+  const expected=new Map([
+    ["晚上好，今天过得怎么样？","wave_approval"],
+    ["你好吗？","wave_approval"],
+    ["吃饭了吗？","nod"],
+    ["你在干嘛？","nod"],
+    ["今天忙吗？","nod"],
+    ["要不要一起散步？","nod"],
+    ["可以陪我聊会儿吗？","nod"],
+    ["你觉得我今天穿得好看吗？","nod"],
+    ["外面天气好吗？","idle"],
+    ["这个方案为什么失败？","thinking"],
+    ["帮我分析一下哪个好？","thinking"],
+    ["明天怎么安排？","thinking"],
+    ["你好，帮我分析一下这个方案。","thinking"]
+  ]);
+  for(const[message,action]of expected)assert.equal(inferCompanionState(message).action,action,message);
 });
 
 test("infers explicit nod and smile requests", () => {
