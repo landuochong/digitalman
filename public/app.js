@@ -15,7 +15,7 @@ const micButton = $("#micButton"), modeBanner = $("#modeBanner"), statusText = $
 const voiceButton = $("#voiceButton"), voicePrompt = $("#voicePrompt"), liveTranscript = $("#liveTranscript"), captionButton = $("#captionButton");
 const digitalHumanFrame = $("#digitalHumanFrame");
 const AVATAR_FIRST_SEGMENT_LEAD_MS=320;
-const avatarRuntimeVersion="20260814-listening-nod-v35";
+const avatarRuntimeVersion="20260814-tts-lease-v36";
 const avatarRuntimeUrl=path=>`${path}?v=${avatarRuntimeVersion}`;
 const avatarProfile = new URLSearchParams(location.search).get("profile");
 const selfRecordedProfile = avatarProfile === "self";
@@ -394,7 +394,7 @@ function prepareStreamingNeuralSpeech(text,emotion,batch,behavior={action:"idle"
         receivedAudioMs+=Math.max(0,Number(data?.segment?.audioMs)||0);
         queue.push(data);wake();
       }
-      if(event==="done"&&data.pipeline&&!options.speculative&&!portrait.dataset.avatarPipelineMs){portrait.dataset.ttsFirstAudioMs=String(data.pipeline.ttsFirstAudioMs??"");portrait.dataset.avatarPipelineMs=String(data.pipeline.firstSegmentMs??"");}
+      if(event==="done"&&data.pipeline&&!options.speculative&&!portrait.dataset.avatarPipelineMs){portrait.dataset.ttsFirstAudioMs=String(data.pipeline.ttsFirstAudioMs??"");portrait.dataset.avatarPipelineMs=String(data.pipeline.firstSegmentMs??"");portrait.dataset.ttsConnectionReused=String(Boolean(data.tts?.connectionReused));portrait.dataset.ttsTaskPrimed=String(Boolean(data.tts?.taskPrimed));portrait.dataset.ttsConnectionLeadMs=String(data.tts?.connectionLeadMs??"");}
       if(event==="error")throw new Error(data.error||"流式回答准备失败");
       if(event==="done"){ended=true;wake();}
     });
@@ -539,7 +539,7 @@ function compactUploadedHistoryContent(value,limit=600){
 async function reply(message) {
   sendButton.disabled = true; showTyping(); setEmotion("curious"); setVoiceState("thinking","正在理解你刚才说的话"); statusText.textContent = "正在想…";
   const controller = new AbortController(); activeReplyController = controller;
-  const batch = speechBatch,transcript=new ReplyTranscript(); activeReplyStartedAt=performance.now();realSpeechTimelineMs=0;delete portrait.dataset.chatFirstSentenceMs;delete portrait.dataset.avatarFirstSegmentMs;delete portrait.dataset.ttsFirstAudioMs;delete portrait.dataset.avatarPipelineMs;delete portrait.dataset.backchannelContinuation;delete portrait.dataset.backchannelContinuationMs;delete portrait.dataset.backchannelStartedMs;delete portrait.dataset.backchannelCompleted;let article, streamedText = "", currentEmotion = "calm",currentAction="idle",spokenSentenceCount=0,firstTtsConnectionId="",waitingPreview=null,backchannelVisual=null,backchannelPlayback=null,actionFrameBias=0,biasedAction="";
+  const batch = speechBatch,transcript=new ReplyTranscript(); activeReplyStartedAt=performance.now();realSpeechTimelineMs=0;delete portrait.dataset.chatFirstSentenceMs;delete portrait.dataset.avatarFirstSegmentMs;delete portrait.dataset.ttsFirstAudioMs;delete portrait.dataset.avatarPipelineMs;delete portrait.dataset.ttsConnectionReused;delete portrait.dataset.ttsTaskPrimed;delete portrait.dataset.ttsConnectionLeadMs;delete portrait.dataset.backchannelContinuation;delete portrait.dataset.backchannelContinuationMs;delete portrait.dataset.backchannelStartedMs;delete portrait.dataset.backchannelCompleted;let article, streamedText = "", currentEmotion = "calm",currentAction="idle",spokenSentenceCount=0,firstTtsConnectionId="",waitingPreview=null,backchannelVisual=null,backchannelPlayback=null,actionFrameBias=0,biasedAction="";
   const transcriptState={transcript,get article(){return article;},set article(value){article=value;}};activeReplyTranscript=transcriptState;
   const revealSentence=sentenceIndex=>{if(batch!==speechBatch)return;const spoken=transcript.start(sentenceIndex);if(!spoken)return;$("#typing")?.remove();article ||= addMessage("assistant","",false);article.querySelector("p").textContent=spoken;};
   const finishSentence=sentenceIndex=>{if(batch===speechBatch)transcript.finish(sentenceIndex);};
