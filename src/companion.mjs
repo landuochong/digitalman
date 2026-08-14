@@ -361,10 +361,12 @@ function removeRedundantClosingQuestion(reply,message){
 function removeUnsupportedSceneClaims(reply,message,history=[]){
   const userContext=[...history.filter(item=>item?.role!=="assistant").slice(-10).map(item=>String(item?.content||"")),String(message||"")].join(" ");
   let value=String(reply||"");
-  if(!/(?:天气|下雨|雨天|晴天|晴朗|阴天|气温|冷|热|降温)/.test(userContext)){
+  const hasWeatherContext=/(?:天气|下雨|雨天|晴天|晴朗|阴天|气温|温度|降温|升温)/.test(userContext)||/(?:今天|现在|最近|这几天|外面|屋里|室内|室外).{0,5}(?:冷|热)(?:[了啊呀吗呢，。！？!?]|$)|(?:很|太|有点|比较|这么|那么)(?:冷|热)(?:[了啊呀吗呢，。！？!?]|$)|(?:冷|热)(?:死|得|到|起来|下来|了|啊|呀|吗|呢)/.test(userContext);
+  if(!hasWeatherContext){
     value=value.replace(/(^|[。！？!?；;\n])\s*(?:(?:最近|这两天|今天|这几天)的?)?天气(?:挺|很|还|真)?(?:好|不错|舒服|暖和|凉快|冷|热|晴朗)(?:的|了|啊|呀)?[，,]\s*/gu,"$1");
   }
-  if(!/(?:工作|事情|安排|行程|节奏|状态|忙|累|疲惫|压力|加班)/.test(userContext)){
+  const hasWorkloadContext=/(?:加班|赶工|忙碌|忙着|忙(?:死|坏|不过来|得)|累(?:死|坏)|疲惫|压力(?:大|很大|好多|山大|[了啊呀吗呢，。！？!?]|$))/.test(userContext)||/(?:我|最近|这几天|今天|现在).{0,5}(?:忙|累)(?:[了啊呀吗呢，。！？!?]|$)|(?:很|太|有点|比较|特别)(?:忙|累)(?:[了啊呀吗呢，。！？!?]|$)/.test(userContext)||/(?:工作|事情|任务|安排|行程|节奏|状态).{0,8}(?:多|紧|满|忙|累|疲惫|不好)|(?:多|紧|满|忙|累|疲惫).{0,8}(?:工作|事情|任务|安排|行程|节奏)/.test(userContext);
+  if(!hasWorkloadContext){
     value=value.replace(/(^|[。！？!?；;\n])\s*(?:看起来|看你|感觉你|你)(?:最近|这两天|这几天)?(?:的)?(?:工作|事情|安排|行程|节奏|状态).{0,10}(?:紧|忙|累|多|不好)(?:的|了|啊|呀)?[，,]\s*/gu,"$1");
   }
   return value.trim();

@@ -272,6 +272,12 @@ test("infers natural daily phrases for VRM gestures", () => {
   assert.equal(buildMiniMaxReply("最近天气挺好的，要不周末找个公园走走。看你这两天节奏也挺紧的，换个环境放松一下最合适。","给我一个周末建议").reply,"要不周末找个公园走走。换个环境放松一下最合适。");
   assert.equal(buildMiniMaxReply("最近天气挺好的，正适合去公园。","最近天气挺好的，周末去哪儿？").reply,"最近天气挺好的，正适合去公园。");
   assert.equal(buildMiniMaxReply("看你这两天工作挺忙的，先休息一下。","最近工作很忙，给我点建议").reply,"看你这两天工作挺忙的，先休息一下。");
+  assert.equal(buildMiniMaxReply("最近天气很热，适合在室内休息。","给我一个热闹的周末建议").reply,"适合在室内休息。");
+  assert.equal(buildMiniMaxReply("最近天气很冷，记得多穿点。","请冷静地给我一个建议").reply,"记得多穿点。");
+  assert.equal(buildMiniMaxReply("看你最近事情很多，先放松一下。","周末做什么事情好？").reply,"先放松一下。");
+  assert.equal(buildMiniMaxReply("看你最近工作挺忙的，先休息一下。","工作方面给我点建议").reply,"先休息一下。");
+  assert.equal(buildMiniMaxReply("看你最近事情挺多的，先休息一下。","我最近很忙，给我点建议").reply,"看你最近事情挺多的，先休息一下。");
+  assert.equal(buildMiniMaxReply("看你最近工作挺累的，先休息一下。","我累了，陪我聊会儿").reply,"看你最近工作挺累的，先休息一下。");
   assert.equal(buildMiniMaxReply("看你这两天工作挺忙，","给我一个周末建议",null,[],{allowEmpty:true}).reply,"");
   assert.equal(buildMiniMaxReply("看你这两天工作挺忙，","给我一个周末建议").reply,"我在听。");
   assert.deepEqual(inferCompanionState("我今天把计划里的事情都做完了，感觉挺开心的。"),{emotion:"excited",action:"clap"});
