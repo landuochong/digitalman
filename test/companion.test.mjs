@@ -272,6 +272,8 @@ test("infers natural daily phrases for VRM gestures", () => {
   assert.equal(buildMiniMaxReply("最近天气挺好的，要不周末找个公园走走。看你这两天节奏也挺紧的，换个环境放松一下最合适。","给我一个周末建议").reply,"要不周末找个公园走走。换个环境放松一下最合适。");
   assert.equal(buildMiniMaxReply("最近天气挺好的，正适合去公园。","最近天气挺好的，周末去哪儿？").reply,"最近天气挺好的，正适合去公园。");
   assert.equal(buildMiniMaxReply("看你这两天工作挺忙的，先休息一下。","最近工作很忙，给我点建议").reply,"看你这两天工作挺忙的，先休息一下。");
+  assert.equal(buildMiniMaxReply("看你这两天工作挺忙，","给我一个周末建议",null,[],{allowEmpty:true}).reply,"");
+  assert.equal(buildMiniMaxReply("看你这两天工作挺忙，","给我一个周末建议").reply,"我在听。");
   assert.deepEqual(inferCompanionState("我今天把计划里的事情都做完了，感觉挺开心的。"),{emotion:"excited",action:"clap"});
   assert.deepEqual(inferCompanionState("我明天计划去公园走走。"),{emotion:"calm",action:"idle"});
   assert.deepEqual(inferCompanionState("帮我制定一个明天的计划。"),{emotion:"curious",action:"thinking"});

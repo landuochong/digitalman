@@ -370,7 +370,7 @@ function removeUnsupportedSceneClaims(reply,message,history=[]){
   return value.trim();
 }
 
-export function buildMiniMaxReply(text, message, companionState=null, history=[]) {
+export function buildMiniMaxReply(text, message, companionState=null, history=[], options={}) {
   const parsed = parseCompanionReply(text);
   const groundedReply=removeUnsupportedSceneClaims(sanitizeReplyText(parsed.reply),message,history);
   let reply = limitReplyForRequest(removeRedundantClosingQuestion(groundedReply,message),message);
@@ -382,7 +382,8 @@ export function buildMiniMaxReply(text, message, companionState=null, history=[]
         ? "好呀，我陪你一起去。"
         : "当然可以呀，我陪着你。";
   }
-  return { reply:reply || "我在听。", ...inferCompanionState(message, reply, companionState) };
+  const spokenReply=reply||(options.allowEmpty===true?"":"我在听。");
+  return { reply:spokenReply, ...inferCompanionState(message, spokenReply, companionState) };
 }
 
 const staleIdentityReply=/(?:我是|作为|本质上|严格来说).{0,16}(?:AI|人工智能|模型|程序|虚拟人|虚拟伙伴|数字角色)|(?:AI|人工智能|模型|程序|虚拟人|虚拟伙伴|数字角色).{0,16}(?:身份|助手|角色|陪伴)/i;

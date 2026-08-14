@@ -346,8 +346,9 @@ async function miniMaxChatStream(message, history, persona, memories, companionS
     const { sentences, remainder } = takeCompleteSentences(sentenceBuffer,flush,includeClauses,9,includeClauses?1:Infinity);
     for (const sentence of sentences) {
       if(sentenceLimit&&completedReplySentenceCount(trace.emittedSentences.join(""))>=sentenceLimit){replyBudgetReached=true;break;}
-      const sentenceResult=buildMiniMaxReply(sentence,message,companionState,history);
+      const sentenceResult=buildMiniMaxReply(sentence,message,companionState,history,{allowEmpty:true});
       const safeSentence=sentenceResult.reply;
+      if(!safeSentence){trace.filteredSentenceCount=(trace.filteredSentenceCount||0)+1;continue;}
       if(isRedundantClosingQuestion(message,safeSentence,trace.emittedSentences.length>0))continue;
       if(trace.emittedSentences.at(-1)===safeSentence&&safeSentence!==sentence)continue;
       firstSentenceEmitted=true;ttsLease?.freeze();if(backchannelTimer)clearTimeout(backchannelTimer);
