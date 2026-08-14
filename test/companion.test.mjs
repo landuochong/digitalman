@@ -153,6 +153,7 @@ test("builds streaming MiniMax payload and segments complete spoken sentences", 
   assert.deepEqual(takeCompleteSentences("好呀。",true,true),{sentences:["好呀。"],remainder:""});
   assert.deepEqual(takeCompleteSentences("辛苦了，今天先休息一下", false, true), { sentences:[], remainder:"辛苦了，今天先休息一下" });
   assert.deepEqual(takeCompleteSentences("睡到自然醒，然后去吃顿好的",false,true),{sentences:["睡到自然醒，"],remainder:"然后去吃顿好的"});
+  assert.deepEqual(takeCompleteSentences("睡到自然醒，去附近走走，随手买点小吃，心情就会很好。",false,true,9,1),{sentences:["睡到自然醒，"],remainder:"去附近走走，随手买点小吃，心情就会很好。"});
   assert.deepEqual(takeCompleteSentences("先喝一杯水，再慢慢想",false,true),{sentences:["先喝一杯水，"],remainder:"再慢慢想"});
   assert.deepEqual(takeCompleteSentences("周六上午学习，下午",false,true),{sentences:[],remainder:"周六上午学习，下午"});
   assert.deepEqual(takeCompleteSentences("你已经撑了很久了，真的很棒",false,true),{sentences:[],remainder:"你已经撑了很久了，真的很棒"});
@@ -232,12 +233,15 @@ test("honors explicit concise reply length without truncating normal analysis",(
   assert.equal(limitReplyForRequest(long,"用一句话概括"),"第一句。");
   assert.equal(limitReplyForRequest(long,"请认真详细分析"),long);
   assert.equal(buildMiniMaxReply(long,"简单说一下").reply,"第一句。第二句。第三句。");
+  assert.equal(buildMiniMaxReply(long,"给我一个周末建议").reply,"第一句。第二句。第三句。");
   assert.equal(requestedSentenceLimit("用一句话概括"),1);
   assert.equal(requestedSentenceLimit("说一两句就好"),2);
   assert.equal(requestedSentenceLimit("简单安排一下"),3);
   assert.equal(requestedSentenceLimit("详细分析"),0);
   assert.equal(conversationalSentenceLimit("你平时有什么爱好？"),2);
   assert.equal(conversationalSentenceLimit("你喜欢怎样度过周末？"),2);
+  assert.equal(conversationalSentenceLimit("给我一个让周末开心的建议"),3);
+  assert.equal(conversationalSentenceLimit("请详细给我多个周末建议"),0);
   assert.equal(conversationalSentenceLimit("请详细分析这个方案"),0);
   assert.equal(completedReplySentenceCount("开场逗号，仍是第一句。第二句；未完成"),2);
 });
@@ -257,6 +261,13 @@ test("infers natural daily phrases for VRM gestures", () => {
   assert.deepEqual(inferCompanionState("帮我安排一下","这样不会太累，也没压力"),{emotion:"curious",action:"thinking"});
   assert.deepEqual(inferCompanionState("帮我分析一下应该选哪个好"), { emotion:"curious", action:"thinking" });
   assert.deepEqual(inferCompanionState("周末帮我安排学习和运动"), { emotion:"curious", action:"thinking" });
+  assert.deepEqual(inferCompanionState("你认真想一下，给我一个让周末过得开心的建议。"),{emotion:"curious",action:"thinking"});
+  assert.deepEqual(inferCompanionState("给我一个能让我开心点的建议。"),{emotion:"curious",action:"thinking"});
+  assert.deepEqual(buildResponsiveBackchannel("你认真想一下，给我一个让周末过得开心的建议。"),{text:"我想想。",emotion:"curious",action:"thinking"});
+  assert.deepEqual(inferCompanionState("这个建议让我很开心。"),{emotion:"happy",action:"happy"});
+  assert.deepEqual(inferCompanionState("我认真想了一下，决定周末去公园。"),{emotion:"calm",action:"idle"});
+  assert.equal(buildMiniMaxReply("可以去公园走走，或者找家小店坐坐。你最近有什么想做的吗？","给我一个让周末开心的建议").reply,"可以去公园走走，或者找家小店坐坐。");
+  assert.equal(buildMiniMaxReply("可以根据场合来选。你对什么材质过敏？","给我一个穿搭建议").reply,"可以根据场合来选。你对什么材质过敏？");
   assert.deepEqual(inferCompanionState("我今天把计划里的事情都做完了，感觉挺开心的。"),{emotion:"excited",action:"clap"});
   assert.deepEqual(inferCompanionState("我明天计划去公园走走。"),{emotion:"calm",action:"idle"});
   assert.deepEqual(inferCompanionState("帮我制定一个明天的计划。"),{emotion:"curious",action:"thinking"});

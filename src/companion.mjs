@@ -81,13 +81,16 @@ export function conversationalSentenceLimit(message){
   // reciprocal interview question and keeps the upstream stream alive long
   // after the avatar has enough to answer naturally.
   if(isPersonalPreferenceQuestion(input))return 2;
+  // Ordinary advice should honor the global 1–3 sentence conversation style.
+  // Detailed or step-by-step requests stay unrestricted.
+  if(isAdviceRequest(input)&&!/(?:详细|全面|深入|具体|逐步|分步骤|列出|多给|多个)/.test(input))return 3;
   return 0;
 }
 
 export function completedReplySentenceCount(reply){return (String(reply||"").match(/[。！？!?；;\n]+/g)||[]).length;}
 
 export function limitReplyForRequest(reply,message){
-  const value=String(reply||"").trim(),limit=requestedSentenceLimit(message);if(!limit)return value;
+  const value=String(reply||"").trim(),limit=conversationalSentenceLimit(message);if(!limit)return value;
   const parts=value.match(/[^。！？!?；;\n]+[。！？!?；;]?/g)?.map(item=>item.trim()).filter(Boolean)||[];
   return parts.length>limit?parts.slice(0,limit).join(""):value;
 }
@@ -288,7 +291,12 @@ function isPersonalAffirmationQuestion(input){return /你觉得我.{0,12}(?:好�
 
 function isDeliberativeQuestion(input){
   const value=String(input||"");
-  return /为什么|怎么(?!样)|如何|怎样|怎么办|觉得|认为|推荐|帮我想|分析|选择|哪个好|区别|原因|什么意思|怎么回事/.test(value)||isPlanningRequest(value);
+  const requestedThought=/(?:认真|仔细|好好)(?:地)?想(?:一下|一想)|(?:帮我|请你|你来).{0,12}(?:想一下|想一想|想想)/.test(value);
+  return isAdviceRequest(value)||requestedThought||/为什么|怎么(?!样)|如何|怎样|怎么办|觉得|认为|推荐|帮我想|分析|选择|哪个好|区别|原因|什么意思|怎么回事/.test(value)||isPlanningRequest(value);
+}
+
+function isAdviceRequest(input){
+  return /(?:给我|帮我|请你|能不能|可以(?:帮我)?).{0,20}(?:建议|主意|方案)|(?:提|给)(?:我)?(?:一个|点|些)?建议/.test(String(input||""));
 }
 
 function isPlanningRequest(input){
@@ -315,6 +323,7 @@ export function buildResponsiveBackchannel(message,state=inferCompanionState(mes
 
 const directPlanningRequest=/(?:帮我|给我|替我|请你).{0,8}(?:安排|规划|计划|排(?:一)?下|排一排)|(?:安排|规划|计划).{0,8}(?:一下|简单|怎么)/;
 const genericPlanConfirmation=/^(?:你觉得|你看)(?:这样|这个|这么|这样的)?(?:安排|节奏|计划|方案)?(?:可以|行|合适|怎么样)(?:吗)?[？?。]?$/;
+const genericAdviceFollowup=/^(?:那你|你)?(?:最近|现在)?(?:有)?什么(?:想做|想试|想尝试|想去|打算做)的?(?:吗|呢)?[？?]$/;
 const ordinaryLifeShare=/(?:今天|昨天|刚才|刚刚|路上|下班|到家|回来|散步|出门|吃完|看完|做完|完成|遇到|看到|听到|发现|买了|去了|来了)/;
 const asksForHelpOrAnswer=/(?:[？?]|为什么|怎么|如何|怎么办|能不能|可以吗|要不要|帮我|给我|请你|建议|推荐|分析|安排|规划|计划|想知道|告诉我)/;
 const distressOrCrisis=/(?:自杀|不想活|活不下去|伤害自己|结束生命|难过|伤心|焦虑|崩溃|害怕|担心|不舒服|生病|疼|压力|委屈|孤独|失落|累|疲惫|烦|饿|困)/;
@@ -325,6 +334,7 @@ export function isRedundantClosingQuestion(message,sentence,hasSubstantiveAnswer
   const input=String(message||""),closing=String(sentence||"").trim();
   if(isPersonalPreferenceQuestion(input)&&/[？?]$/.test(closing))return true;
   if(directPlanningRequest.test(input)&&genericPlanConfirmation.test(closing))return true;
+  if(isAdviceRequest(input)&&genericAdviceFollowup.test(closing))return true;
   return ordinaryLifeShare.test(input)&&!asksForHelpOrAnswer.test(input)&&!distressOrCrisis.test(input)&&ordinaryInterviewQuestion.test(closing);
 }
 
@@ -478,7 +488,7 @@ export function buildMiniMaxChatPayload({ model, message, history = [], stream =
   return payload;
 }
 
-export function takeCompleteSentences(text, flush = false, includeClauses = false, minClauseCharacters=9) {
+export function takeCompleteSentences(text, flush = false, includeClauses = false, minClauseCharacters=9, maxSentences=Infinity) {
   const source = String(text ?? "");
   const sentences = [];
   let start = 0;
@@ -513,6 +523,7 @@ export function takeCompleteSentences(text, flush = false, includeClauses = fals
     if(includeClauses&&terminal&&spokenLength<=8&&sentences.length&&start>0){sentences[sentences.length-1]+=source.slice(start,end);start=end;continue;}
     if (sentence) sentences.push(sentence);
     start = end;
+    if(sentences.length>=Math.max(1,Number(maxSentences)||1))break;
   }
   const remainder = source.slice(start).trimStart();
   if (flush && remainder.trim()) return { sentences:[...sentences, remainder.trim()], remainder:"" };

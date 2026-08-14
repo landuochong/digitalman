@@ -340,7 +340,10 @@ async function miniMaxChatStream(message, history, persona, memories, companionS
     sentenceBuffer += clean.slice(observedCleanLength);
     observedCleanLength = clean.length;
     const includeClauses=fastSpeech&&!trace.emittedSentences.length;
-    const { sentences, remainder } = takeCompleteSentences(sentenceBuffer,flush,includeClauses,9);
+    // Only the first independently speakable clause may race ahead. An
+    // upstream chunk can contain several commas at once; splitting all of them
+    // here would create a burst of tiny TTS/avatar jobs and choppy pauses.
+    const { sentences, remainder } = takeCompleteSentences(sentenceBuffer,flush,includeClauses,9,includeClauses?1:Infinity);
     for (const sentence of sentences) {
       if(sentenceLimit&&completedReplySentenceCount(trace.emittedSentences.join(""))>=sentenceLimit){replyBudgetReached=true;break;}
       const sentenceResult=buildMiniMaxReply(sentence,message,companionState,history);
