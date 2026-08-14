@@ -81,6 +81,18 @@ test("DINet streams raw frames into the final H.264 encode",async()=>{
   assert.doesNotMatch(source,/silent_path/);
 });
 
+test("crossfades one action boundary over four frames",async()=>{
+  const source=await readFile(new URL("../scripts/dinet_worker.py",import.meta.url),"utf8");
+  assert.match(source,/transition_source = self\.visual_turn_frames\.get\(visual_turn_id\)/);
+  assert.match(source,/previous_visual_asset = self\.visual_turn_assets\.get\(visual_turn_id\)/);
+  assert.match(source,/min\(4, len\(coefficients\)\)/);
+  assert.match(source,/visual_asset_changed and visual_sentence_index > 0 and transition_source is not None/);
+  assert.match(source,/alpha = float\(audio_index \+ 1\) \/ float\(transition_frames \+ 1\)/);
+  assert.match(source,/cv2\.addWeighted\(\s*transition_source, 1\.0 - alpha, frame, alpha, 0\.0\s*\)/);
+  assert.match(source,/self\.visual_turn_frames\[visual_turn_id\] = last_output_frame/);
+  assert.deepEqual(Array.from({length:4},(_,index)=>(index+1)/5),[0.2,0.4,0.6,0.8]);
+});
+
 test("neural avatar keeps a persistent idle layer behind speech", async () => {
   const [html, script,styles] = await Promise.all([
     readFile(new URL("../public/wav2lip-avatar/avatar.html", import.meta.url), "utf8"),
