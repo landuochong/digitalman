@@ -24,6 +24,7 @@ let audioScheduleChain=Promise.resolve();
 let fragmentedAppendChain=Promise.resolve();
 let fragmentedPlayback=null;
 let waitingPreview=null;
+let waitingPreviewTimer=0;
 const streamAudioSources=new Set();
 const segmentQueue=[];
 const streamItems=new Map();
@@ -68,11 +69,12 @@ function playIdle() {
   segmentQueue.length=0;streamItems.clear();cancelledRequests.clear();segmentPlaying=false;externalSegmentsPending=0;segmentsPreparing=0;activeSegment=null;activeSegmentSequence=-1;nextPlaybackSequence=0;streamEnded=true;
   pendingIdleTimeMs=null;pendingIdleLingerMs=120;
   stopStreamAudio();stopFragmentedPlayback();
-  waitingPreview=null;
+  clearTimeout(waitingPreviewTimer);waitingPreviewTimer=0;waitingPreview=null;
   idleVideo.play().catch(() => {});
 }
 
 function clearWaitingPreview({revealIdle=true}={}){
+  clearTimeout(waitingPreviewTimer);waitingPreviewTimer=0;
   const video=waitingPreview;waitingPreview=null;
   if(!video)return;
   video.classList.remove("active");
@@ -85,14 +87,21 @@ async function showWaitingPreview(data){
   if(!data.url||segmentPlaying||externalSegmentsPending||segmentsPreparing)return;
   clearWaitingPreview({revealIdle:false});
   const video=document.createElement("video");
-  video.className="avatar-layer speech-segment waiting-preview";video.playsInline=true;video.muted=true;video.loop=true;video.preload="auto";video.src=data.url;
+  video.className="avatar-layer speech-segment waiting-preview";video.playsInline=true;video.muted=true;video.loop=data.loop!==false;video.preload="auto";video.src=data.url;
   waitingPreview=video;stage.append(video);
   try{
     await video.play();await waitForFirstVideoFrame(video);
     if(waitingPreview!==video)return;
     const previous=activeSegment;activeSegment=video;video.classList.add("active");
     if(previous&&previous!==video){previous.classList.remove("active");setTimeout(()=>{previous.pause();previous.remove();},180);}
-    notify("wav2lip-preview-started",{action:data.action,currentTime:video.currentTime});
+    notify("wav2lip-preview-started",{action:data.action,currentTime:video.currentTime,purpose:data.purpose||"reply"});
+    const durationMs=Math.max(0,Number(data.durationMs)||0);
+    if(durationMs)waitingPreviewTimer=setTimeout(()=>{
+      waitingPreviewTimer=0;
+      if(waitingPreview!==video)return;
+      clearWaitingPreview();
+      notify("wav2lip-preview-ended",{action:data.action,purpose:data.purpose||"reply",durationMs});
+    },durationMs);
   }catch{if(waitingPreview===video)clearWaitingPreview();}
 }
 

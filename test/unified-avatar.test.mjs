@@ -15,9 +15,9 @@ test("main voice page offers real and anime modes in one conversation",async()=>
   assert.match(html,/id="personaVoice"/);
   assert.match(html,/人物设置/);
   assert.match(app,/lumi-avatar-mode/);
-  assert.match(html,/app\.js\?v=20260813-restrained-action-v34/);
+  assert.match(html,/app\.js\?v=20260814-listening-nod-v35/);
   assert.match(html,/aria-label="开始通话" aria-pressed="false"/);
-  assert.match(app,/avatarRuntimeVersion="20260813-restrained-action-v34"/);
+  assert.match(app,/avatarRuntimeVersion="20260814-listening-nod-v35"/);
   assert.match(app,/AVATAR_FIRST_SEGMENT_LEAD_MS=320/);
   assert.match(app,/get\("continuous"\) !== "0"/);
   assert.match(app,/lumi-vrm-look/);
@@ -122,8 +122,14 @@ test("praise has a dedicated anime thumbs-up and a restrained listening nod",asy
   assert.match(pose,/"rightThumbProximal"/);
   assert.match(pose,/"rightLittleDistal"/);
   assert.match(app,/scheduleListeningGesture/);
-  assert.match(app,/recognitionRunning&&recognizedText/);
-  assert.match(app,/setDigitalHumanAction\("nod",\{force:true,hold:false\}\)/);
+  assert.match(app,/new ListeningGestureGate\(\)/);
+  assert.match(app,/voiceCallActive&&recognitionRunning&&recognizedText/);
+  assert.match(app,/setDigitalHumanAction\("nod",\{force:true,hold:false,behavior:\{purpose:"listening"/);
+  assert.match(app,/url:"\/dh-live\/actions\/bedroom_agree_test\/01\.mp4",purpose:"listening",loop:false,durationMs:3600/);
+  assert.match(app,/type:"wav2lip-preview-clear"/);
+  const realAvatar=await readPublic("wav2lip-avatar/avatar.js");
+  assert.match(realAvatar,/video\.loop=data\.loop!==false/);
+  assert.match(realAvatar,/wav2lip-preview-ended/);
 });
 
 test("voice button toggles one continuous call instead of each utterance",async()=>{

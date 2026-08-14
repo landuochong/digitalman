@@ -6,6 +6,7 @@ import { BargeInDetector } from "./barge-in-detector.js?v=20260813-barge-in-v1";
 import { ReplyTranscript } from "./reply-transcript.js?v=20260813-spoken-history-v1";
 import { BackchannelGate,BackchannelPlayback,backchannelContinuationMs,remainingAfterSpokenBackchannel } from "./backchannel-gate.js?v=20260813-restrained-action-v34";
 import { BACKCHANNEL_GRACE_MS } from "./backchannel-timing.js?v=20260813-backchannel-prep-v1";
+import { ListeningGestureGate } from "./listening-gesture.js?v=20260814-listening-nod-v1";
 
 const $ = (selector) => document.querySelector(selector);
 const portrait = $("#portrait"), wave = $("#soundWave"), messages = $("#messages");
@@ -14,7 +15,7 @@ const micButton = $("#micButton"), modeBanner = $("#modeBanner"), statusText = $
 const voiceButton = $("#voiceButton"), voicePrompt = $("#voicePrompt"), liveTranscript = $("#liveTranscript"), captionButton = $("#captionButton");
 const digitalHumanFrame = $("#digitalHumanFrame");
 const AVATAR_FIRST_SEGMENT_LEAD_MS=320;
-const avatarRuntimeVersion="20260813-restrained-action-v34";
+const avatarRuntimeVersion="20260814-listening-nod-v35";
 const avatarRuntimeUrl=path=>`${path}?v=${avatarRuntimeVersion}`;
 const avatarProfile = new URLSearchParams(location.search).get("profile");
 const selfRecordedProfile = avatarProfile === "self";
@@ -30,6 +31,7 @@ let avatarMode = switchableAvatarProfile
   : "experiment";
 if(!["real","anime","experiment"].includes(avatarMode))avatarMode="real";
 let neuralAvatarProfile = wav2LipAvatarProfile || (switchableAvatarProfile && avatarMode === "real");
+let listeningPreviewActive=false;
 const neuralRenderEndpoint = wav2LipAvatarProfile ? "/api/wav2lip/render" : "/api/dinet/render";
 const streamingAvatarExperiment = new URLSearchParams(location.search).get("streaming") !== "0";
 const continuousVideoExperiment = new URLSearchParams(location.search).get("continuous") !== "0";
@@ -708,6 +710,8 @@ window.addEventListener("message",event=>{
   if(event.data?.type==="dh-live-audio-accepted") portrait.dataset.dhAudioBytes=String(event.data.bytes||0);
   if(event.data?.type==="wav2lip-audio-mode"){portrait.dataset.audioMode=event.data.mode;portrait.dataset.audioGapMs=String(event.data.gapMs||0);avatarPcmReady=event.data.mode==="pcm-ready"||event.data.mode==="pcm";avatarFragmentedVideoReady=event.data.fragmentedVideo===true;portrait.dataset.fragmentedVideo=String(avatarFragmentedVideoReady);}
   if(event.data?.type==="wav2lip-preview-started"&&activeWaitingPreview?.action===event.data.action){activeWaitingPreview.mediaTimeMs=Math.max(0,Number(event.data.currentTime)||0)*1000;activeWaitingPreview.observedAt=performance.now();portrait.dataset.waitingPreviewStarted="true";}
+  if(event.data?.type==="wav2lip-preview-started"&&event.data.purpose==="listening"){portrait.dataset.listeningGesture="started";}
+  if(event.data?.type==="wav2lip-preview-ended"&&event.data.purpose==="listening"){listeningPreviewActive=false;portrait.dataset.listeningGesture="completed";}
   if(event.data?.type==="wav2lip-started"){
     const start=pendingWav2LipStarts.get(event.data.requestId);pendingWav2LipStarts.delete(event.data.requestId);start?.();
     if(Number.isFinite(Number(event.data.handoffLateMs))){portrait.dataset.videoFirstFrameMs=String(event.data.firstFrameMs||0);portrait.dataset.videoHandoffLateMs=String(event.data.handoffLateMs||0);}
@@ -731,7 +735,7 @@ window.addEventListener("message",event=>{
 
 
 const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-if (Recognition) { const recognition = new Recognition(); recognition.lang="zh-CN"; recognition.interimResults=true; recognition.continuous=false; let recognizedText="",recognizedFinal=false, recognitionFailed=false, recognitionRunning=false, restartListeningTimer,listeningGestureTimer,vadStream,vadContext,vadAnalyser,vadSamples,vadFrame,bargeInFrame=0,answerGeneration=0,answerPlaybackEndedAt=0;
+if (Recognition) { const recognition = new Recognition(); recognition.lang="zh-CN"; recognition.interimResults=true; recognition.continuous=false; let recognizedText="",recognizedFinal=false, recognitionFailed=false, recognitionRunning=false, restartListeningTimer,vadStream,vadContext,vadAnalyser,vadSamples,vadFrame,bargeInFrame=0,answerGeneration=0,answerPlaybackEndedAt=0;const listeningGesture=new ListeningGestureGate();
   const updateCallButton=()=>{voiceButton.classList.toggle("call-active",voiceCallActive);voiceButton.setAttribute("aria-pressed",String(voiceCallActive));voiceButton.setAttribute("aria-label",voiceCallActive?"结束通话":"开始通话");micButton.setAttribute("aria-label",voiceCallActive?"结束通话":"开始通话");micButton.title=voiceCallActive?"结束通话":"开始通话";};
   const stopVadLoop=()=>{if(vadFrame)cancelAnimationFrame(vadFrame);vadFrame=0;};
   const stopBargeInLoop=()=>{if(bargeInFrame)cancelAnimationFrame(bargeInFrame);bargeInFrame=0;};
@@ -743,12 +747,21 @@ if (Recognition) { const recognition = new Recognition(); recognition.lang="zh-C
   const startVadLoop=()=>{stopVadLoop();if(!vadAnalyser)return;let noiseFloor=.008,hasSpeech=false,silenceStarted=0;const warmupUntil=performance.now()+320;const inspect=()=>{if(!voiceCallActive||!recognitionRunning||!vadAnalyser){vadFrame=0;return;}vadAnalyser.getFloatTimeDomainData(vadSamples);let energy=0;for(const value of vadSamples)energy+=value*value;const rms=Math.sqrt(energy/vadSamples.length),now=performance.now();if(now<warmupUntil&&rms<.025)noiseFloor=noiseFloor*.82+rms*.18;const threshold=Math.max(.016,noiseFloor*2.35);if(rms>threshold){hasSpeech=true;silenceStarted=0;}else if(hasSpeech&&recognizedText){silenceStarted ||= now;const silenceTargetMs=recognitionSilenceMs({final:recognizedFinal,text:recognizedText});if(now-silenceStarted>=silenceTargetMs){portrait.dataset.vadSilenceMs=String(Math.round(now-silenceStarted));portrait.dataset.vadSilenceTargetMs=String(silenceTargetMs);stopVadLoop();turnGate.requestStop({final:recognizedFinal});try{recognition.stop();}catch{}return;}}vadFrame=requestAnimationFrame(inspect);};vadFrame=requestAnimationFrame(inspect);};
   const startListening=()=>{if(!voiceCallActive)return;clearTimeout(restartListeningTimer);if(recognitionRunning){restartListeningTimer=setTimeout(startListening,100);return;}try{recognition.start()}catch{restartListeningTimer=setTimeout(startListening,350)}};
   const scheduleListening=(delay=350)=>{clearTimeout(restartListeningTimer);if(voiceCallActive)restartListeningTimer=setTimeout(startListening,delay);};
-  const clearListeningGesture=()=>{clearTimeout(listeningGestureTimer);listeningGestureTimer=0;};
-  const scheduleListeningGesture=()=>{if(listeningGestureTimer||avatarMode!=="anime")return;listeningGestureTimer=setTimeout(()=>{listeningGestureTimer=0;if(voiceCallActive&&recognitionRunning&&recognizedText)setDigitalHumanAction("nod",{force:true,hold:false}).catch(()=>{});},1400+Math.random()*700);};
+  const clearListeningGesture=()=>{listeningGesture.cancel();if(listeningPreviewActive)digitalHumanFrame?.contentWindow?.postMessage({type:"wav2lip-preview-clear"},location.origin);listeningPreviewActive=false;if(["scheduled","triggered","started"].includes(portrait.dataset.listeningGesture))portrait.dataset.listeningGesture="cancelled";};
+  const scheduleListeningGesture=()=>{
+    if(listeningGesture.schedule({canRun:()=>Boolean(voiceCallActive&&recognitionRunning&&recognizedText),onTrigger:()=>{
+      portrait.dataset.listeningGesture="triggered";
+      if(avatarMode==="anime"){portrait.dataset.listeningGesture="started";setDigitalHumanAction("nod",{force:true,hold:false,behavior:{purpose:"listening",intensity:.2,holdMs:1300}}).catch(()=>{});}
+      else if(neuralAvatarProfile){
+        listeningPreviewActive=true;
+        digitalHumanFrame?.contentWindow?.postMessage({type:"wav2lip-preview",action:"nod",url:"/dh-live/actions/bedroom_agree_test/01.mp4",purpose:"listening",loop:false,durationMs:3600},location.origin);
+      }
+    }}))portrait.dataset.listeningGesture="scheduled";
+  };
   const endCall=()=>{voiceCallActive=false;answerGeneration++;clearTimeout(restartListeningTimer);clearListeningGesture();turnGate.cancel();if(recognitionRunning)recognition.abort();releaseVad();stopSpeech();micButton.classList.remove("listening");voiceButton.classList.remove("listening","thinking","speaking");updateCallButton();setVoiceState("idle","通话已结束");statusText.textContent="在线 · 随时听你说";};
   const beginCall=async()=>{if(voiceCallActive)return;voiceCallActive=true;stopSpeech();void unlockAvatarAudio();digitalHumanFrame?.contentWindow?.postMessage({type:"wav2lip-audio-unlock"},location.origin);updateCallButton();setVoiceState("idle","正在准备麦克风…");try{await ensureVad();}catch{}if(voiceCallActive){setVoiceState("idle","通话已开始，请自然说话");scheduleListening(80);}};
   const toggleCall=()=>voiceCallActive?endCall():beginCall();
-  recognition.onstart=()=>{recognitionRunning=true;stopBargeInLoop();if(answerPlaybackEndedAt){portrait.dataset.answerEndToListeningMs=String(Math.round(performance.now()-answerPlaybackEndedAt));answerPlaybackEndedAt=0;}recognizedText="";recognizedFinal=false;recognitionFailed=false;turnGate.begin();delete portrait.dataset.vadSilenceMs;delete portrait.dataset.vadSilenceTargetMs;delete portrait.dataset.vadStopToSubmitMs;delete portrait.dataset.recognitionCommitTrigger;clearListeningGesture();conversationActions.finishTurn();digitalHumanFrame?.contentWindow?.postMessage({type:"vrm-finish-gesture"},location.origin);micButton.classList.add("listening");setVoiceState("listening","请自然说话，停顿后我会立即回答");setEmotion("curious");statusText.textContent="我在听…";startVadLoop();};
+  recognition.onstart=()=>{recognitionRunning=true;stopBargeInLoop();if(answerPlaybackEndedAt){portrait.dataset.answerEndToListeningMs=String(Math.round(performance.now()-answerPlaybackEndedAt));answerPlaybackEndedAt=0;}recognizedText="";recognizedFinal=false;recognitionFailed=false;turnGate.begin();delete portrait.dataset.vadSilenceMs;delete portrait.dataset.vadSilenceTargetMs;delete portrait.dataset.vadStopToSubmitMs;delete portrait.dataset.recognitionCommitTrigger;clearListeningGesture();listeningGesture.reset();delete portrait.dataset.listeningGesture;conversationActions.finishTurn();digitalHumanFrame?.contentWindow?.postMessage({type:"vrm-finish-gesture"},location.origin);micButton.classList.add("listening");setVoiceState("listening","请自然说话，停顿后我会立即回答");setEmotion("curious");statusText.textContent="我在听…";startVadLoop();};
   recognition.onresult=e=>{const results=Array.from(e.results);recognizedText=results.map(r=>r[0].transcript).join("").trim();recognizedFinal=Boolean(results.at(-1)?.isFinal);turnGate.update(recognizedText,{final:recognizedFinal});if(recognizedText)scheduleListeningGesture();};
   recognition.onend=()=>{stopVadLoop();clearListeningGesture();recognitionRunning=false;micButton.classList.remove("listening");voiceButton.classList.remove("listening");if(!voiceCallActive)return;if(turnGate.committed)return;if(turnGate.end())return;recognizedText="";if(!recognitionFailed){setVoiceState("idle","我还在听，请继续说");scheduleListening(350)}};
   recognition.onerror=e=>{stopVadLoop();clearListeningGesture();micButton.classList.remove("listening");voiceButton.classList.remove("listening");if(turnGate.committed)return;recognitionFailed=true;turnGate.fail();const denied=e.error==="not-allowed"||e.error==="service-not-allowed";if(denied){voiceCallActive=false;releaseVad();updateCallButton();setVoiceState("idle","请允许浏览器使用麦克风后重试");}else if(voiceCallActive){setVoiceState("idle","没有听清楚，正在继续聆听");scheduleListening(500)}};
