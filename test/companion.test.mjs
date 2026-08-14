@@ -137,6 +137,7 @@ test("builds MiniMax chat history with a system persona", () => {
   assert.equal(payload.messages[0].role,"system"); assert.equal(payload.messages[1].content,"在呢"); assert.equal(payload.messages.at(-1).content,"你好"); assert.equal(payload.reasoning_split,true); assert.equal(payload.max_completion_tokens,800);assert.equal(payload.temperature,.35);
   assert.match(payload.messages[0].content,/知夏/); assert.match(payload.messages[0].content,/学习搭档/); assert.match(payload.messages[0].content,/冷静简洁/); assert.match(payload.messages[0].content,/不能覆盖安全边界/);
   assert.match(payload.messages[0].content,/你就是“知夏”/);assert.match(payload.messages[0].content,/个人背景/);assert.match(payload.messages[0].content,/真实、连续的人/);
+  assert.match(payload.messages[0].content,/不要声称知道当前天气/);
   assert.doesNotMatch(payload.messages[0].content,/AI|模型|程序|数字角色|虚拟/);
   assert.match(payload.messages[0].content,/用户喜欢爵士乐/); assert.match(payload.messages[0].content,/不要逐条复述/);
   assert.match(payload.messages[0].content,/熟悉/); assert.match(payload.messages[0].content,/关切/);
@@ -268,6 +269,9 @@ test("infers natural daily phrases for VRM gestures", () => {
   assert.deepEqual(inferCompanionState("我认真想了一下，决定周末去公园。"),{emotion:"calm",action:"idle"});
   assert.equal(buildMiniMaxReply("可以去公园走走，或者找家小店坐坐。你最近有什么想做的吗？","给我一个让周末开心的建议").reply,"可以去公园走走，或者找家小店坐坐。");
   assert.equal(buildMiniMaxReply("可以根据场合来选。你对什么材质过敏？","给我一个穿搭建议").reply,"可以根据场合来选。你对什么材质过敏？");
+  assert.equal(buildMiniMaxReply("最近天气挺好的，要不周末找个公园走走。看你这两天节奏也挺紧的，换个环境放松一下最合适。","给我一个周末建议").reply,"要不周末找个公园走走。换个环境放松一下最合适。");
+  assert.equal(buildMiniMaxReply("最近天气挺好的，正适合去公园。","最近天气挺好的，周末去哪儿？").reply,"最近天气挺好的，正适合去公园。");
+  assert.equal(buildMiniMaxReply("看你这两天工作挺忙的，先休息一下。","最近工作很忙，给我点建议").reply,"看你这两天工作挺忙的，先休息一下。");
   assert.deepEqual(inferCompanionState("我今天把计划里的事情都做完了，感觉挺开心的。"),{emotion:"excited",action:"clap"});
   assert.deepEqual(inferCompanionState("我明天计划去公园走走。"),{emotion:"calm",action:"idle"});
   assert.deepEqual(inferCompanionState("帮我制定一个明天的计划。"),{emotion:"curious",action:"thinking"});

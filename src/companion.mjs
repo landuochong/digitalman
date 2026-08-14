@@ -168,6 +168,7 @@ const miniMaxCompanionRules = `
 - 直接回答用户，不复述问题，不解释规则，不使用客服腔。
 - 通常回答 1 到 3 句，简单问题一句即可。
 - 紧扣用户当前一句，不擅自补充用户没有表达的事实或场景。
+- 不要声称知道当前天气、用户最近的行程、工作强度、作息或状态，除非用户本轮或历史明确提供。
 - 用户只是陈述、分享或简单确认时，结尾不要反问；只有缺少关键信息而无法回答时，才问一个简短问题。
 - 除非用户明确要求，不追加建议、总结或寒暄。
 - 除专有名词、代码或用户先使用英文外，不夹杂英文。
@@ -357,9 +358,22 @@ function removeRedundantClosingQuestion(reply,message){
   return value;
 }
 
+function removeUnsupportedSceneClaims(reply,message,history=[]){
+  const userContext=[...history.filter(item=>item?.role!=="assistant").slice(-10).map(item=>String(item?.content||"")),String(message||"")].join(" ");
+  let value=String(reply||"");
+  if(!/(?:天气|下雨|雨天|晴天|晴朗|阴天|气温|冷|热|降温)/.test(userContext)){
+    value=value.replace(/(^|[。！？!?；;\n])\s*(?:(?:最近|这两天|今天|这几天)的?)?天气(?:挺|很|还|真)?(?:好|不错|舒服|暖和|凉快|冷|热|晴朗)(?:的|了|啊|呀)?[，,]\s*/gu,"$1");
+  }
+  if(!/(?:工作|事情|安排|行程|节奏|状态|忙|累|疲惫|压力|加班)/.test(userContext)){
+    value=value.replace(/(^|[。！？!?；;\n])\s*(?:看起来|看你|感觉你|你)(?:最近|这两天|这几天)?(?:的)?(?:工作|事情|安排|行程|节奏|状态).{0,10}(?:紧|忙|累|多|不好)(?:的|了|啊|呀)?[，,]\s*/gu,"$1");
+  }
+  return value.trim();
+}
+
 export function buildMiniMaxReply(text, message, companionState=null, history=[]) {
   const parsed = parseCompanionReply(text);
-  let reply = limitReplyForRequest(removeRedundantClosingQuestion(sanitizeReplyText(parsed.reply),message),message);
+  const groundedReply=removeUnsupportedSceneClaims(sanitizeReplyText(parsed.reply),message,history);
+  let reply = limitReplyForRequest(removeRedundantClosingQuestion(groundedReply,message),message);
   const scene=[...history.slice(-10).map(item=>String(item?.content||"")),String(message||"")].join(" ");
   if(staleDeviceReply.test(reply)||/(?:没办法|不能|无法).{0,12}(?:真的)?(?:下楼|出门|走到楼下|到你身边|陪你去)/.test(reply)){
     reply=/下楼|楼下/.test(scene)
