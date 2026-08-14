@@ -16,6 +16,7 @@ let activeSegmentSequence=-1;
 let nextPlaybackSequence=0;
 let streamEnded=true;
 let idleRevealTimer=0;
+let streamGapIdleTimer=0;
 let pendingIdleTimeMs=null;
 let pendingIdleLingerMs=120;
 let streamAudioContext=null;
@@ -31,6 +32,7 @@ const streamItems=new Map();
 const cancelledRequests=new Set();
 const MAX_VIDEO_AHEAD_SECONDS=4;
 const MAX_AUDIO_AHEAD_SECONDS=4;
+const STREAM_GAP_IDLE_MS=320;
 
 function notify(type, data = {}) { parent.postMessage({ type, ...data }, location.origin); }
 function supportsFragmentedVideo(){return typeof MediaSource!=="undefined"&&MediaSource.isTypeSupported?.('video/mp4; codecs="avc1.64001f"')===true;}
@@ -62,6 +64,7 @@ function cancelStreamRequest(requestId){
 }
 function playIdle() {
   clearTimeout(idleRevealTimer);idleRevealTimer=0;
+  clearTimeout(streamGapIdleTimer);streamGapIdleTimer=0;
   document.body.classList.remove("needs-play"); state.onclick = null;
   speechVideo.classList.remove("active");
   speechVideo.pause();
@@ -218,6 +221,7 @@ async function playFragmentedSegment(item,token){
       if(catchup)try{playback.video.currentTime=catchup;}catch{}
       await playback.video.play();if(token!==playToken||item.cancelled||requestCancelled(item.requestId))return false;
       playback.audioOrigin=item.audioStart;playback.started=true;revealSegment(item,playback.video);
+      item.startedNotified=true;
       notify("wav2lip-started",{requestId:item.requestId,sequence:item.playbackSequence,firstFrameMs:Math.round(performance.now()-playRequestedAt),handoffLateMs:Math.round(Math.max(0,(streamAudioContext.currentTime-item.audioStart)*1000)),continuousVideo:true});return true;
     })();
     if(!await playback.startPromise)return;
@@ -228,10 +232,28 @@ async function playFragmentedSegment(item,token){
       if(playback.video.paused)await playback.video.play().catch(()=>{});
       notify("wav2lip-video-sync",{sequence:item.playbackSequence,driftMs,maxDriftMs:playback.maxDriftMs});
     }
+    if(!item.startedNotified){
+      const resumedFromGap=activeSegment!==playback.video;
+      if(resumedFromGap){
+        const prestartMs=videoPrestartDelayMs(item.audioStart,streamAudioContext.currentTime);if(prestartMs)await new Promise(resolve=>setTimeout(resolve,prestartMs));
+        if(token!==playToken||item.cancelled||requestCancelled(item.requestId))return;
+        await playback.video.play().catch(()=>{});await waitForFirstVideoFrame(playback.video);
+      }
+      const boundaryWaitMs=videoBoundaryDelayMs(item.audioStart,streamAudioContext.currentTime);if(boundaryWaitMs)await new Promise(resolve=>setTimeout(resolve,boundaryWaitMs));
+      if(token!==playToken||item.cancelled||requestCancelled(item.requestId))return;
+      if(playback.video.paused)await playback.video.play().catch(()=>{});
+      revealSegment(item,playback.video);item.startedNotified=true;
+      notify("wav2lip-started",{requestId:item.requestId,sequence:item.playbackSequence,firstFrameMs:0,handoffLateMs:Math.round(Math.max(0,(streamAudioContext.currentTime-item.audioStart)*1000)),continuousVideo:true,resumedFromGap});
+    }
     const remainingMs=Math.max(0,(item.audioEnd-streamAudioContext.currentTime)*1000);if(remainingMs)await new Promise(resolve=>setTimeout(resolve,remainingMs));
     if(token===playToken&&!item.cancelled)notify("wav2lip-ended",{requestId:item.requestId,streamId:item.segment?.id,sequence:item.segment?.sequence,playbackSequence:item.playbackSequence,continuousVideo:true});
   }catch{if(token===playToken)notify("wav2lip-error",{requestId:item.requestId,streamId:item.segment?.id,sequence:item.segment?.sequence,playbackSequence:item.playbackSequence,error:"continuous-media-unavailable"});}
-  finally{forgetStreamItem(item);externalSegmentsPending=Math.max(0,externalSegmentsPending-1);if(token===playToken&&!externalSegmentsPending&&!segmentsPreparing&&!segmentPlaying&&!segmentQueue.length&&streamEnded)scheduleIdleReveal(pendingIdleLingerMs,pendingIdleTimeMs);}
+  finally{
+    forgetStreamItem(item);externalSegmentsPending=Math.max(0,externalSegmentsPending-1);
+    if(token===playToken&&!externalSegmentsPending&&!segmentsPreparing&&!segmentPlaying&&!segmentQueue.length){
+      if(streamEnded)scheduleIdleReveal(pendingIdleLingerMs,pendingIdleTimeMs);else scheduleStreamGapIdle();
+    }
+  }
 }
 
 async function waitForFirstVideoFrame(video){
@@ -280,7 +302,9 @@ async function playExternalSegment(item,token){
     forgetStreamItem(item);externalSegmentsPending=Math.max(0,externalSegmentsPending-1);
     if(token!==playToken){video.pause();video.remove();return;}
     if(!video.classList.contains("active")){video.pause();video.remove();}
-    if(!externalSegmentsPending&&!segmentsPreparing&&!segmentPlaying&&!segmentQueue.length&&streamEnded)scheduleIdleReveal(pendingIdleLingerMs,pendingIdleTimeMs);
+    if(!externalSegmentsPending&&!segmentsPreparing&&!segmentPlaying&&!segmentQueue.length){
+      if(streamEnded)scheduleIdleReveal(pendingIdleLingerMs,pendingIdleTimeMs);else scheduleStreamGapIdle();
+    }
   }
 }
 
@@ -320,7 +344,9 @@ async function playQueuedSegment(){
   finally{
     forgetStreamItem(item);segmentPlaying=false;
     if(segmentQueue.length)playQueuedSegment();
-    else if(token===playToken&&!externalSegmentsPending&&streamEnded)scheduleIdleReveal(pendingIdleLingerMs,pendingIdleTimeMs);
+    else if(token===playToken&&!externalSegmentsPending){
+      if(streamEnded)scheduleIdleReveal(pendingIdleLingerMs,pendingIdleTimeMs);else scheduleStreamGapIdle();
+    }
   }
 }
 
@@ -338,6 +364,7 @@ async function alignIdleToTime(speechTime){
 }
 
 function scheduleIdleReveal(delayMs=120,idleTimeMs=null){
+  clearTimeout(streamGapIdleTimer);streamGapIdleTimer=0;
   clearTimeout(idleRevealTimer);
   if(Number.isFinite(Number(idleTimeMs)))void alignIdleToTime(Number(idleTimeMs)/1000);
   const audioRemainingMs=streamAudioContext?Math.max(0,(streamAudioTail-streamAudioContext.currentTime)*1000):0;
@@ -352,6 +379,27 @@ function scheduleIdleReveal(delayMs=120,idleTimeMs=null){
       document.body.classList.remove("loading");
     });
   },Math.max(audioRemainingMs,Math.min(400,Math.max(80,Number(delayMs)||120))));
+}
+
+function scheduleStreamGapIdle(delayMs=STREAM_GAP_IDLE_MS){
+  clearTimeout(streamGapIdleTimer);
+  if(streamEnded||segmentPlaying||externalSegmentsPending||segmentsPreparing||segmentQueue.length)return;
+  const token=playToken;
+  streamGapIdleTimer=setTimeout(async()=>{
+    streamGapIdleTimer=0;
+    if(token!==playToken||streamEnded||segmentPlaying||externalSegmentsPending||segmentsPreparing||segmentQueue.length)return;
+    const previous=activeSegment;if(!previous)return;
+    const sourceTime=Math.max(0,Number(fragmentedPlayback?.video?.currentTime||previous.currentTime)||0);
+    await alignIdleToTime(sourceTime);
+    if(token!==playToken||streamEnded||segmentPlaying||externalSegmentsPending||segmentsPreparing||segmentQueue.length||activeSegment!==previous)return;
+    activeSegment=null;idleVideo.play().catch(()=>{});
+    requestAnimationFrame(()=>{
+      previous.classList.remove("active");
+      if(previous!==fragmentedPlayback?.video)setTimeout(()=>{previous.pause();previous.remove();},180);
+      document.body.classList.remove("loading");
+      notify("wav2lip-gap-idle",{gapMs:Math.max(0,Number(delayMs)||0),sourceTimeMs:Math.round(sourceTime*1000)});
+    });
+  },Math.max(120,Number(delayMs)||STREAM_GAP_IDLE_MS));
 }
 
 function reflectedIdleTime(speechTime) {
@@ -379,7 +427,7 @@ window.addEventListener("message", async event => {
   if(event.data?.type==="wav2lip-cancel"){cancelStreamRequest(event.data.requestId);return;}
   if (event.data?.type === "wav2lip-clear") { playToken++; document.body.classList.remove("loading"); playIdle(); return; }
   if(event.data?.type==="wav2lip-enqueue"&&event.data.url){
-    clearTimeout(idleRevealTimer);idleRevealTimer=0;streamEnded=false;
+    clearTimeout(idleRevealTimer);idleRevealTimer=0;clearTimeout(streamGapIdleTimer);streamGapIdleTimer=0;streamEnded=false;
     document.body.classList.add("loading");cancelledRequests.delete(event.data.requestId);const item=preloadSegment({...event.data,playbackSequence:nextPlaybackSequence++,receivedAt:performance.now()});streamItems.set(item.requestId,item);
     const token=playToken,pcmBytesPromise=loadPcmBytes(item.segment?.audio).catch(()=>null);
     if(item.fragmentedVideo)item.fragmentReadyToPlay=queueFragmentedVideo(item,token);

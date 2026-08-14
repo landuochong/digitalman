@@ -113,6 +113,10 @@ test("neural avatar keeps a persistent idle layer behind speech", async () => {
   assert.match(script,/speech-segment/);
   assert.match(script,/requestVideoFrameCallback/);
   assert.match(script,/wav2lip-stream-end/);
+  assert.match(script,/const STREAM_GAP_IDLE_MS=320/);
+  assert.match(script,/else scheduleStreamGapIdle\(\)/);
+  assert.match(script,/notify\("wav2lip-gap-idle"/);
+  assert.ok(script.indexOf("clearTimeout(streamGapIdleTimer)")<script.indexOf("streamEnded=false"));
   assert.match(script,/activeSegment/);
   assert.match(script,/createBufferSource/);
   assert.match(script,/pcm_s16le/);
@@ -147,6 +151,9 @@ test("neural avatar keeps a persistent idle layer behind speech", async () => {
   assert.match(script,/wav2lip-media-gate/);
   assert.ok(script.indexOf("item.fragmentReadyToPlay=queueFragmentedVideo")<script.indexOf("item.audioReady=audioScheduleChain"));
   assert.match(script,/continuousVideoSync\(playback\.audioOrigin,streamAudioContext\.currentTime/);
+  assert.match(script,/if\(!item\.startedNotified\)/);
+  assert.match(script,/resumedFromGap=activeSegment!==playback\.video/);
+  assert.match(script,/resumedFromGap\}\);/);
   assert.match(script,/videoPrestartDelayMs/);
   assert.match(script,/videoBoundaryDelayMs/);
   assert.match(script,/wav2lip-audio-unlock/);
