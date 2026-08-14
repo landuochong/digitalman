@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { normalizeMiniMaxTtsEmotion, prepareMiniMaxTtsConnection, streamMiniMaxPcm } from "../src/minimax-stream-tts.mjs";
+import { miniMaxTtsConnectionMatches, normalizeMiniMaxTtsEmotion, prepareMiniMaxTtsConnection, streamMiniMaxPcm } from "../src/minimax-stream-tts.mjs";
 
 class FakeWebSocket {
   static OPEN=1;
@@ -74,6 +74,15 @@ test("primes the TTS task while reply text is still pending",async()=>{
   assert.equal(taskStart.voice_setting.voice_id,"voice");
   assert.equal(taskStart.voice_setting.emotion,"happy");
   assert.deepEqual(connection.socket.sent.filter(item=>item.event==="task_start").length,1);
+});
+
+test("only reuses a primed task when model, voice, and normalized emotion match",async()=>{
+  const connection=prepareMiniMaxTtsConnection({apiKey:"secret",WebSocketImpl:FakeWebSocket,primeTask:true,model:"speech-2.8-turbo",voice:"voice-a",emotion:"excited"});
+  assert.equal(miniMaxTtsConnectionMatches(connection,{model:"speech-2.8-turbo",voice:"voice-a",emotion:"happy"}),true);
+  assert.equal(miniMaxTtsConnectionMatches(connection,{model:"speech-2.8-turbo",voice:"voice-b",emotion:"happy"}),false);
+  assert.equal(miniMaxTtsConnectionMatches(connection,{model:"speech-2.8-turbo",voice:"voice-a",emotion:"sad"}),false);
+  await assert.rejects(()=>streamMiniMaxPcm({apiKey:"secret",text:"你好",model:"speech-2.8-turbo",voice:"voice-a",emotion:"sad",connection,onAudio:()=>{}}),/配置与当前语音不一致/);
+  assert.equal(connection.used,false);
 });
 
 test("cancels a speculative connection before it starts speaking",async()=>{

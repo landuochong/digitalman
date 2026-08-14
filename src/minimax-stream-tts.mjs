@@ -5,6 +5,16 @@ const SUPPORTED_TTS_EMOTIONS=new Set(["happy","sad","angry","fearful","disgusted
 const TTS_EMOTION_ALIASES={excited:"happy",caring:"neutral",calm:"neutral",curious:"neutral"};
 export function normalizeMiniMaxTtsEmotion(emotion){const value=String(emotion||"").toLowerCase(),normalized=TTS_EMOTION_ALIASES[value]||value;return SUPPORTED_TTS_EMOTIONS.has(normalized)?normalized:"";}
 
+function normalizedTaskConfig({model="speech-2.8-turbo",voice,emotion}={}){
+  return{model:String(model||""),voice:String(voice||""),emotion:normalizeMiniMaxTtsEmotion(emotion)};
+}
+
+export function miniMaxTtsConnectionMatches(connection,config={}){
+  if(!connection?.taskReady)return true;
+  const expected=normalizedTaskConfig(config),prepared=connection.taskConfig;
+  return Boolean(prepared&&prepared.model===expected.model&&prepared.voice===expected.voice&&prepared.emotion===expected.emotion);
+}
+
 function decodeAudio(value) {
   const text=String(value||"");
   return /^[0-9a-f]+$/i.test(text)&&text.length%2===0 ? Buffer.from(text,"hex") : Buffer.from(text,"base64");
@@ -49,7 +59,7 @@ export function prepareMiniMaxTtsConnection({
 }={}) {
   if(!apiKey)throw new Error("缺少 MiniMax API Key");
   const socket=new WebSocketImpl(url,{headers:{Authorization:`Bearer ${apiKey}`}}),inbox=messageInbox(socket),startedAt=performance.now();
-  const connection={socket,inbox,startedAt,ready:null,taskReady:null,used:false,WebSocketImpl};
+  const connection={socket,inbox,startedAt,ready:null,taskReady:null,taskConfig:null,used:false,WebSocketImpl};
   connection.ready=(async()=>{
     while(true){
       const message=await nextMessage(connection);
@@ -62,6 +72,7 @@ export function prepareMiniMaxTtsConnection({
   // for the eventual consumer.
   connection.ready.catch(()=>{});
   if(primeTask){
+    connection.taskConfig=normalizedTaskConfig({model,voice,emotion});
     connection.taskReady=connection.ready.then(async()=>{
       socket.send(JSON.stringify(taskStartMessage({model,voice,emotion})));
       while(true){
@@ -72,7 +83,14 @@ export function prepareMiniMaxTtsConnection({
     });
     connection.taskReady.catch(()=>{});
   }
-  connection.close=()=>{if(socket.readyState===WebSocketImpl.OPEN)socket.close(1000,"unused");};
+  connection.close=()=>{
+    const close=()=>{if(socket.readyState===WebSocketImpl.OPEN)socket.close(1000,"unused");};
+    if(socket.readyState===WebSocketImpl.OPEN)close();
+    else if(socket.readyState===0){
+      if(typeof socket.once==="function")socket.once("open",close);
+      else if(typeof socket.on==="function")socket.on("open",close);
+    }
+  };
   return connection;
 }
 
@@ -82,6 +100,10 @@ export async function streamMiniMaxPcm({
 }) {
   if(!apiKey)throw new Error("缺少 MiniMax API Key");
   const prepared=connection||prepareMiniMaxTtsConnection({apiKey,url,WebSocketImpl});
+  if(connection&&!miniMaxTtsConnectionMatches(connection,{model,voice,emotion})){
+    connection.close();
+    throw new Error("MiniMax TTS 预连接配置与当前语音不一致");
+  }
   if(prepared.used)throw new Error("MiniMax TTS 预连接已经使用");
   prepared.used=true;
   const socket=prepared.socket;

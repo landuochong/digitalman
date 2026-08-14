@@ -190,6 +190,7 @@ test("stream endpoint reports TTS and first playable segment timing",async()=>{
   assert.match(server,/prewarmMiniMaxPcm\(\{text:backchannel\.text,voice,emotion:backchannel\.emotion,signal:client\.signal\}\)/);
   assert.match(server,/trimPcm16Silence\(Buffer\.concat\(chunks\)\)/);
   assert.match(server,/connection:preparedConnection,trimLeadingSilence:true/);
+  assert.match(server,/takeTtsConnection\(data\.ttsConnectionId,\{model:miniMaxTtsModel,voice:resolvedVoice,emotion:data\.emotion\}\)/);
   assert.match(server,/onAudio:appendPcm,trimLeadingSilence:true/);
   assert.match(server,/if\(client\.signal\.aborted\)return/);
   assert.match(server,/connection:preparedConnection/);

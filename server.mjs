@@ -11,7 +11,7 @@ import { DhActionTaskStore, isLoopbackAddress, saveActionVideo } from "./src/dh-
 import { Wav2LipRenderStore } from "./src/wav2lip-render.mjs";
 import { DINetRenderStore } from "./src/dinet-render.mjs";
 import { DINetStreamSessionStore, encodePcm16Wav } from "./src/dinet-stream.mjs";
-import { normalizeMiniMaxTtsEmotion, prepareMiniMaxTtsConnection, streamMiniMaxPcm } from "./src/minimax-stream-tts.mjs";
+import { miniMaxTtsConnectionMatches, normalizeMiniMaxTtsEmotion, prepareMiniMaxTtsConnection, streamMiniMaxPcm } from "./src/minimax-stream-tts.mjs";
 import { BoundedAsyncCache } from "./src/audio-cache.mjs";
 import { cacheControlForStaticPath, parseByteRange } from "./src/static-media.mjs";
 import { EphemeralPcmStore } from "./src/ephemeral-pcm-store.mjs";
@@ -111,10 +111,14 @@ function prepareTtsConnection({voice,emotion}={}){
   return id;
 }
 
-function takeTtsConnection(id){
+function takeTtsConnection(id,config={}){
   const entry=preparedTtsConnections.get(String(id||""));
   if(!entry)return null;
   preparedTtsConnections.delete(String(id));clearTimeout(entry.timer);
+  if(!miniMaxTtsConnectionMatches(entry.connection,config)){
+    entry.connection.close();
+    return null;
+  }
   return entry.connection;
 }
 
@@ -652,7 +656,7 @@ export const server = http.createServer(async (req, res) => {
           sendEvent(res,"audio-ready",{audioMs:cached.metrics.audioMs});
           appendPcm(cached.pcm);ttsMetrics={...cached.metrics,firstAudioMs:0,totalMs:0,cached:true};
         }else{
-          const preparedConnection=takeTtsConnection(data.ttsConnectionId);
+          const preparedConnection=takeTtsConnection(data.ttsConnectionId,{model:miniMaxTtsModel,voice:resolvedVoice,emotion:data.emotion});
           try{
             ttsMetrics=await streamMiniMaxPcm({
               apiKey,text,model:miniMaxTtsModel,voice:resolvedVoice,emotion:data.emotion,
