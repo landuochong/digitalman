@@ -224,12 +224,12 @@ export function inferCompanionState(message, reply = "", companionState=null) {
   if (/害羞|脸红|不好意思|真可爱|好可爱|你.{0,6}(?:可爱|漂亮|好看|温柔|贴心|优秀|真棒|厉害)|喜欢你|夸夸你/.test(String(message))) return { emotion:"happy", action:"shy" };
   if (/你(?:真的)?(?:很|太)(?:棒|厉害|优秀|善良|贴心|了不起)|(?:真|很)(?:棒|厉害|优秀|善良|贴心|了不起)|做得(?:很好|真棒)|为你(?:感到)?骄傲/.test(String(reply))) return { emotion:"happy", action:"thumbs_up" };
   if (/(?:挺|很)(?:好|不错|有心)|真(?:不错|有心)/.test(String(reply))) return { emotion:"happy", action:"nod" };
-  if (/鼓掌|拍手|庆祝一下|帮我庆祝|为我庆祝|成功|搞定|太好了|好消息|恭喜|完成|做到了|通过了|赢了|录取|升职|顺利|终于/.test(userMessage)) {
+  if (/鼓掌|拍手|庆祝一下|帮我庆祝|为我庆祝|成功|搞定|太好了|好消息|恭喜|完成|做到了|(?:做完|办完|搞完)(?:了|啦)|通过了|赢了|录取|升职|顺利|终于/.test(userMessage)) {
     return { emotion:"excited", action:"clap" };
   }
   if (/惊讶|没想到|居然|竟然|真的假的|真的吗|不会吧|天啊|我的天|怎么可能|太夸张|吓我一跳|震惊|哇/.test(userMessage)) return { emotion:"excited", action:"surprise" };
   if (/不确定|不知道|也许|可能吧/.test(userMessage)) return { emotion:"curious", action:"shrug" };
-  if (/[?？]|为什么|怎么|如何|觉得|认为|怎么办|能不能|可以吗|要不要|推荐|帮我想|分析|选择|哪个好|安排|规划|计划|排一下|排一排/.test(String(message))&&!isPersonalPreferenceQuestion(userMessage)) return { emotion:"curious", action:"thinking" };
+  if ((/[?？]|为什么|怎么|如何|觉得|认为|怎么办|能不能|可以吗|要不要|推荐|帮我想|分析|选择|哪个好/.test(userMessage)||isPlanningRequest(userMessage))&&!isPersonalPreferenceQuestion(userMessage)) return { emotion:"curious", action:"thinking" };
   if (/你好|嗨|哈喽|嘿|早上好|中午好|下午好|晚上好|在吗|hello|hi/i.test(String(message))) return { emotion:"happy", action:"wave_approval" };
   if(isPersonalPreferenceQuestion(userMessage))return{emotion:"happy",action:"nod"};
   if(isPositiveLifeShare(userMessage))return {emotion:"happy",action:"nod"};
@@ -270,6 +270,11 @@ function isPositiveLifeShare(input){
 }
 
 function isPersonalPreferenceQuestion(input){return /(?:你|平时|周末|平常).{0,8}(?:喜欢|爱好|兴趣|常做|会做|怎么过|如何过)/.test(String(input||""));}
+
+function isPlanningRequest(input){
+  const value=String(input||"");
+  return /(?:帮我|请你|能不能|可以帮我|想让你).{0,14}(?:安排|规划|计划|排一下|排一排)|(?:怎么|如何|怎样).{0,10}(?:安排|规划|计划)|(?:制定|列|做|排)(?:一个|个|一下)?(?:安排|规划|计划|日程)/.test(value);
+}
 
 // This is a short, locally generated conversational backchannel, not the final
 // answer. It is emitted only when the cloud model has not produced speech in

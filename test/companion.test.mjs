@@ -253,6 +253,9 @@ test("infers natural daily phrases for VRM gestures", () => {
   assert.deepEqual(inferCompanionState("帮我安排一下","这样不会太累，也没压力"),{emotion:"curious",action:"thinking"});
   assert.deepEqual(inferCompanionState("帮我分析一下应该选哪个好"), { emotion:"curious", action:"thinking" });
   assert.deepEqual(inferCompanionState("周末帮我安排学习和运动"), { emotion:"curious", action:"thinking" });
+  assert.deepEqual(inferCompanionState("我今天把计划里的事情都做完了，感觉挺开心的。"),{emotion:"excited",action:"clap"});
+  assert.deepEqual(inferCompanionState("我明天计划去公园走走。"),{emotion:"calm",action:"idle"});
+  assert.deepEqual(inferCompanionState("帮我制定一个明天的计划。"),{emotion:"curious",action:"thinking"});
   assert.deepEqual(inferCompanionState("天啊，不会吧"), { emotion:"excited", action:"surprise" });
   assert.deepEqual(inferCompanionState("哇，真的吗"), { emotion:"excited", action:"surprise" });
   assert.deepEqual(inferCompanionState("我突然想到一件事"),{emotion:"calm",action:"idle"});
