@@ -15,7 +15,7 @@ const micButton = $("#micButton"), modeBanner = $("#modeBanner"), statusText = $
 const voiceButton = $("#voiceButton"), voicePrompt = $("#voicePrompt"), liveTranscript = $("#liveTranscript"), captionButton = $("#captionButton");
 const digitalHumanFrame = $("#digitalHumanFrame");
 const AVATAR_FIRST_SEGMENT_LEAD_MS=320;
-const avatarRuntimeVersion="20260814-stream-gap-v37";
+const avatarRuntimeVersion="20260814-gap-preview-v38";
 const avatarRuntimeUrl=path=>`${path}?v=${avatarRuntimeVersion}`;
 const avatarProfile = new URLSearchParams(location.search).get("profile");
 const selfRecordedProfile = avatarProfile === "self";
@@ -539,7 +539,7 @@ function compactUploadedHistoryContent(value,limit=600){
 async function reply(message) {
   sendButton.disabled = true; showTyping(); setEmotion("curious"); setVoiceState("thinking","正在理解你刚才说的话"); statusText.textContent = "正在想…";
   const controller = new AbortController(); activeReplyController = controller;
-  const batch = speechBatch,transcript=new ReplyTranscript(); activeReplyStartedAt=performance.now();realSpeechTimelineMs=0;delete portrait.dataset.chatFirstSentenceMs;delete portrait.dataset.avatarFirstSegmentMs;delete portrait.dataset.ttsFirstAudioMs;delete portrait.dataset.avatarPipelineMs;delete portrait.dataset.ttsConnectionReused;delete portrait.dataset.ttsTaskPrimed;delete portrait.dataset.ttsConnectionLeadMs;delete portrait.dataset.backchannelContinuation;delete portrait.dataset.backchannelContinuationMs;delete portrait.dataset.backchannelStartedMs;delete portrait.dataset.backchannelCompleted;delete portrait.dataset.avatarGapIdleMs;delete portrait.dataset.avatarGapIdleSourceMs;let article, streamedText = "", currentEmotion = "calm",currentAction="idle",spokenSentenceCount=0,firstTtsConnectionId="",waitingPreview=null,backchannelVisual=null,backchannelPlayback=null,actionFrameBias=0,biasedAction="";
+  const batch = speechBatch,transcript=new ReplyTranscript(); activeReplyStartedAt=performance.now();realSpeechTimelineMs=0;delete portrait.dataset.chatFirstSentenceMs;delete portrait.dataset.avatarFirstSegmentMs;delete portrait.dataset.ttsFirstAudioMs;delete portrait.dataset.avatarPipelineMs;delete portrait.dataset.ttsConnectionReused;delete portrait.dataset.ttsTaskPrimed;delete portrait.dataset.ttsConnectionLeadMs;delete portrait.dataset.backchannelContinuation;delete portrait.dataset.backchannelContinuationMs;delete portrait.dataset.backchannelStartedMs;delete portrait.dataset.backchannelCompleted;delete portrait.dataset.avatarGapIdleMs;delete portrait.dataset.avatarGapIdleSourceMs;delete portrait.dataset.avatarGapMode;delete portrait.dataset.avatarGapAction;let article, streamedText = "", currentEmotion = "calm",currentAction="idle",spokenSentenceCount=0,firstTtsConnectionId="",waitingPreview=null,backchannelVisual=null,backchannelPlayback=null,actionFrameBias=0,biasedAction="";
   const transcriptState={transcript,get article(){return article;},set article(value){article=value;}};activeReplyTranscript=transcriptState;
   const revealSentence=sentenceIndex=>{if(batch!==speechBatch)return;const spoken=transcript.start(sentenceIndex);if(!spoken)return;$("#typing")?.remove();article ||= addMessage("assistant","",false);article.querySelector("p").textContent=spoken;};
   const finishSentence=sentenceIndex=>{if(batch===speechBatch)transcript.finish(sentenceIndex);};
@@ -717,7 +717,8 @@ window.addEventListener("message",event=>{
     if(Number.isFinite(Number(event.data.handoffLateMs))){portrait.dataset.videoFirstFrameMs=String(event.data.firstFrameMs||0);portrait.dataset.videoHandoffLateMs=String(event.data.handoffLateMs||0);}
   }
   if(event.data?.type==="wav2lip-video-sync"){portrait.dataset.videoDriftMs=String(event.data.driftMs||0);portrait.dataset.videoMaxDriftMs=String(event.data.maxDriftMs||0);}
-  if(event.data?.type==="wav2lip-gap-idle"){portrait.dataset.avatarGapIdleMs=String(event.data.gapMs||0);portrait.dataset.avatarGapIdleSourceMs=String(event.data.sourceTimeMs||0);}
+  if(event.data?.type==="wav2lip-gap-idle"){portrait.dataset.avatarGapMode="idle";portrait.dataset.avatarGapIdleMs=String(event.data.gapMs||0);portrait.dataset.avatarGapIdleSourceMs=String(event.data.sourceTimeMs||0);}
+  if(event.data?.type==="wav2lip-gap-preview"){portrait.dataset.avatarGapMode="preview";portrait.dataset.avatarGapAction=String(event.data.action||"");portrait.dataset.avatarGapIdleMs=String(event.data.gapMs||0);portrait.dataset.avatarGapIdleSourceMs=String(event.data.sourceTimeMs||0);}
   if(event.data?.type==="wav2lip-video-buffer"){portrait.dataset.videoAheadSeconds=String(event.data.aheadSeconds||0);portrait.dataset.videoBufferStart=String(event.data.bufferStart||0);portrait.dataset.videoPrunedSeconds=String(event.data.prunedSeconds||0);}
   if(event.data?.type==="wav2lip-media-gate")portrait.dataset.videoAudioGateMs=String(event.data.mediaReadyMs||0);
   if(event.data?.type==="wav2lip-audio-buffer"){portrait.dataset.audioAheadSeconds=String(event.data.aheadSeconds||0);portrait.dataset.audioSources=String(event.data.sources||0);}

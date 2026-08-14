@@ -15,9 +15,9 @@ test("main voice page offers real and anime modes in one conversation",async()=>
   assert.match(html,/id="personaVoice"/);
   assert.match(html,/人物设置/);
   assert.match(app,/lumi-avatar-mode/);
-  assert.match(html,/app\.js\?v=20260814-stream-gap-v37/);
+  assert.match(html,/app\.js\?v=20260814-gap-preview-v38/);
   assert.match(html,/aria-label="开始通话" aria-pressed="false"/);
-  assert.match(app,/avatarRuntimeVersion="20260814-stream-gap-v37"/);
+  assert.match(app,/avatarRuntimeVersion="20260814-gap-preview-v38"/);
   assert.match(app,/AVATAR_FIRST_SEGMENT_LEAD_MS=320/);
   assert.match(app,/get\("continuous"\) !== "0"/);
   assert.match(app,/lumi-vrm-look/);
@@ -188,6 +188,8 @@ test("streaming avatar experiment consumes ordered server segments and cancels s
   assert.match(app,/avatarFragmentedVideoReady=event\.data\.fragmentedVideo===true/);
   assert.match(app,/videoMaxDriftMs/);
   assert.match(app,/avatarGapIdleMs/);
+  assert.match(app,/event\.data\?\.type==="wav2lip-gap-preview"/);
+  assert.match(app,/avatarGapMode="preview"/);
   assert.match(app,/videoPrunedSeconds/);
   assert.match(app,/audioAheadSeconds/);
   assert.match(app,/renderBackpressure:fragmentedVideo/);

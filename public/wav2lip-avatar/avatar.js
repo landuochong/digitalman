@@ -33,6 +33,7 @@ const cancelledRequests=new Set();
 const MAX_VIDEO_AHEAD_SECONDS=4;
 const MAX_AUDIO_AHEAD_SECONDS=4;
 const STREAM_GAP_IDLE_MS=320;
+const RESUMABLE_PREVIEW_ACTIONS=new Set(["thinking","caring","nod","happy","idle"]);
 
 function notify(type, data = {}) { parent.postMessage({ type, ...data }, location.origin); }
 function supportsFragmentedVideo(){return typeof MediaSource!=="undefined"&&MediaSource.isTypeSupported?.('video/mp4; codecs="avc1.64001f"')===true;}
@@ -91,6 +92,7 @@ async function showWaitingPreview(data){
   clearWaitingPreview({revealIdle:false});
   const video=document.createElement("video");
   video.className="avatar-layer speech-segment waiting-preview";video.playsInline=true;video.muted=true;video.loop=data.loop!==false;video.preload="auto";video.src=data.url;
+  video.dataset.action=String(data.action||"");video.dataset.purpose=String(data.purpose||"reply");
   waitingPreview=video;stage.append(video);
   try{
     await video.play();await waitForFirstVideoFrame(video);
@@ -106,6 +108,10 @@ async function showWaitingPreview(data){
       notify("wav2lip-preview-ended",{action:data.action,purpose:data.purpose||"reply",durationMs});
     },durationMs);
   }catch{if(waitingPreview===video)clearWaitingPreview();}
+}
+
+function canResumeWaitingPreview(video){
+  return Boolean(video?.isConnected&&video.dataset.purpose==="reply"&&video.loop&&RESUMABLE_PREVIEW_ACTIONS.has(video.dataset.action));
 }
 
 function pcmBuffer(context,audio,bytes){
@@ -251,7 +257,7 @@ async function playFragmentedSegment(item,token){
   finally{
     forgetStreamItem(item);externalSegmentsPending=Math.max(0,externalSegmentsPending-1);
     if(token===playToken&&!externalSegmentsPending&&!segmentsPreparing&&!segmentPlaying&&!segmentQueue.length){
-      if(streamEnded)scheduleIdleReveal(pendingIdleLingerMs,pendingIdleTimeMs);else scheduleStreamGapIdle();
+      if(streamEnded)scheduleIdleReveal(pendingIdleLingerMs,pendingIdleTimeMs);else scheduleStreamGapReveal();
     }
   }
 }
@@ -270,7 +276,15 @@ function revealSegment(item,video){
   if(sequence<activeSegmentSequence)return false;
   const previous=activeSegment;activeSegment=video;activeSegmentSequence=sequence;
   video.classList.add("active");
-  requestAnimationFrame(()=>{if(previous&&previous!==video){previous.classList.remove("active");const delay=previous.classList.contains("waiting-preview")?180:0;setTimeout(()=>{previous.pause();previous.remove();},delay);if(previous===waitingPreview)waitingPreview=null;}});
+  requestAnimationFrame(()=>{if(previous&&previous!==video){
+    previous.classList.remove("active");
+    const keepWaitingPreview=previous===waitingPreview&&canResumeWaitingPreview(previous);
+    if(!keepWaitingPreview){
+      const delay=previous.classList.contains("waiting-preview")?180:0;
+      setTimeout(()=>{previous.pause();previous.remove();},delay);
+      if(previous===waitingPreview)waitingPreview=null;
+    }
+  }});
   return true;
 }
 
@@ -303,7 +317,7 @@ async function playExternalSegment(item,token){
     if(token!==playToken){video.pause();video.remove();return;}
     if(!video.classList.contains("active")){video.pause();video.remove();}
     if(!externalSegmentsPending&&!segmentsPreparing&&!segmentPlaying&&!segmentQueue.length){
-      if(streamEnded)scheduleIdleReveal(pendingIdleLingerMs,pendingIdleTimeMs);else scheduleStreamGapIdle();
+      if(streamEnded)scheduleIdleReveal(pendingIdleLingerMs,pendingIdleTimeMs);else scheduleStreamGapReveal();
     }
   }
 }
@@ -345,7 +359,7 @@ async function playQueuedSegment(){
     forgetStreamItem(item);segmentPlaying=false;
     if(segmentQueue.length)playQueuedSegment();
     else if(token===playToken&&!externalSegmentsPending){
-      if(streamEnded)scheduleIdleReveal(pendingIdleLingerMs,pendingIdleTimeMs);else scheduleStreamGapIdle();
+      if(streamEnded)scheduleIdleReveal(pendingIdleLingerMs,pendingIdleTimeMs);else scheduleStreamGapReveal();
     }
   }
 }
@@ -371,17 +385,19 @@ function scheduleIdleReveal(delayMs=120,idleTimeMs=null){
   idleRevealTimer=setTimeout(async()=>{
     if(segmentPlaying||externalSegmentsPending||segmentsPreparing||segmentQueue.length||!streamEnded)return;
     if(Number.isFinite(Number(idleTimeMs)))await alignIdleToTime(Number(idleTimeMs)/1000);
-    const previous=activeSegment;activeSegment=null;
+    const previous=activeSegment,preview=waitingPreview;activeSegment=null;waitingPreview=null;
+    clearTimeout(waitingPreviewTimer);waitingPreviewTimer=0;
     idleVideo.play().catch(()=>{});
     requestAnimationFrame(()=>{
       previous?.classList.remove("active");previous?.pause();previous?.remove();
+      if(preview&&preview!==previous){preview.pause();preview.remove();}
       stopFragmentedPlayback();
       document.body.classList.remove("loading");
     });
   },Math.max(audioRemainingMs,Math.min(400,Math.max(80,Number(delayMs)||120))));
 }
 
-function scheduleStreamGapIdle(delayMs=STREAM_GAP_IDLE_MS){
+function scheduleStreamGapReveal(delayMs=STREAM_GAP_IDLE_MS){
   clearTimeout(streamGapIdleTimer);
   if(streamEnded||segmentPlaying||externalSegmentsPending||segmentsPreparing||segmentQueue.length)return;
   const token=playToken;
@@ -390,14 +406,17 @@ function scheduleStreamGapIdle(delayMs=STREAM_GAP_IDLE_MS){
     if(token!==playToken||streamEnded||segmentPlaying||externalSegmentsPending||segmentsPreparing||segmentQueue.length)return;
     const previous=activeSegment;if(!previous)return;
     const sourceTime=Math.max(0,Number(fragmentedPlayback?.video?.currentTime||previous.currentTime)||0);
-    await alignIdleToTime(sourceTime);
+    const preview=canResumeWaitingPreview(waitingPreview)?waitingPreview:null;
+    if(preview)await preview.play().catch(()=>{});else await alignIdleToTime(sourceTime);
     if(token!==playToken||streamEnded||segmentPlaying||externalSegmentsPending||segmentsPreparing||segmentQueue.length||activeSegment!==previous)return;
-    activeSegment=null;idleVideo.play().catch(()=>{});
+    activeSegment=preview;
+    if(!preview)idleVideo.play().catch(()=>{});
     requestAnimationFrame(()=>{
       previous.classList.remove("active");
+      preview?.classList.add("active");
       if(previous!==fragmentedPlayback?.video)setTimeout(()=>{previous.pause();previous.remove();},180);
       document.body.classList.remove("loading");
-      notify("wav2lip-gap-idle",{gapMs:Math.max(0,Number(delayMs)||0),sourceTimeMs:Math.round(sourceTime*1000)});
+      notify(preview?"wav2lip-gap-preview":"wav2lip-gap-idle",{gapMs:Math.max(0,Number(delayMs)||0),sourceTimeMs:Math.round(sourceTime*1000),...(preview?{action:preview.dataset.action,currentTime:preview.currentTime}:{})});
     });
   },Math.max(120,Number(delayMs)||STREAM_GAP_IDLE_MS));
 }
