@@ -2,10 +2,12 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { buildDINetWorkerCommand, DINetRenderStore } from "../src/dinet-render.mjs";
-import { resolveRealActionAsset, resolveWaitingActionPreview } from "../src/real-actions.mjs";
+import { listRealActionSupport, normalizeRealAvatarCharacter, resolveRealActionAsset, resolveSilentRealAction, resolveWaitingActionPreview } from "../src/real-actions.mjs";
 
 test("development watch excludes generated avatar media",async()=>{
   const pkg=JSON.parse(await readFile(new URL("../package.json",import.meta.url),"utf8"));
+  assert.equal(pkg.scripts.start,"exec node server.mjs");
+  assert.match(pkg.scripts.dev,/^exec node /);
   assert.match(pkg.scripts.dev,/--watch-path=server\.mjs/);
   assert.match(pkg.scripts.dev,/--watch-path=src/);
   assert.doesNotMatch(pkg.scripts.dev,/public/);
@@ -22,18 +24,62 @@ test("preloads one persistent DINet worker with the bedroom asset", () => {
 });
 
 test("maps anime action names onto same-character real video assets",()=>{
-  assert.equal(resolveRealActionAsset("wave_approval"),"bedroom_wave");
+  assert.equal(resolveRealActionAsset("wave_approval"),"bedroom_wave_v2");
   assert.equal(resolveRealActionAsset("nod"),"bedroom_agree_test");
-  assert.equal(resolveRealActionAsset("thumbs_up"),"bedroom_agree_test");
+  assert.equal(resolveRealActionAsset("thumbs_up"),"bedroom_thumbs_up");
   assert.equal(resolveRealActionAsset("clap"),"bedroom_clap");
   assert.equal(resolveRealActionAsset("thinking"),"bedroom_thinking");
+  assert.equal(resolveRealActionAsset("shy"),"bedroom_idle_test");
   assert.equal(resolveRealActionAsset("surprise"),"bedroom_idle_test");
   assert.equal(resolveRealActionAsset("cross"),"bedroom_cross");
   assert.equal(resolveRealActionAsset("confident_arms_crossed"),"bedroom_arms_crossed");
   assert.equal(resolveRealActionAsset("unknown"),"bedroom_idle_test");
   assert.deepEqual(resolveWaitingActionPreview("caring"),{action:"caring",asset:"bedroom_caring",url:"/dh-live/actions/bedroom_caring/01.mp4"});
+  assert.deepEqual(resolveWaitingActionPreview("thumbs_up"),{action:"thumbs_up",asset:"bedroom_thumbs_up",url:"/dh-live/actions/bedroom_thumbs_up/01.mp4"});
+  assert.deepEqual(resolveWaitingActionPreview("shy"),{action:"shy",asset:"bedroom_idle_test",url:"/real-actions/bedroom_surprise_silent.mp4"});
   assert.equal(resolveWaitingActionPreview("clap"),null);
   assert.equal(resolveWaitingActionPreview("surprise"),null);
+  assert.equal(resolveRealActionAsset("wave_approval","xiaotao"),"xiaotao_wave");
+  assert.equal(resolveRealActionAsset("clap","xiaotao"),"xiaotao_clap");
+  assert.equal(resolveRealActionAsset("thinking","xiaotao"),"xiaotao_thinking");
+  assert.equal(resolveRealActionAsset("unknown","xiaotao"),"xiaotao_idle");
+  assert.equal(normalizeRealAvatarCharacter("missing"),"lumi");
+  assert.deepEqual(resolveWaitingActionPreview("shy","xiaotao"),{action:"shy",asset:"xiaotao_idle",url:"/dh-live/actions/xiaotao_shy/01.mp4"});
+  assert.equal(resolveSilentRealAction("bow","xiaotao"),"/dh-live/actions/xiaotao_bow/01.mp4");
+  assert.equal(resolveSilentRealAction("surprise","xiaotao"),"/dh-live/actions/xiaotao_surprise/01.mp4");
+  assert.equal(resolveSilentRealAction("clap","xiaotao"),null);
+  const support=listRealActionSupport("xiaotao");
+  assert.deepEqual(support.map(item=>item.action),["idle","happy","smile","shy","clap","cheer","wave_approval","nod","thumbs_up","bow","caring","thinking","surprise","shrug","cross","confident_arms_crossed"]);
+  assert.equal(support.find(item=>item.action==="clap")?.asset,"xiaotao_clap");
+  assert.equal(support.find(item=>item.action==="shy")?.distinct,false);
+});
+
+test("browser and server re-export the same real action catalog",async()=>{
+  const source=await readFile(new URL("../src/real-actions.mjs",import.meta.url),"utf8");
+  assert.match(source,/from "\.\.\/public\/real-action-catalog\.js"/);
+  assert.doesNotMatch(source,/CHARACTER_ACTION_ASSETS/);
+});
+
+test("bedroom wave repair uses only clean low-amplitude hand frames",async()=>{
+  const source=await readFile(new URL("../scripts/repair_bedroom_wave.py",import.meta.url),"utf8");
+  assert.match(source,/CLEAN_SOURCE_FRAMES = \(23, 24, 25, 26, 27\)/);
+  assert.match(source,/cycle = \[23\] \* 3 \+ \[24\] \* 3 \+ \[25\] \* 3 \+ \[26\] \* 3 \+ \[27\] \* 3 \+ \[26\] \* 3 \+ \[25\] \* 3 \+ \[24\] \* 3/);
+  assert.match(source,/full_mapping = first_half \+ list\(reversed\(first_half\)\)/);
+  assert.match(source,/combined\["json_data"\] = \[original_json\[index\] for index in first_half\]/);
+});
+
+test("bedroom wave v2 cleanup removes only the leaked source-bench frames",async()=>{
+  const source=await readFile(new URL("../scripts/repair_bedroom_wave_v2.py",import.meta.url),"utf8");
+  assert.match(source,/DIRTY_FRAME_RANGES = \(\(20, 27\), \(194, 201\)\)/);
+  assert.match(source,/PATCH_X, PATCH_Y, PATCH_WIDTH, PATCH_HEIGHT = 565, 495, 105, 105/);
+  assert.match(source,/remove leaked source-bench fragment outside right shoulder/);
+});
+
+test("bedroom smile repair excludes the dark deep-smile mouth corners",async()=>{
+  const source=await readFile(new URL("../scripts/repair_bedroom_smile.py",import.meta.url),"utf8");
+  assert.match(source,/SOURCE_FRAMES = tuple\(range\(21\)\)/);
+  assert.match(source,/smile_repair/);
+  assert.match(source,/remove dark deep-smile mouth corners/);
 });
 
 test("rejects compressed audio before starting the DINet worker", async () => {
@@ -72,25 +118,24 @@ test("DINet streams raw frames into the final H.264 encode",async()=>{
   assert.match(source,/cancel_stream/);
   assert.match(source,/prepare_asset/);
   assert.match(source,/"loadMs"/);
-  assert.match(source,/transition_source = self\.visual_turn_frames\.get/);
   assert.match(source,/previous_visual_asset = self\.visual_turn_assets\.get/);
-  assert.match(source,/cv2\.addWeighted/);
   assert.match(source,/transitionFrames/);
+  assert.doesNotMatch(source,/cv2\.addWeighted/);
   assert.match(source,/close_visual_turn/);
   assert.doesNotMatch(source,/cv2\.VideoWriter/);
   assert.doesNotMatch(source,/silent_path/);
 });
 
-test("crossfades one action boundary over four frames",async()=>{
+test("switches action silhouettes atomically without full-frame ghosting",async()=>{
   const source=await readFile(new URL("../scripts/dinet_worker.py",import.meta.url),"utf8");
-  assert.match(source,/transition_source = self\.visual_turn_frames\.get\(visual_turn_id\)/);
   assert.match(source,/previous_visual_asset = self\.visual_turn_assets\.get\(visual_turn_id\)/);
-  assert.match(source,/min\(4, len\(coefficients\)\)/);
-  assert.match(source,/visual_asset_changed and visual_sentence_index > 0 and transition_source is not None/);
-  assert.match(source,/alpha = float\(audio_index \+ 1\) \/ float\(transition_frames \+ 1\)/);
-  assert.match(source,/cv2\.addWeighted\(\s*transition_source, 1\.0 - alpha, frame, alpha, 0\.0\s*\)/);
+  assert.match(source,/previous_visual_asset == str\(self\.asset\)/);
+  assert.match(source,/frame_offset = self\.visual_turn_frame_offsets\[visual_turn_id\]/);
+  assert.match(source,/self\.visual_turn_frame_offsets\[visual_turn_id\] =/);
+  assert.match(source,/renderer\.visual_turn_frame_offsets\.pop/);
+  assert.match(source,/transition_frames = 0/);
+  assert.doesNotMatch(source,/cv2\.addWeighted/);
   assert.match(source,/self\.visual_turn_frames\[visual_turn_id\] = last_output_frame/);
-  assert.deepEqual(Array.from({length:4},(_,index)=>(index+1)/5),[0.2,0.4,0.6,0.8]);
 });
 
 test("neural avatar keeps a persistent idle layer behind speech", async () => {
@@ -101,7 +146,8 @@ test("neural avatar keeps a persistent idle layer behind speech", async () => {
   ]);
   assert.match(html, /id="avatar-idle"/);
   assert.match(html, /id="avatar-speech"/);
-  assert.match(script, /reflectedIdleTime/);
+  assert.match(script, /function keepIdlePlaying\(\)/);
+  assert.doesNotMatch(script, /idleVideo\.pause\(\)|idleVideo\.currentTime\s*=/);
   assert.match(script, /revealAlignedIdle/);
   assert.match(script, /isSilentAction/);
   assert.match(script, /speechVideo\.muted = isSilentAction/);
@@ -157,16 +203,23 @@ test("neural avatar keeps a persistent idle layer behind speech", async () => {
   assert.match(script,/wav2lip-media-gate/);
   assert.ok(script.indexOf("item.fragmentReadyToPlay=queueFragmentedVideo")<script.indexOf("item.audioReady=audioScheduleChain"));
   assert.match(script,/continuousVideoSync\(playback\.audioOrigin,streamAudioContext\.currentTime/);
+  assert.match(script,/item\.audioGapMs=gapMs/);
+  assert.match(script,/continuousVideoOriginAfterGap\(playback\.audioOrigin,item\.audioGapMs\)/);
   assert.match(script,/if\(!item\.startedNotified\)/);
   assert.match(script,/resumedFromGap=activeSegment!==playback\.video/);
   assert.match(script,/resumedFromGap\}\);/);
   assert.match(script,/videoPrestartDelayMs/);
   assert.match(script,/videoBoundaryDelayMs/);
   assert.match(script,/wav2lip-audio-unlock/);
-  assert.match(script,/mode:context\?"pcm-ready":"mp4"/);
+  assert.match(script,/mode:"pcm-ready",fragmentedVideo:false/);
+  assert.match(script,/mode:"pcm-ready",fragmentedVideo:true,gapMs:0,prewarmed:true/);
+  assert.match(script,/mode:"mp4",fragmentedVideo:false/);
   assert.doesNotMatch(script, /setTimeout\(playIdle,\s*250\)/);
   assert.match(styles,/object-fit:cover/);
-  assert.match(styles,/lumi-bedroom-background-v1\.png/);
+  assert.match(styles,/\.avatar-layer#avatar-speech,\.avatar-layer\.speech-segment\{[^}]*transition:none/);
+  assert.doesNotMatch(styles,/\.avatar-layer#avatar-speech,\.avatar-layer\.speech-segment\{[^}]*transition:opacity/);
+  assert.match(script,/idleVideo\.poster=`\$\{characterRoot\}\/thumbnail\.jpg`/);
+  assert.match(script,/stage\.style\.backgroundImage=/);
   assert.doesNotMatch(styles,/body\.loading #state/);
   assert.match(styles,/body\.needs-play #state\{opacity:1/);
 });
@@ -180,11 +233,17 @@ test("stream endpoint reports TTS and first playable segment timing",async()=>{
   assert.match(server,/sendEvent\(res,"audio-ready",\{audioMs:cached\.metrics\.audioMs\}\)/);
   assert.match(server,/firstSegmentMs:firstSegmentAt/);
   assert.match(server,/sendEvent\(res,"backchannel",backchannel\)/);
+  assert.match(server,/sendEvent\(res,"backchannel",longWaitBackchannel\)/);
+  assert.match(server,/LONG_WAIT_BACKCHANNEL_OFFER_MS/);
   assert.match(server,/\},BACKCHANNEL_OFFER_MS\):null/);
   assert.doesNotMatch(server,/const warmed=backchannelWarmup\?await backchannelWarmup:null/);
   assert.match(server,/reads the same in-flight cache promise/);
   assert.match(server,/backchannelPcm=\{\.\.\.trace\.backchannelPcm,status:"ready",audioMs:result\.metrics\.audioMs/);
   assert.match(server,/pipelineStartedAt/);
+  assert.match(server,/sendEvent\(res,"tts-first-audio",\{firstAudioMs,requestSetupMs:/);
+  assert.match(server,/onTiming:\(event,timing\)=>\{if\(event==="first-audio"\)ttsFirstAudioStages=timing;\}/);
+  assert.match(server,/segment\.firstSegmentTiming=\{pcmBufferingMs:/);
+  assert.match(server,/renderChain=renderChain\.then\(\(\)=>emitSegments\(false\)\);\s*\/\/[^\n]*\n(?:\s*\/\/[^\n]*\n){2}\s*void renderChain\.catch\(\(\)=>\{\}\);/);
   assert.match(server,/const includeClauses=fastSpeech&&!trace\.emittedSentences\.length/);
   assert.match(server,/includeClauses\?1:Infinity/);
   assert.match(server,/buildMiniMaxReply\(sentence,message,companionState,history,\{allowEmpty:true\}\)/);
@@ -194,32 +253,46 @@ test("stream endpoint reports TTS and first playable segment timing",async()=>{
   assert.match(server,/trace\.timings\.localLengthReachedMs/);
   assert.match(server,/sendEvent\(res,"sentence",\{text:safeSentence,emotion:sentenceResult\.emotion,action:sentenceResult\.action\}\)/);
   assert.match(source,/queueMs:metrics\.queueMs/);
+  assert.match(source,/close\(\)\{return this\.worker\.close\(\);\}/);
+  assert.match(source,/child\.kill\("SIGTERM"\)/);
+  assert.match(server,/process\.once\("SIGTERM",\(\)=>void shutdown\("SIGTERM"\)\)/);
+  assert.match(server,/if\(server\.listening\)await new Promise\(resolve=>server\.close\(resolve\)\)/);
   assert.match(source,/fragmented-video:/);
-  assert.match(server,/shouldPrepareAvatarAction\(initialState\.action,\{fastSpeech\}\)\)prepareAvatarAction\(initialState\.action,trace\)/);
-  assert.match(server,/shouldPrepareAvatarAction\(groundedResult\.action,\{fastSpeech:data\.fastSpeech\}\)\)prepareAvatarAction\(groundedResult\.action,trace\)/);
+  assert.match(server,/shouldPrepareAvatarAction\(initialState\.action,\{fastSpeech\}\)\)prepareAvatarAction\(initialState\.action,trace,realAvatarCharacter\)/);
+  assert.match(server,/shouldPrepareAvatarAction\(groundedResult\.action,\{fastSpeech:data\.fastSpeech\}\)\)prepareAvatarAction\(groundedResult\.action,trace,realAvatarCharacter\)/);
   assert.match(server,/assetPrepareMs/);
   assert.match(server,/videoOnly:data\.externalAudio===true/);
   assert.match(server,/binaryAudio:data\.binaryAudio===true/);
   assert.match(server,/fragmentedVideo:data\.fragmentedVideo===true/);
-  assert.match(server,/CONTINUOUS_FIRST_SEGMENT_MS=320/);
+  assert.match(server,/CONTINUOUS_FIRST_SEGMENT_MS=240/);
   assert.match(server,/CONTINUOUS_MINIMUM_TAIL_MS=160/);
   assert.match(server,/continuousVideo\?\{firstSegmentMs:CONTINUOUS_FIRST_SEGMENT_MS,minimumTailMs:CONTINUOUS_MINIMUM_TAIL_MS\}:\{\}/);
   assert.match(server,/new PreparedTtsLease\(/);
   assert.match(server,/prepare:\(\)=>prepareTtsConnection\(\{voice,emotion:initialState\.emotion\}\)/);
   assert.match(server,/sendEvent\(res,"speech-ready",\{ttsConnectionId\}\)/);
   const streamHandler=server.slice(server.indexOf("async function miniMaxChatStream"),server.indexOf("async function chat(req"));
-  assert.ok(streamHandler.indexOf("ttsLease.start()")<streamHandler.indexOf("response=await fetch(`${miniMaxBaseUrl}/chat/completions`"));
+  assert.ok(streamHandler.indexOf("ttsLease.start()")<streamHandler.indexOf("fetchWithConnectionHedge(`${miniMaxBaseUrl}/chat/completions`"));
   assert.match(server,/firstSentenceEmitted=true;ttsLease\?\.freeze\(\)/);
   assert.match(server,/cachedPromptTokens:Number\(streamUsage\.prompt_tokens_details\?\.cached_tokens\)\|\|0/);
   assert.match(streamHandler,/catch\(error\)\{\s*ttsLease\?\.cancel\(\);\s*throw error;/);
   assert.match(streamHandler,/if \(!response\.ok \|\| !response\.body\)\{ttsLease\?\.cancel\(\)/);
   assert.match(server,/signal:client\.signal/);
+  assert.match(server,/fetchWithConnectionHedge/);
+  assert.match(server,/MINIMAX_HEDGE_DELAY_MS\?\?0/);
+  assert.match(server,/MINIMAX_CHAT_WARMUP === "1"/);
+  assert.match(server,/chatWarmupEnabled:miniMaxChatWarmup/);
+  assert.match(server,/trace\.providerConnection=/);
+  assert.match(server,/traceId:trace\.id/);
+  assert.match(server,/sanitizeClientTiming\(data\)/);
+  assert.match(server,/summarizeLatencySamples\(\[\.\.\.stored,\.\.\.live\]\)/);
+  assert.match(server,/if\(timing\.event==="formal-speech"&&!trace\.latencyPersisted\)/);
+  assert.match(server,/Object\.defineProperty\(trace,"_latencyPersisting"/);
   assert.match(server,/ttsLease\?\.cancel\(\)/);
   assert.match(server,/prewarmMiniMaxPcm\(\{text:backchannel\.text,voice,emotion:backchannel\.emotion,signal:client\.signal\}\)/);
   assert.match(server,/trimPcm16Silence\(Buffer\.concat\(chunks\)\)/);
   assert.match(server,/connection:preparedConnection,trimLeadingSilence:true/);
   assert.match(server,/takeTtsConnection\(data\.ttsConnectionId,\{model:miniMaxTtsModel,voice:resolvedVoice,emotion:data\.emotion\}\)/);
-  assert.match(server,/onAudio:appendPcm,trimLeadingSilence:true/);
+  assert.match(server,/onAudio:appendPcm,onTiming:[^\n]+,trimLeadingSilence:true/);
   assert.match(server,/if\(client\.signal\.aborted\)return/);
   assert.match(server,/connection:preparedConnection/);
   assert.match(server,/renderBackpressure:data\.renderBackpressure===true/);
@@ -245,9 +318,9 @@ test("stream endpoint reports TTS and first playable segment timing",async()=>{
   assert.match(server,/streams:dinetStreams\.snapshot\(\)/);
 });
 
-test("prepares a resolved action through the serialized persistent worker",async()=>{
+test("prepares a character-specific resolved action through the serialized persistent worker",async()=>{
   const source=await readFile(new URL("../src/dinet-render.mjs",import.meta.url),"utf8");
-  assert.match(source,/prepareAction\(action="idle"\)\{return this\.worker\.prepare\(resolveRealActionAsset\(action\)\);\}/);
+  assert.match(source,/prepareAction\(action="idle",character="lumi"\)\{return this\.worker\.prepare\(resolveRealActionAsset\(action,character\)\);\}/);
   assert.match(source,/op:"prepare_asset"/);
   assert.match(source,/this\.chain\.then/);
 });
@@ -257,6 +330,6 @@ test("action preparation diagnostic endpoint stays loopback-only",async()=>{
   assert.match(server,/pathname==="\/api\/dinet\/prepare-action"/);
   assert.match(server,/isLoopbackAddress\(req\.socket\.remoteAddress\)/);
   assert.match(server,/dinetRenders\.prepareAction/);
-  assert.match(server,/preview:resolveWaitingActionPreview\(action\)/);
+  assert.match(server,/preview:resolveWaitingActionPreview\(action,character\)/);
   assert.match(server,/cache:await dinetRenders\.cacheStatus\(\)/);
 });

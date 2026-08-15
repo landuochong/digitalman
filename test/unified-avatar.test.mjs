@@ -5,33 +5,53 @@ import { readFile } from "node:fs/promises";
 const readPublic=name=>readFile(new URL(`../public/${name}`,import.meta.url),"utf8");
 
 test("main voice page offers real and anime modes in one conversation",async()=>{
-  const [html,app,styles]=await Promise.all([readPublic("index.html"),readPublic("app.js"),readPublic("mode-switch.css")]);
+  const [html,app,styles,realActions]=await Promise.all([readPublic("index.html"),readPublic("app.js"),readPublic("mode-switch.css"),readPublic("real-action-catalog.js")]);
   assert.match(html,/data-avatar-mode="real"[^>]*>真人/);
   assert.match(html,/data-avatar-mode="anime"[^>]*>动漫/);
   assert.match(html,/id="animeLookSelect"/);
+  assert.match(html,/id="realCharacterSelect"/);
   assert.match(html,/id="animeViewControls"/);
   assert.match(html,/id="personaForm"/);
   assert.match(html,/id="personaBackground"/);
   assert.match(html,/id="personaVoice"/);
   assert.match(html,/人物设置/);
   assert.match(app,/lumi-avatar-mode/);
-  assert.match(html,/app\.js\?v=20260814-gap-preview-v38/);
+  assert.match(html,/app\.js\?v=20260815-wave-crown-v64/);
   assert.match(html,/aria-label="开始通话" aria-pressed="false"/);
-  assert.match(app,/avatarRuntimeVersion="20260814-gap-preview-v38"/);
-  assert.match(app,/AVATAR_FIRST_SEGMENT_LEAD_MS=320/);
+  assert.match(app,/avatarRuntimeVersion="20260815-real-character-v46"/);
+  assert.match(app,/from "\.\/real-action-catalog\.js\?v=20260815-shared-real-actions-v1"/);
+  assert.match(app,/lumi-real-character/);
+  assert.match(app,/avatarRuntimeUrl\("\/wav2lip-avatar\/avatar\.html",\{character:realAvatarCharacter\}\)/);
+  assert.match(app,/AVATAR_FIRST_SEGMENT_LEAD_MS=240/);
   assert.match(app,/get\("continuous"\) !== "0"/);
   assert.match(app,/lumi-vrm-look/);
   assert.match(app,/lumi-vrm-persona/);
   assert.match(app,/lumi-voice-profile/);
   assert.match(app,/\/api\/voices/);
   assert.match(app,/voice:voiceProfile/);
-  assert.match(app,/action=\$\{encodeURIComponent\(action\)\}/);
+  assert.match(app,/action=\$\{encodeURIComponent\(action\)\}&character=\$\{encodeURIComponent\(realAvatarCharacter\)\}/);
   assert.match(app,/conversationActions\.planForSentence\(data\.text,sentenceIndex,data\.action\|\|currentAction,currentEmotion\)/);
-  assert.match(app,/if\(!reusedBackchannel\)enqueueSpeech\(speechText,currentEmotion,batch,sentencePlan,streamTurn,\{ttsConnectionId,onStart:\(\)=>revealSentence\(transcriptIndex\),onComplete:\(\)=>finishSentence\(transcriptIndex\)\}\)/);
+  assert.match(app,/const sentenceHasSpeech=!\(neuralAvatarProfile&&sentencePlan\.explicit&&silentNeuralAction\(sentenceAction\)\)/);
+  assert.match(app,/behavior\?\.explicit===true\?silentNeuralAction\(action\):null/);
+  assert.match(app,/if\(!reusedBackchannel\)enqueueSpeech\(speechText,currentEmotion,batch,sentencePlan,streamTurn,\{ttsConnectionId,onStart:\(\)=>\{if\(sentenceHasSpeech\)reportSpeechStart\("formal"\);revealSentence\(transcriptIndex\);\}/);
   assert.match(app,/new BackchannelGate\(\{delayMs:BACKCHANNEL_GRACE_MS/);
   assert.match(app,/new BackchannelPlayback\(data\.text\)/);
   assert.match(app,/backchannelStartedMs=String\(Math\.round\(performance\.now\(\)-activeReplyStartedAt\)\)/);
   assert.match(app,/backchannelCompleted="true"/);
+  assert.match(app,/backchannelCompletedMs=String\(Math\.round\(performance\.now\(\)-activeReplyStartedAt\)\)/);
+  assert.match(app,/longWaitBackchannelMs/);
+  assert.match(app,/createClientTimingReporter/);
+  assert.match(app,/postClientTiming\(payload\)/);
+  assert.match(app,/delete portrait\.dataset\.videoFirstFrameMs/);
+  assert.match(app,/delete portrait\.dataset\.videoHandoffLateMs/);
+  assert.match(app,/ttsRequestSetupMs:numericDataset\("ttsRequestSetupMs"\)/);
+  assert.match(app,/portrait\.dataset\.ttsSynthesisMs=String\(data\.synthesisMs\?\?""\)/);
+  assert.match(app,/avatarPcmBufferingMs:numericDataset\("avatarPcmBufferingMs"\)/);
+  assert.match(app,/portrait\.dataset\.avatarTransportMs=String\(Math\.max\(0,avatarPipelineMs-ttsFirstAudioMs-pcmBufferingMs-renderMs\)\)/);
+  assert.match(app,/reportSpeechStart\("formal"\)/);
+  assert.match(app,/commitObservedAt:performance\.now\(\)/);
+  assert.match(app,/reportClientTiming\("playback-ended"\)/);
+  assert.match(app,/portrait\.dataset\.avatarRenderMs=String\(renderMs\)/);
   assert.match(app,/backchannelPlayback\?\.claim\(data\.text/);
   assert.match(app,/remainingAfterSpokenBackchannel\(backchannelPlayback\.text,data\.text\)/);
   assert.match(app,/backchannelPlayback\.close\(\);backchannelPlayback=null/);
@@ -46,8 +66,10 @@ test("main voice page offers real and anime modes in one conversation",async()=>
   assert.match(app,/portrait\.dataset\.behavior=JSON\.stringify\(sentencePlan\)/);
   assert.match(app,/behavior:sentencePlan/);
   assert.match(app,/conversation-actions\.js\?v=20260813-restrained-action-v21/);
-  assert.match(app,/bow:"\/real-actions\/bedroom_bow_silent\.mp4"/);
-  assert.match(app,/surprise:"\/real-actions\/bedroom_surprise_silent\.mp4"/);
+  assert.match(app,/function silentNeuralAction\(action\)/);
+  assert.match(app,/return resolveSilentRealAction\(action,realAvatarCharacter\)/);
+  assert.match(realActions,/bedroom_\$\{asset\}\/01\.mp4|`\/dh-live\/actions\/\$\{asset\}\/01\.mp4`/);
+  assert.match(realActions,/bedroom_bow_front_silent\.mp4/);
   assert.match(app,/if\(silentAction\)\{if\(streamTurn\)await streamTurn\.waitForPlayback\(\);options\.onStart\?\.\(\);await playSilentNeuralAction/);
   assert.match(app,/\/wav2lip-avatar\/avatar\.html/);
   assert.match(app,/\/vrm-embed\.html/);
@@ -61,8 +83,10 @@ test("main voice page offers real and anime modes in one conversation",async()=>
   assert.match(app,/data\.waitingPreview\?\.url/);
   assert.match(app,/elapsedMs:previewTimeMs,leadMs:AVATAR_FIRST_SEGMENT_LEAD_MS/);
   assert.match(app,/activeWaitingPreview\?\.action===event\.data\.action/);
-  assert.match(app,/backchannelContinuationMs\(\{expectedAudioMs:backchannelVisual\.stream\?\.expectedAudioMs,receivedAudioMs:backchannelVisual\.stream\?\.receivedAudioMs\}\)/);
+  assert.match(app,/backchannelVisualElapsedMs\(backchannelVisual\)/);
   assert.match(app,/backchannelContinuationMs=String\(elapsedMs\)/);
+  assert.match(app,/data\.kind==="long-wait"&&backchannelVisual/);
+  assert.match(app,/if\(visual&&!visual\.startedAt\)visual\.startedAt=performance\.now\(\)/);
   assert.match(app,/sentencePlan\.frameOffset\+actionFrameBias/);
   assert.match(app,/binaryAudio:externalAudio/);
   assert.match(app,/fragmentedVideo/);
@@ -71,6 +95,24 @@ test("main voice page offers real and anime modes in one conversation",async()=>
   assert.match(app,/content\.slice\(0,head\).*content\.slice\(-tail\)/s);
   assert.doesNotMatch(html,/lumi-realistic-v2\.png|class="realistic-avatar"/);
   assert.match(styles,/\.avatar-panel \.portrait[\s\S]*position: absolute/);
+});
+
+test("localhost page exposes temporary direct action testing controls",async()=>{
+  const [html,app,css,realActions]=await Promise.all([
+    readFile(new URL("../public/index.html",import.meta.url),"utf8"),
+    readFile(new URL("../public/app.js",import.meta.url),"utf8"),
+    readFile(new URL("../public/mode-switch.css",import.meta.url),"utf8"),
+    readFile(new URL("../public/real-action-catalog.js",import.meta.url),"utf8")
+  ]);
+  assert.match(html,/id="actionTestPanel" hidden/);
+  assert.match(html,/data-action-test="happy">微笑/);
+  assert.match(html,/data-action-test="wave_approval">挥手/);
+  assert.match(app,/localActionTestHost=\["localhost","127\.0\.0\.1","::1"\]/);
+  assert.match(app,/purpose:"action-test"/);
+  assert.match(app,/function rawActionTestUrl\(action\)/);
+  assert.match(app,/resolveWaitingActionPreview\(action,realAvatarCharacter\)/);
+  assert.match(realActions,/xiaotao_shy\/01\.mp4/);
+  assert.match(css,/\.action-test-buttons/);
 });
 
 test("user-facing pages hide provider and rendering implementation names",async()=>{
@@ -88,10 +130,13 @@ test("user-facing pages hide provider and rendering implementation names",async(
 });
 
 test("real avatar video covers the complete left panel",async()=>{
-  const [html,css]=await Promise.all([readPublic("wav2lip-avatar/avatar.html"),readPublic("wav2lip-avatar/avatar.css")]);
-  assert.match(html,/avatar\.css\?v=20260813-waiting-motion-v13/);
+  const [html,css,script]=await Promise.all([readPublic("wav2lip-avatar/avatar.html"),readPublic("wav2lip-avatar/avatar.css"),readPublic("wav2lip-avatar/avatar.js")]);
+  assert.match(html,/avatar\.css\?v=20260814-atomic-action-v15/);
   assert.match(css,/\.avatar-layer\{[^}]*width:100%;height:100%;object-fit:cover;object-position:center center/);
-  assert.match(css,/#stage\{[^}]*lumi-bedroom-background-v1\.png[^}]*center\/cover/);
+  assert.match(script,/lumi:\{idleAsset:"bedroom_idle_test",idleVideo:"01-seamless\.mp4/);
+  assert.match(script,/xiaotao:\{idleAsset:"xiaotao_idle",idleVideo:"01\.mp4/);
+  assert.match(script,/idleVideo\.poster=`\$\{characterRoot\}\/thumbnail\.jpg`/);
+  assert.match(script,/stage\.style\.backgroundImage=/);
 });
 
 test("embedded anime view receives shared speech and behavior events",async()=>{
@@ -125,7 +170,7 @@ test("praise has a dedicated anime thumbs-up and a restrained listening nod",asy
   assert.match(app,/new ListeningGestureGate\(\)/);
   assert.match(app,/voiceCallActive&&recognitionRunning&&recognizedText/);
   assert.match(app,/setDigitalHumanAction\("nod",\{force:true,hold:false,behavior:\{purpose:"listening"/);
-  assert.match(app,/url:"\/dh-live\/actions\/bedroom_agree_test\/01\.mp4",purpose:"listening",loop:false,durationMs:3600/);
+  assert.match(app,/realAvatarCharacter==="xiaotao"\?"xiaotao_nod":"bedroom_agree_test"/);
   assert.match(app,/type:"wav2lip-preview-clear"/);
   const realAvatar=await readPublic("wav2lip-avatar/avatar.js");
   assert.match(realAvatar,/video\.loop=data\.loop!==false/);
@@ -137,14 +182,25 @@ test("voice button toggles one continuous call instead of each utterance",async(
   assert.match(app,/const toggleCall=\(\)=>voiceCallActive\?endCall\(\):beginCall\(\)/);
   assert.match(app,/await completedQueue\.catch\(\(\)=>\{\}\)/);
   assert.match(app,/recognitionResumeDelayMs\(\{preciseAudioTail:neuralAvatarProfile&&avatarPcmReady,outputLatencyMs\}\)/);
-  assert.match(app,/recognitionSilenceMs\(\{final:recognizedFinal,text:recognizedText\}\)/);
+  assert.match(app,/recognitionSilenceMs\(\{text:recognizedText\}\)/);
+  assert.match(app,/new SpeechEndpointDetector\(\)/);
+  assert.match(app,/dataset\.vadNoiseFloor/);
+  assert.match(app,/dataset\.vadThreshold/);
+  assert.match(app,/now-lastDiagnosticAt>=250/);
   assert.match(app,/dataset\.answerEndToListeningMs/);
   assert.match(app,/dataset\.audioOutputLatencyMs/);
-  assert.match(app,/const silenceTargetMs=recognitionSilenceMs\(\{final:recognizedFinal,text:recognizedText\}\)/);
+  assert.match(app,/const silenceTargetMs=recognitionSilenceMs\(\{text:recognizedText\}\)/);
   assert.match(app,/new RecognitionTurnGate\(\{onCommit:commitRecognizedTurn,finalizeDelayMs:90\}\)/);
-  assert.match(app,/turnGate\.requestStop\(\{final:recognizedFinal\}\)/);
-  assert.match(app,/recognizedFinal=Boolean\(results\.at\(-1\)\?\.isFinal\)/);
+  assert.match(app,/turnGate\.requestStop\(\{endpointSilenceMs:endpoint\.silenceMs\}\)/);
+  assert.match(app,/const final=Boolean\(results\.at\(-1\)\?\.isFinal\)/);
+  assert.match(app,/if\(turnGate\.update\(recognizedText,\{final,endpointSilenceMs:latestEndpointSilenceMs\}\)\)\{stopVadLoop\(\);clearListeningGesture\(\);/);
+  assert.match(app,/const markRecognitionStopped=\(\)=>\{recognitionRunning=false;/);
+  assert.match(app,/clearListeningGesture\(\);markRecognitionStopped\(\);try\{recognition\.stop\(\)/);
+  assert.match(app,/stopVadLoop\(\);markRecognitionStopped\(\);turnGate\.requestStop\(\{endpointSilenceMs:endpoint\.silenceMs\}\)/);
   assert.match(app,/dataset\.vadStopToSubmitMs/);
+  assert.match(app,/speechEndpointMs/);
+  assert.match(app,/endpointSilenceMs:endpoint\.silenceMs/);
+  assert.match(app,/endpointSilenceMs:latestEndpointSilenceMs/);
   assert.match(app,/if\(recognitionRunning\)\{restartListeningTimer=setTimeout\(startListening,100\);return;\}/);
   assert.match(app,/if\(turnGate\.committed\)return;recognitionFailed=true;turnGate\.fail\(\)/);
   assert.match(app,/getFloatTimeDomainData/);
@@ -196,11 +252,12 @@ test("streaming avatar experiment consumes ordered server segments and cancels s
   assert.match(app,/\/ack`/);
   assert.match(app,/renderUnacknowledged/);
   assert.match(app,/videoAudioGateMs/);
-  assert.match(app,/action,frameOffset,externalAudio/);
+  assert.match(app,/action,character:realAvatarCharacter,frameOffset,externalAudio/);
   assert.match(app,/streamTurn\.allocateSentence\(\)/);
   assert.match(app,/visualTurnId:behavior\?\.visualTurnId/);
   assert.match(app,/closeVisualTurn\(streamTurn\.id\)/);
   assert.match(app,/dataset\.chatFirstSentenceMs/);
+  assert.match(app,/raw===undefined\|\|raw\.trim\(\)===""/);
   assert.match(app,/dataset\.avatarFirstSegmentMs/);
   assert.match(app,/dataset\.ttsFirstAudioMs/);
   assert.match(app,/dataset\.ttsConnectionReused/);
@@ -218,6 +275,12 @@ test("streaming avatar experiment consumes ordered server segments and cancels s
   const avatar=await readPublic("wav2lip-avatar/avatar.js");
   assert.match(avatar,/scheduleIdleReveal\(pendingIdleLingerMs,pendingIdleTimeMs\)/);
   assert.match(avatar,/parent\.__lumiAvatarAudioContext/);
+  assert.match(avatar,/let fragmentedPlaybackPromise=null/);
+  assert.match(avatar,/fragmentedPlaybackGeneration\+\+/);
+  assert.match(avatar,/generation!==fragmentedPlaybackGeneration/);
+  assert.match(avatar,/if\(fragmentedPlaybackPromise\)return fragmentedPlaybackPromise/);
+  assert.match(avatar,/void prewarmFragmentedPlayback\(playToken\)/);
+  assert.match(avatar,/fragmentedVideo:true,gapMs:0,prewarmed:true/);
   assert.match(app,/for\(const stream of activeStreamingSpeech\)stream\.cancel\(\)/);
   assert.doesNotMatch(app,/liveTranscript\.textContent=recognizedText/);
 });

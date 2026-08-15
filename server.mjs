@@ -4,7 +4,7 @@ import { stat } from "node:fs/promises";
 import { createReadStream, readFileSync } from "node:fs";
 import { extname, join, normalize } from "node:path";
 import { fileURLToPath } from "node:url";
-import { buildChatPayload, buildMiniMaxChatPayload, buildMiniMaxReply, buildMiniMaxSpeechPayload, buildResponsiveBackchannel, buildSpeechPayload, companionIdentityReply, companionPresenceReply, completedReplySentenceCount, conversationalSentenceLimit, decodeMiniMaxAudio, demoReply, extractMiniMaxChatText, extractResponseText, inferCompanionState, isRedundantClosingQuestion, normalizePersona, parseCompanionReply, sanitizeReplyText, takeCompleteSentences } from "./src/companion.mjs";
+import { buildChatPayload, buildLongWaitBackchannel, buildMiniMaxChatPayload, buildMiniMaxReply, buildMiniMaxSpeechPayload, buildResponsiveBackchannel, buildSpeechPayload, companionIdentityReply, companionPresenceReply, completedReplySentenceCount, conversationalSentenceLimit, decodeMiniMaxAudio, demoReply, extractMiniMaxChatText, extractResponseText, inferCompanionState, isRedundantClosingQuestion, normalizePersona, parseCompanionReply, sanitizeReplyText, takeCompleteSentences } from "./src/companion.mjs";
 import { CompanionMemoryStore } from "./src/memory.mjs";
 import { buildVoiceCatalog } from "./src/voices.mjs";
 import { DhActionTaskStore, isLoopbackAddress, saveActionVideo } from "./src/dh-action-studio.mjs";
@@ -16,12 +16,16 @@ import { BoundedAsyncCache } from "./src/audio-cache.mjs";
 import { cacheControlForStaticPath, parseByteRange } from "./src/static-media.mjs";
 import { EphemeralPcmStore } from "./src/ephemeral-pcm-store.mjs";
 import { VisualTurnGate } from "./src/visual-turn-gate.mjs";
-import { BACKCHANNEL_OFFER_MS } from "./src/backchannel-timing.mjs";
-import { resolveWaitingActionPreview } from "./src/real-actions.mjs";
+import { BACKCHANNEL_OFFER_MS, LONG_WAIT_BACKCHANNEL_OFFER_MS } from "./src/backchannel-timing.mjs";
+import { normalizeRealAvatarCharacter, resolveWaitingActionPreview } from "./src/real-actions.mjs";
 import { bindClientAbort } from "./src/client-abort.mjs";
 import { shouldPrepareAvatarAction } from "./src/action-preparation.mjs";
 import { PreparedTtsLease, PREPARED_TTS_REFRESH_MS } from "./src/prepared-tts-lease.mjs";
 import { trimPcm16Silence } from "./src/pcm-silence.mjs";
+import { fetchWithConnectionHedge } from "./src/hedged-fetch.mjs";
+import { sanitizeClientTiming } from "./src/client-timing.mjs";
+import { summarizeLatencySamples, traceToLatencySample } from "./src/chat-latency-summary.mjs";
+import { LatencySampleStore } from "./src/latency-sample-store.mjs";
 
 function loadLocalEnv() {
   try {
@@ -40,6 +44,8 @@ loadLocalEnv();
 const root = fileURLToPath(new URL("./public", import.meta.url));
 const memoryFile = process.env.MEMORY_FILE || fileURLToPath(new URL("./data/companion-memory.json", import.meta.url));
 const memoryStore = new CompanionMemoryStore(memoryFile);
+const latencySampleFile=process.env.LATENCY_SAMPLE_FILE||fileURLToPath(new URL("./data/chat-latency-samples.json",import.meta.url));
+const latencySamples=new LatencySampleStore(latencySampleFile);
 const projectRoot = fileURLToPath(new URL(".", import.meta.url));
 const actionUploadDir = fileURLToPath(new URL("./data/dh-action-uploads", import.meta.url));
 const actionTasks = new DhActionTaskStore({ projectRoot });
@@ -50,7 +56,7 @@ const visualTurns=new VisualTurnGate();
 const speculativeStreams=new Map();
 const visualSkipTasks=new Map();
 const preparedTtsConnections=new Map();
-const CONTINUOUS_FIRST_SEGMENT_MS=320;
+const CONTINUOUS_FIRST_SEGMENT_MS=240;
 const CONTINUOUS_MINIMUM_TAIL_MS=160;
 const dinetStreams = new DINetStreamSessionStore({
   renderer:dinetRenders,
@@ -69,7 +75,8 @@ const miniMaxTextModel = process.env.MINIMAX_TEXT_MODEL || "MiniMax-M3";
 const miniMaxTtsModel = process.env.MINIMAX_TTS_MODEL || "speech-2.8-turbo";
 const miniMaxTtsVoice = process.env.MINIMAX_TTS_VOICE || "female-tianmei";
 const miniMaxTtsWsUrl = process.env.MINIMAX_TTS_WS_URL || "wss://api.minimaxi.com/ws/v1/t2a_v2";
-const miniMaxChatWarmup = process.env.MINIMAX_CHAT_WARMUP !== "0";
+const miniMaxChatWarmup = process.env.MINIMAX_CHAT_WARMUP === "1";
+const miniMaxHedgeDelayMs=Math.min(10_000,Math.max(0,Number(process.env.MINIMAX_HEDGE_DELAY_MS??0)||0));
 const voiceCatalog=buildVoiceCatalog({
   provider:apiKey?provider:"demo",
   defaultVoice:provider==="minimax"?miniMaxTtsVoice:ttsVoice,
@@ -151,12 +158,12 @@ function prewarmMiniMaxPcm({text,voice,emotion,signal}){
   return {key,resolvedVoice,...cached};
 }
 
-function startChatTrace(endpoint,{ message,history,userId,persona,fastSpeech }){
+function startChatTrace(endpoint,{ message,history,userId,persona,fastSpeech,realAvatarCharacter }){
   const startedMs=performance.now();
   const trace={
     id:`chat-${Date.now()}-${++chatTraceSequence}`,
     startedAt:new Date().toISOString(),endpoint,provider:apiKey?provider:"demo",
-    input:{message,userId:String(userId||"").slice(0,24),history,persona,fastSpeech:Boolean(fastSpeech)},
+    input:{message,userId:String(userId||"").slice(0,24),history,persona,fastSpeech:Boolean(fastSpeech),realAvatarCharacter:normalizeRealAvatarCharacter(realAvatarCharacter)},
     memories:[],companionState:null,status:"started",timings:{}
   };
   Object.defineProperty(trace,"_startedMs",{value:startedMs});
@@ -170,12 +177,13 @@ function finishChatTrace(trace,result,source){
   trace.timings.totalMs=Math.round(performance.now()-trace._startedMs);
 }
 
-function prepareAvatarAction(action,trace){
+function prepareAvatarAction(action,trace,character="lumi"){
   const prepareStartedAt=performance.now();
-  void dinetRenders.prepareAction(action).then(result=>{
+  character=normalizeRealAvatarCharacter(character);
+  void dinetRenders.prepareAction(action,character).then(result=>{
     trace.timings.assetPrepareMs=Math.round(performance.now()-prepareStartedAt);
-    trace.assetPreparation={action,changed:Boolean(result.changed),loadMs:Number(result.loadMs)||0};
-  }).catch(error=>{trace.assetPreparation={action,error:error.message};});
+    trace.assetPreparation={action,character,changed:Boolean(result.changed),loadMs:Number(result.loadMs)||0};
+  }).catch(error=>{trace.assetPreparation={action,character,error:error.message};});
 }
 
 function json(res, status, body) {
@@ -253,15 +261,17 @@ async function warmupMiniMaxChat() {
   await reader.cancel();
 }
 
-async function miniMaxChatStream(message, history, persona, memories, companionState, userId, res, fastSpeech = false, responsiveSpeech = false, prewarmPcm = false, voice = "", trace) {
+async function miniMaxChatStream(message, history, persona, memories, companionState, userId, res, fastSpeech = false, responsiveSpeech = false, prewarmPcm = false, voice = "", trace, realAvatarCharacter="lumi") {
   const client=bindClientAbort(res);
-  let backchannelTimer=null;
+  let backchannelTimer=null,longWaitBackchannelTimer=null;
   const initialState=inferCompanionState(message,"",companionState);
-  const waitingPreview=fastSpeech?resolveWaitingActionPreview(initialState.action):null;
-  if(shouldPrepareAvatarAction(initialState.action,{fastSpeech}))prepareAvatarAction(initialState.action,trace);
+  realAvatarCharacter=normalizeRealAvatarCharacter(realAvatarCharacter);
+  const waitingPreview=fastSpeech?resolveWaitingActionPreview(initialState.action,realAvatarCharacter):null;
+  if(shouldPrepareAvatarAction(initialState.action,{fastSpeech}))prepareAvatarAction(initialState.action,trace,realAvatarCharacter);
   let ttsLease=null;
   client.signal.addEventListener("abort",()=>{
     if(backchannelTimer)clearTimeout(backchannelTimer);
+    if(longWaitBackchannelTimer)clearTimeout(longWaitBackchannelTimer);
     ttsLease?.cancel();
     trace.status="cancelled";trace.finishedAt=new Date().toISOString();trace.timings.cancelledMs=Math.round(performance.now()-trace._startedMs);
   },{once:true});
@@ -274,8 +284,9 @@ async function miniMaxChatStream(message, history, persona, memories, companionS
     "x-accel-buffering":"no"
   });
   res.flushHeaders?.();
-  sendEvent(res, "meta", { ...initialState, mode:"minimax", ...(waitingPreview?{waitingPreview}:{}) });
+  sendEvent(res, "meta", { ...initialState, mode:"minimax", traceId:trace.id, ...(waitingPreview?{waitingPreview}:{}) });
   let firstSentenceEmitted=false,backchannel=responsiveSpeech?buildResponsiveBackchannel(message,initialState):null,backchannelWarmup=null;
+  const longWaitBackchannel=responsiveSpeech?buildLongWaitBackchannel(message,initialState):null;
   if(backchannel&&prewarmPcm){
     const pcmWarmup=prewarmMiniMaxPcm({text:backchannel.text,voice,emotion:backchannel.emotion,signal:client.signal});
     trace.backchannelPcm={voice:pcmWarmup.resolvedVoice,cacheHit:pcmWarmup.hit,status:"preparing"};
@@ -296,6 +307,12 @@ async function miniMaxChatStream(message, history, persona, memories, companionS
     trace.backchannel=backchannel;
     sendEvent(res,"backchannel",backchannel);
   },BACKCHANNEL_OFFER_MS):null;
+  longWaitBackchannelTimer=longWaitBackchannel?setTimeout(()=>{
+    if(firstSentenceEmitted||res.writableEnded||client.signal.aborted)return;
+    trace.timings.longWaitBackchannelMs=Math.round(performance.now()-trace._startedMs);
+    trace.longWaitBackchannel=longWaitBackchannel;
+    sendEvent(res,"backchannel",longWaitBackchannel);
+  },LONG_WAIT_BACKCHANNEL_OFFER_MS):null;
   if(fastSpeech&&!client.signal.aborted){
     ttsLease=new PreparedTtsLease({
       prepare:()=>prepareTtsConnection({voice,emotion:initialState.emotion}),
@@ -311,12 +328,14 @@ async function miniMaxChatStream(message, history, persona, memories, companionS
   }
   let response;
   try{
-    response=await fetch(`${miniMaxBaseUrl}/chat/completions`, {
+    const upstream=await fetchWithConnectionHedge(`${miniMaxBaseUrl}/chat/completions`, {
       method:"POST",
       headers:{ authorization:`Bearer ${apiKey}`, "content-type":"application/json" },
       body:JSON.stringify(requestPayload),
       signal:client.signal
-    });
+    },{delayMs:miniMaxHedgeDelayMs});
+    response=upstream.response;
+    trace.providerConnection={hedgeDelayMs:miniMaxHedgeDelayMs,hedged:upstream.hedged,winner:upstream.winner};
   }catch(error){
     ttsLease?.cancel();
     throw error;
@@ -351,7 +370,7 @@ async function miniMaxChatStream(message, history, persona, memories, companionS
       if(!safeSentence){trace.filteredSentenceCount=(trace.filteredSentenceCount||0)+1;continue;}
       if(isRedundantClosingQuestion(message,safeSentence,trace.emittedSentences.length>0))continue;
       if(trace.emittedSentences.at(-1)===safeSentence&&safeSentence!==sentence)continue;
-      firstSentenceEmitted=true;ttsLease?.freeze();if(backchannelTimer)clearTimeout(backchannelTimer);
+      firstSentenceEmitted=true;ttsLease?.freeze();if(backchannelTimer)clearTimeout(backchannelTimer);if(longWaitBackchannelTimer)clearTimeout(longWaitBackchannelTimer);
       trace.timings.firstSentenceMs??=Math.round(performance.now()-trace._startedMs);
       trace.emittedSentences.push(safeSentence);
       if(!client.signal.aborted)sendEvent(res,"sentence",{text:safeSentence,emotion:sentenceResult.emotion,action:sentenceResult.action});
@@ -412,6 +431,7 @@ async function miniMaxChatStream(message, history, persona, memories, companionS
   const streamedReply=trace.emittedSentences.join("");
   const result = buildMiniMaxReply(streamedReply||rawText,message,companionState,history);
   if(backchannelTimer)clearTimeout(backchannelTimer);
+  if(longWaitBackchannelTimer)clearTimeout(longWaitBackchannelTimer);
   finishChatTrace(trace,result,"minimax-stream");
   sendEvent(res, "done", { ...result, mode:"minimax" });
   client.complete();
@@ -427,7 +447,7 @@ async function chat(req, res) {
   if (message.length > 2000) return json(res, 400, { error: "单条消息不能超过 2000 字" });
   const history = Array.isArray(data.history) ? data.history : [];
   const persona = normalizePersona(data.persona);
-  const trace=startChatTrace("/api/chat",{message,history,userId:data.userId,persona,fastSpeech:false});
+  const trace=startChatTrace("/api/chat",{message,history,userId:data.userId,persona,fastSpeech:false,realAvatarCharacter:data.realAvatarCharacter});
   const [memories,companionState] = await Promise.all([
     memoryStore.recall(data.userId,message),
     memoryStore.getCompanionState(data.userId)
@@ -452,7 +472,8 @@ async function chatStream(req, res) {
   if (message.length > 2000) return json(res, 400, { error:"单条消息不能超过 2000 字" });
   const history = Array.isArray(data.history) ? data.history : [];
   const persona = normalizePersona(data.persona);
-  const trace=startChatTrace("/api/chat/stream",{message,history,userId:data.userId,persona,fastSpeech:data.fastSpeech});
+  const realAvatarCharacter=normalizeRealAvatarCharacter(data.realAvatarCharacter);
+  const trace=startChatTrace("/api/chat/stream",{message,history,userId:data.userId,persona,fastSpeech:data.fastSpeech,realAvatarCharacter});
   const [memories,companionState] = await Promise.all([
     memoryStore.recall(data.userId,message),
     memoryStore.getCompanionState(data.userId)
@@ -461,9 +482,9 @@ async function chatStream(req, res) {
   trace.memories=memories;trace.companionState=companionState;
   const groundedResult = companionIdentityReply(message,persona) || companionPresenceReply(message,persona);
   if(groundedResult){
-    if(shouldPrepareAvatarAction(groundedResult.action,{fastSpeech:data.fastSpeech}))prepareAvatarAction(groundedResult.action,trace);
+    if(shouldPrepareAvatarAction(groundedResult.action,{fastSpeech:data.fastSpeech}))prepareAvatarAction(groundedResult.action,trace,realAvatarCharacter);
     res.writeHead(200, { "content-type":"text/event-stream; charset=utf-8", "cache-control":"no-cache, no-transform" });
-    sendEvent(res,"meta",{emotion:groundedResult.emotion,action:groundedResult.action,mode:apiKey?provider:"demo"});
+    sendEvent(res,"meta",{emotion:groundedResult.emotion,action:groundedResult.action,mode:apiKey?provider:"demo",traceId:trace.id});
     sendEvent(res,"sentence",{text:groundedResult.reply});
     sendEvent(res,"done",{...groundedResult,mode:apiKey?provider:"demo"});
     res.end();
@@ -471,13 +492,13 @@ async function chatStream(req, res) {
     void memoryStore.updateCompanionState(data.userId,groundedResult.emotion);
     return;
   }
-  if (provider === "minimax" && apiKey) return miniMaxChatStream(message, history, persona, memories, companionState, data.userId, res, Boolean(data.fastSpeech),Boolean(data.responsiveSpeech),Boolean(data.prewarmPcm),String(data.voice||""),trace);
+  if (provider === "minimax" && apiKey) return miniMaxChatStream(message, history, persona, memories, companionState, data.userId, res, Boolean(data.fastSpeech),Boolean(data.responsiveSpeech),Boolean(data.prewarmPcm),String(data.voice||""),trace,realAvatarCharacter);
   const result = provider === "openai" && apiKey
     ? await openAIChat(message, history, data.userId, persona, memories,companionState)
     : demoReply(message, persona);
-  if(shouldPrepareAvatarAction(result.action,{fastSpeech:data.fastSpeech}))prepareAvatarAction(result.action,trace);
+  if(shouldPrepareAvatarAction(result.action,{fastSpeech:data.fastSpeech}))prepareAvatarAction(result.action,trace,realAvatarCharacter);
   res.writeHead(200, { "content-type":"text/event-stream; charset=utf-8", "cache-control":"no-cache, no-transform" });
-  sendEvent(res, "meta", { emotion:result.emotion, action:result.action, mode:apiKey ? provider : "demo" });
+  sendEvent(res, "meta", { emotion:result.emotion, action:result.action, mode:apiKey ? provider : "demo", traceId:trace.id });
   for (const sentence of takeCompleteSentences(result.reply, true, Boolean(data.fastSpeech)).sentences) sendEvent(res, "sentence", { text:sentence });
   sendEvent(res, "done", { ...result, mode:apiKey ? provider : "demo" });
   res.end();
@@ -604,12 +625,12 @@ export const server = http.createServer(async (req, res) => {
     if(pathname==="/api/dinet/prepare-action"&&req.method==="POST"){
       if(!isLoopbackAddress(req.socket.remoteAddress))return json(res,403,{error:"本地 DINet 动作预热仅允许本机访问"});
       const data=await body(req);
-      const action=String(data.action||"idle"),prepared=await dinetRenders.prepareAction(action);
-      return json(res,200,{...prepared,preview:resolveWaitingActionPreview(action)});
+      const action=String(data.action||"idle"),character=normalizeRealAvatarCharacter(data.character),prepared=await dinetRenders.prepareAction(action,character);
+      return json(res,200,{...prepared,character,preview:resolveWaitingActionPreview(action,character)});
     }
     if (pathname === "/api/dinet/render" && req.method === "POST") {
       if (!isLoopbackAddress(req.socket.remoteAddress)) return json(res, 403, { error:"本地 DINet 口型接口仅允许本机访问" });
-      const result = await dinetRenders.render(await binaryBody(req),requestUrl.searchParams.get("action")||"idle");
+      const result = await dinetRenders.render(await binaryBody(req),requestUrl.searchParams.get("action")||"idle",{character:normalizeRealAvatarCharacter(requestUrl.searchParams.get("character"))});
       return json(res, 200, result);
     }
     if (pathname === "/api/dinet/speech-stream" && req.method === "POST") {
@@ -621,11 +642,11 @@ export const server = http.createServer(async (req, res) => {
       const visualSentenceIndex=Number(data.visualSentenceIndex);
       const orderedSentence=visualTurnId&&Number.isSafeInteger(visualSentenceIndex)&&visualSentenceIndex>=0;
       const controller=new AbortController();let closed=false;
-      const pipelineStartedAt=performance.now();let firstAudioAt=null,firstSegmentAt=null;
+      const pipelineStartedAt=performance.now();let firstAudioAt=null,firstSegmentAt=null,ttsFirstAudioStages=null;
       res.on("close",()=>{if(!closed)controller.abort();});
       res.writeHead(200,{"content-type":"text/event-stream; charset=utf-8","cache-control":"no-cache, no-transform","x-accel-buffering":"no"});
       const continuousVideo=data.externalAudio===true&&data.fragmentedVideo===true;
-      const session=dinetStreams.start({action:String(data.action||"idle"),frameOffset:Number(data.frameOffset||0),videoOnly:data.externalAudio===true,binaryAudio:data.binaryAudio===true,fragmentedVideo:data.fragmentedVideo===true,renderBackpressure:data.renderBackpressure===true,visualTurnId:orderedSentence?visualTurnId:"",visualSentenceIndex:orderedSentence?visualSentenceIndex:0,...(continuousVideo?{firstSegmentMs:CONTINUOUS_FIRST_SEGMENT_MS,minimumTailMs:CONTINUOUS_MINIMUM_TAIL_MS}:{})});
+      const session=dinetStreams.start({action:String(data.action||"idle"),character:normalizeRealAvatarCharacter(data.character),frameOffset:Number(data.frameOffset||0),videoOnly:data.externalAudio===true,binaryAudio:data.binaryAudio===true,fragmentedVideo:data.fragmentedVideo===true,renderBackpressure:data.renderBackpressure===true,visualTurnId:orderedSentence?visualTurnId:"",visualSentenceIndex:orderedSentence?visualSentenceIndex:0,...(continuousVideo?{firstSegmentMs:CONTINUOUS_FIRST_SEGMENT_MS,minimumTailMs:CONTINUOUS_MINIMUM_TAIL_MS}:{})});
       sendEvent(res,"started",session);
       const speculative=data.speculative===true;
       const speculativeState=speculative?{committed:false,waiters:new Set()}:null;
@@ -639,7 +660,7 @@ export const server = http.createServer(async (req, res) => {
         });
         if(orderedSentence)await(visualSlotPromise||=visualTurns.wait(visualTurnId,visualSentenceIndex,{signal:controller.signal}));
         const segments=await dinetStreams.drain(session.id,{final,signal:controller.signal,onSegment:segment=>{
-          firstSegmentAt??=performance.now();
+          if(firstSegmentAt===null){firstSegmentAt=performance.now();const renderMs=Math.max(0,Number(segment?.segment?.renderMs)||0);segment.firstSegmentTiming={pcmBufferingMs:firstAudioAt===null?null:Math.max(0,Math.round(firstSegmentAt-firstAudioAt)-renderMs)};}
           firstSegmentSent=true;sendEvent(res,"segment",segment);
         },maxSegments:speculativeState&&!speculativeState.committed?1:Infinity});
         return segments.length;
@@ -649,29 +670,33 @@ export const server = http.createServer(async (req, res) => {
         const prewarmed=data.preferPrewarmed===true?miniMaxPcmCache.get(pcmKey):null;
         let ttsCacheHit=false,ttsMetrics,cachedPcm=null;
         const appendPcm=pcm=>{
-            firstAudioAt??=performance.now();
+            if(firstAudioAt===null){firstAudioAt=performance.now();const firstAudioMs=Math.round(firstAudioAt-pipelineStartedAt),connectionMs=Math.max(0,Number(ttsFirstAudioStages?.connectionMs)||0),taskMs=Math.max(0,Number(ttsFirstAudioStages?.taskMs)||0),synthesisMs=Math.max(0,Number(ttsFirstAudioStages?.synthesisMs)||0);sendEvent(res,"tts-first-audio",{firstAudioMs,requestSetupMs:Math.max(0,firstAudioMs-connectionMs-taskMs-synthesisMs),connectionMs,taskMs,synthesisMs});}
             dinetStreams.append(session.id,chunkSequence++,pcm);
             renderChain=renderChain.then(()=>emitSegments(false));
+            // The client can disconnect while DINet is still rendering. Attach
+            // an observer immediately so a later cancellation rejection cannot
+            // become an unhandled rejection before the request reaches await.
+            void renderChain.catch(()=>{});
         };
         if(prewarmed)cachedPcm=await prewarmed.catch(()=>null);
         if(cachedPcm){
           const cached=cachedPcm;ttsCacheHit=true;
           if(controller.signal.aborted)throw Object.assign(new Error("cancelled"),{name:"AbortError"});
           sendEvent(res,"audio-ready",{audioMs:cached.metrics.audioMs});
-          appendPcm(cached.pcm);ttsMetrics={...cached.metrics,firstAudioMs:0,totalMs:0,cached:true};
+          ttsFirstAudioStages={connectionMs:0,taskMs:0,synthesisMs:0};appendPcm(cached.pcm);ttsMetrics={...cached.metrics,firstAudioMs:0,totalMs:0,cached:true};
         }else{
           const preparedConnection=takeTtsConnection(data.ttsConnectionId,{model:miniMaxTtsModel,voice:resolvedVoice,emotion:data.emotion});
           try{
             ttsMetrics=await streamMiniMaxPcm({
               apiKey,text,model:miniMaxTtsModel,voice:resolvedVoice,emotion:data.emotion,
               url:miniMaxTtsWsUrl,signal:controller.signal,connection:preparedConnection,trimLeadingSilence:true,
-              onAudio:appendPcm
+              onAudio:appendPcm,onTiming:(event,timing)=>{if(event==="first-audio")ttsFirstAudioStages=timing;}
             });
           }catch(error){
             if(!preparedConnection||chunkSequence||controller.signal.aborted)throw error;
             ttsMetrics=await streamMiniMaxPcm({
               apiKey,text,model:miniMaxTtsModel,voice:resolvedVoice,emotion:data.emotion,
-              url:miniMaxTtsWsUrl,signal:controller.signal,onAudio:appendPcm,trimLeadingSilence:true
+              url:miniMaxTtsWsUrl,signal:controller.signal,onAudio:appendPcm,onTiming:(event,timing)=>{if(event==="first-audio")ttsFirstAudioStages=timing;},trimLeadingSilence:true
             });
             ttsMetrics.connectionFallback=true;
           }
@@ -737,11 +762,34 @@ export const server = http.createServer(async (req, res) => {
       const speculativeState=speculativeStreams.get(sessionId);if(speculativeState){for(const wake of speculativeState.waiters)wake();speculativeState.waiters.clear();speculativeStreams.delete(sessionId);}
       return json(res, 200, dinetStreams.cancel(sessionId));
     }
-    if (req.method === "GET" && pathname === "/api/health") return json(res, 200, { ok:true, mode:apiKey ? provider : "demo", memory:true, continuity:true, textModel:provider === "minimax" ? miniMaxTextModel : textModel, ttsModel:provider === "minimax" ? miniMaxTtsModel : ttsModel });
+    if (req.method === "GET" && pathname === "/api/health") return json(res, 200, { ok:true, mode:apiKey ? provider : "demo", memory:true, continuity:true, textModel:provider === "minimax" ? miniMaxTextModel : textModel, ttsModel:provider === "minimax" ? miniMaxTtsModel : ttsModel, chatWarmupEnabled:miniMaxChatWarmup });
     if (req.method === "GET" && pathname === "/api/voices") return json(res,200,{provider:voiceCatalog.provider,defaultKey:voiceCatalog.defaultKey,voices:voiceCatalog.voices});
     if (req.method === "GET" && pathname === "/api/chat/debug/recent") {
       if (!isLoopbackAddress(req.socket.remoteAddress)) return json(res,403,{error:"聊天诊断记录仅允许本机访问"});
       return json(res,200,{persisted:false,limit:20,traces:recentChatTraces});
+    }
+    if(req.method==="GET"&&pathname==="/api/chat/debug/summary"){
+      if(!isLoopbackAddress(req.socket.remoteAddress))return json(res,403,{error:"聊天延迟汇总仅允许本机访问"});
+      const stored=await latencySamples.snapshot(),live=recentChatTraces.filter(trace=>!trace.latencyPersisted).map(traceToLatencySample).filter(Boolean);
+      return json(res,200,{persisted:true,storedLimit:latencySamples.limit,liveTraceLimit:20,...summarizeLatencySamples([...stored,...live])});
+    }
+    if(req.method==="POST"&&pathname==="/api/chat/debug/client-timing"){
+      if(!isLoopbackAddress(req.socket.remoteAddress))return json(res,403,{error:"浏览器计时仅允许本机上报"});
+      const data=await body(req),trace=recentChatTraces.find(item=>item.id===String(data.traceId||""));
+      if(!trace)return json(res,404,{error:"对应聊天诊断已过期"});
+      const timing=sanitizeClientTiming(data);(trace.clientTimings||=[]).push({...timing,receivedAt:new Date().toISOString()});
+      if(trace.clientTimings.length>6)trace.clientTimings.splice(0,trace.clientTimings.length-6);
+      // Persist as soon as formal speech is actually audible. Waiting for the
+      // whole playback used to lose otherwise valid latency samples whenever
+      // the user interrupted, ended the call, or refreshed after hearing it.
+      if(timing.event==="formal-speech"&&!trace.latencyPersisted){
+        const sample=traceToLatencySample(trace);
+        if(sample){
+          if(!trace._latencyPersisting)Object.defineProperty(trace,"_latencyPersisting",{value:latencySamples.append(sample)});
+          if(await trace._latencyPersisting)trace.latencyPersisted=true;
+        }
+      }
+      return json(res,202,{ok:true});
     }
     if (req.method === "POST" && pathname === "/api/chat/memory/clear") {
       if (!isLoopbackAddress(req.socket.remoteAddress)) return json(res,403,{error:"聊天记忆清理仅允许本机访问"});
@@ -763,6 +811,24 @@ export const server = http.createServer(async (req, res) => {
     json(res, error.status || 502, { error: error.message || "服务暂时不可用" });
   }
 });
+
+let shutdownTask=null;
+function shutdown(signal="shutdown"){
+  if(shutdownTask)return shutdownTask;
+  shutdownTask=(async()=>{
+    for(const [id,entry] of preparedTtsConnections){preparedTtsConnections.delete(id);clearTimeout(entry.timer);entry.connection.close();}
+    if(server.listening)await new Promise(resolve=>server.close(resolve));
+    await dinetRenders.close();
+  })();
+  const forceTimer=setTimeout(()=>process.exit(1),2000);forceTimer.unref?.();
+  shutdownTask.then(()=>{clearTimeout(forceTimer);process.exit(0);},error=>{console.error(`${signal} 退出失败：${error.message}`);process.exit(1);});
+  return shutdownTask;
+}
+
+if(process.env.NODE_ENV!=="test"){
+  process.once("SIGTERM",()=>void shutdown("SIGTERM"));
+  process.once("SIGINT",()=>void shutdown("SIGINT"));
+}
 
 if (process.env.NODE_ENV !== "test") {
   void warmupMiniMaxChat().catch(error=>console.warn(`文案连接预热失败，将在首次请求时重试：${error.message}`));

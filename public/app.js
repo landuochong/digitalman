@@ -2,11 +2,14 @@ import { ConversationActionScheduler, continueActionPlan, preparedPreviewCanStar
 import { buildWav2LipPlaybackMessage } from "./avatar-protocol.js?v=20260813-video-handoff-v11";
 import { AvatarStreamTurn } from "./avatar-stream-turn.js?v=20260813-video-handoff-v11";
 import { RecognitionTurnGate,recognitionResumeDelayMs,recognitionSilenceMs } from "./recognition-turn-gate.js?v=20260813-adaptive-endpoint-v23";
-import { BargeInDetector } from "./barge-in-detector.js?v=20260813-barge-in-v1";
+import { SpeechEndpointDetector } from "./speech-endpoint-detector.js?v=20260814-noise-endpoint-v1";
+import { BargeInDetector } from "./barge-in-detector.js?v=20260814-complete-reply-v3";
 import { ReplyTranscript } from "./reply-transcript.js?v=20260813-spoken-history-v1";
-import { BackchannelGate,BackchannelPlayback,backchannelContinuationMs,remainingAfterSpokenBackchannel } from "./backchannel-gate.js?v=20260814-natural-gratitude-v35";
-import { BACKCHANNEL_GRACE_MS } from "./backchannel-timing.js?v=20260814-faster-backchannel-v2";
+import { BackchannelGate,BackchannelPlayback,backchannelVisualElapsedMs,remainingAfterSpokenBackchannel } from "./backchannel-gate.js?v=20260814-visible-clock-v36";
+import { BACKCHANNEL_GRACE_MS } from "./backchannel-timing.js?v=20260814-long-wait-v3";
 import { ListeningGestureGate } from "./listening-gesture.js?v=20260814-listening-nod-v1";
+import { createClientTimingReporter } from "./client-timing-reporter.js?v=20260814-reliable-timing-v1";
+import { REAL_AVATAR_CHARACTERS,normalizeRealAvatarCharacter,resolveRealActionAsset,resolveSilentRealAction,resolveWaitingActionPreview } from "./real-action-catalog.js?v=20260815-shared-real-actions-v1";
 
 const $ = (selector) => document.querySelector(selector);
 const portrait = $("#portrait"), wave = $("#soundWave"), messages = $("#messages");
@@ -14,9 +17,14 @@ const input = $("#messageInput"), form = $("#chatForm"), sendButton = $("#sendBu
 const micButton = $("#micButton"), modeBanner = $("#modeBanner"), statusText = $("#statusText");
 const voiceButton = $("#voiceButton"), voicePrompt = $("#voicePrompt"), liveTranscript = $("#liveTranscript"), captionButton = $("#captionButton");
 const digitalHumanFrame = $("#digitalHumanFrame");
-const AVATAR_FIRST_SEGMENT_LEAD_MS=320;
-const avatarRuntimeVersion="20260814-gap-preview-v38";
-const avatarRuntimeUrl=path=>`${path}?v=${avatarRuntimeVersion}`;
+const postClientTiming=createClientTimingReporter();
+const AVATAR_FIRST_SEGMENT_LEAD_MS=240;
+const avatarRuntimeVersion="20260815-real-character-v46";
+const avatarRuntimeUrl=(path,parameters={})=>{
+  const url=new URL(path,location.origin);url.searchParams.set("v",avatarRuntimeVersion);
+  for(const[key,value]of Object.entries(parameters))if(value!==undefined&&value!==null&&value!=="")url.searchParams.set(key,String(value));
+  return `${url.pathname}${url.search}`;
+};
 const avatarProfile = new URLSearchParams(location.search).get("profile");
 const selfRecordedProfile = avatarProfile === "self";
 const minimaxGeneratedProfile = avatarProfile === "minimax";
@@ -31,14 +39,18 @@ let avatarMode = switchableAvatarProfile
   : "experiment";
 if(!["real","anime","experiment"].includes(avatarMode))avatarMode="real";
 let neuralAvatarProfile = wav2LipAvatarProfile || (switchableAvatarProfile && avatarMode === "real");
+const realAvatarCharacters=REAL_AVATAR_CHARACTERS;
+let realAvatarCharacter=normalizeRealAvatarCharacter(localStorage.getItem("lumi-real-character"));
 let listeningPreviewActive=false;
 const neuralRenderEndpoint = wav2LipAvatarProfile ? "/api/wav2lip/render" : "/api/dinet/render";
 const streamingAvatarExperiment = new URLSearchParams(location.search).get("streaming") !== "0";
 const continuousVideoExperiment = new URLSearchParams(location.search).get("continuous") !== "0";
-const silentNeuralActions={
-  bow:"/real-actions/bedroom_bow_silent.mp4",
-  surprise:"/real-actions/bedroom_surprise_silent.mp4"
-};
+function realActionAsset(action){return resolveRealActionAsset(action,realAvatarCharacter);}
+function silentNeuralAction(action){return resolveSilentRealAction(action,realAvatarCharacter);}
+function rawActionTestUrl(action){
+  return action==="shy"?resolveWaitingActionPreview(action,realAvatarCharacter)?.url||null:null;
+}
+const actionTestLabels={idle:"待机",happy:"微笑",shy:"害羞",wave_approval:"挥手",nod:"点头",thumbs_up:"点赞",clap:"鼓掌",cheer:"欢呼",bow:"鞠躬",caring:"关心",thinking:"思考",surprise:"惊讶",shrug:"耸肩",cross:"拒绝",confident_arms_crossed:"抱臂"};
 const animeLooks={soft:"学院日常",vivid:"暗色潮流",nike1:"Nike-chan v1",nike2:"Nike-chan v2",classic:"简约短发"};
 const animeLookSchema="20260807-unified-look-v2";
 let animeLook=localStorage.getItem("lumi-vrm-look")||"nike1";
@@ -70,14 +82,14 @@ const cleanAvatarActions = {
   confident_arms_crossed:"idle", cross:"idle"
 };
 if (switchableAvatarProfile && digitalHumanFrame) {
-  digitalHumanFrame.src = avatarRuntimeUrl(avatarMode === "anime" ? "/vrm-embed.html" : "/wav2lip-avatar/avatar.html");
+  digitalHumanFrame.src = avatarMode === "anime"?avatarRuntimeUrl("/vrm-embed.html"):avatarRuntimeUrl("/wav2lip-avatar/avatar.html",{character:realAvatarCharacter});
   portrait.dataset.avatarMode=avatarMode;
   const note=document.querySelector(".avatar-note");
   if(note)note.textContent=avatarMode==="anime"?"动漫陪伴 · 自然表情与动作":"真人陪伴 · 自然中文语音";
 } else if ((selfRecordedProfile || minimaxGeneratedProfile || lakesideGeneratedProfile || cleanAvatarProfile || neuralAvatarProfile) && digitalHumanFrame) {
   const initialAction = cleanAvatarProfile ? "idle" : lakesideGeneratedProfile ? "lakeside_idle_test" : minimaxGeneratedProfile ? "minimax_idle_test" : "self_idle";
   digitalHumanFrame.src = neuralAvatarProfile
-    ? avatarRuntimeUrl("/wav2lip-avatar/avatar.html")
+    ? avatarRuntimeUrl("/wav2lip-avatar/avatar.html",{character:realAvatarCharacter})
     : cleanAvatarProfile
     ? `/clean-avatar/avatar.html?action=${initialAction}`
     : `/dh-live/avatar.html?action=${initialAction}`;
@@ -87,10 +99,13 @@ if (switchableAvatarProfile && digitalHumanFrame) {
 const avatarModeSwitch=$("#avatarModeSwitch");
 if(avatarModeSwitch)avatarModeSwitch.hidden=!switchableAvatarProfile;
 const animeLookControl=$("#animeLookControl"),animeLookSelect=$("#animeLookSelect");
+const realCharacterControl=$("#realCharacterControl"),realCharacterSelect=$("#realCharacterSelect");
 const animeViewControls=$("#animeViewControls"),animeViewButtons=[...document.querySelectorAll("[data-view-angle]")];
 if(animeLookSelect)animeLookSelect.value=animeLook;
 if(animeLookControl)animeLookControl.hidden=!switchableAvatarProfile||avatarMode!=="anime";
 if(animeViewControls)animeViewControls.hidden=!switchableAvatarProfile||avatarMode!=="anime";
+if(realCharacterSelect)realCharacterSelect.value=realAvatarCharacter;
+if(realCharacterControl)realCharacterControl.hidden=!switchableAvatarProfile||avatarMode!=="real";
 const historySchema="20260807-user-reset-v6";
 if(localStorage.getItem("lumi-history-schema")!==historySchema){localStorage.removeItem("lumi-history");localStorage.removeItem("lumi-vrm-history");localStorage.setItem("lumi-history-schema",historySchema);}
 let history = JSON.parse(localStorage.getItem("lumi-history") || "[]");
@@ -154,9 +169,10 @@ function applyAvatarMode(next,{interrupt=true}={}){
   localStorage.setItem("lumi-avatar-mode",next);
   portrait.dataset.avatarMode=next;portrait.classList.remove("dh-live-ready");
   digitalHumanFrame.title=next==="real"?"露米的真人形象":"露米的动漫形象";
-  digitalHumanFrame.src=avatarRuntimeUrl(next==="real"?"/wav2lip-avatar/avatar.html":"/vrm-embed.html");
+  digitalHumanFrame.src=next==="real"?avatarRuntimeUrl("/wav2lip-avatar/avatar.html",{character:realAvatarCharacter}):avatarRuntimeUrl("/vrm-embed.html");
   if(animeLookControl)animeLookControl.hidden=next!=="anime";
   if(animeViewControls)animeViewControls.hidden=next!=="anime";
+  if(realCharacterControl)realCharacterControl.hidden=next!=="real";
   avatarModeSwitch?.querySelectorAll("[data-avatar-mode]").forEach(button=>button.setAttribute("aria-pressed",String(button.dataset.avatarMode===next)));
   const note=document.querySelector(".avatar-note");
   if(note)note.textContent=next==="anime"?"动漫陪伴 · 自然表情与动作":"真人陪伴 · 自然中文语音";
@@ -165,6 +181,13 @@ function applyAvatarMode(next,{interrupt=true}={}){
 avatarModeSwitch?.querySelectorAll("[data-avatar-mode]").forEach(button=>{
   button.setAttribute("aria-pressed",String(button.dataset.avatarMode===avatarMode));
   button.addEventListener("click",()=>applyAvatarMode(button.dataset.avatarMode));
+});
+realCharacterSelect?.addEventListener("change",()=>{
+  const next=realCharacterSelect.value;if(!realAvatarCharacters[next]||next===realAvatarCharacter)return;
+  stopSpeech();realAvatarCharacter=next;localStorage.setItem("lumi-real-character",next);
+  portrait.dataset.realCharacter=next;portrait.classList.remove("dh-live-ready");
+  statusText.textContent=`正在准备${realAvatarCharacters[next].label}…`;
+  digitalHumanFrame.src=avatarRuntimeUrl("/wav2lip-avatar/avatar.html",{character:next});
 });
 animeLookSelect?.addEventListener("change",()=>{
   const next=animeLookSelect.value;if(!animeLooks[next]||next===animeLook)return;
@@ -203,6 +226,30 @@ function setDigitalHumanAction(action = "idle",{force=false,hold=true,behavior=n
     digitalHumanFrame.contentWindow.postMessage({ type:"dh-live-action", action, requestId }, location.origin);
   });
 }
+
+const actionTestPanel=$("#actionTestPanel"),actionTestButtons=[...document.querySelectorAll("[data-action-test]")];
+const localActionTestHost=["localhost","127.0.0.1","::1"].includes(location.hostname);
+if(actionTestPanel)actionTestPanel.hidden=!localActionTestHost;
+function clearActionTestSelection(){actionTestButtons.forEach(button=>button.removeAttribute("aria-pressed"));}
+function previewActionForTest(action){
+  if(!localActionTestHost||!actionTestLabels[action])return;
+  if(voiceCallActive){statusText.textContent="请先结束通话，再测试动作";return;}
+  stopSpeech();clearActionTestSelection();
+  const button=actionTestButtons.find(item=>item.dataset.actionTest===action);button?.setAttribute("aria-pressed","true");
+  if(action==="idle"){
+    digitalHumanFrame?.contentWindow?.postMessage({type:"wav2lip-preview-clear"},location.origin);
+    digitalHumanFrame?.contentWindow?.postMessage({type:"vrm-finish-gesture"},location.origin);
+    statusText.textContent="动作测试：待机";return;
+  }
+  statusText.textContent=`动作测试：${actionTestLabels[action]}`;
+  if(avatarMode==="anime"){
+    setDigitalHumanAction(action,{force:true,hold:false,behavior:{purpose:"action-test",intensity:.55,holdMs:4200}}).catch(()=>{});
+    return;
+  }
+  const url=rawActionTestUrl(action)||silentNeuralAction(action)||(`/dh-live/actions/${realActionAsset(action)}/01.mp4?v=${avatarRuntimeVersion}`);
+  digitalHumanFrame?.contentWindow?.postMessage({type:"wav2lip-preview",action,url,purpose:"action-test",loop:false,durationMs:5000},location.origin);
+}
+actionTestButtons.forEach(button=>button.addEventListener("click",()=>previewActionForTest(button.dataset.actionTest)));
 function mouth(open = 0, width = .5) {
   portrait.style.setProperty("--mouth-h", `${Math.max(5, 5 + open * 26)}px`);
   portrait.style.setProperty("--mouth-w", `${22 + width * 13}px`);
@@ -354,7 +401,7 @@ async function prepareNeuralSpeech(text, emotion, batch, action="idle") {
   if (!response.ok) throw new Error("语音生成失败");
   const speechBuffer = await response.arrayBuffer();
   if (batch !== speechBatch) return null;
-  const renderEndpoint=dinetAvatarProfile||(!wav2LipAvatarProfile&&switchableAvatarProfile)?`${neuralRenderEndpoint}?action=${encodeURIComponent(action)}`:neuralRenderEndpoint;
+  const renderEndpoint=dinetAvatarProfile||(!wav2LipAvatarProfile&&switchableAvatarProfile)?`${neuralRenderEndpoint}?action=${encodeURIComponent(action)}&character=${encodeURIComponent(realAvatarCharacter)}`:neuralRenderEndpoint;
   const renderResponse = await fetch(renderEndpoint, {
     method:"POST",
     headers:{ "content-type":response.headers.get("content-type") || "application/octet-stream" },
@@ -368,6 +415,7 @@ async function prepareNeuralSpeech(text, emotion, batch, action="idle") {
 }
 
 function prepareStreamingNeuralSpeech(text,emotion,batch,behavior={action:"idle"},options={}){
+  const pipelineStartedAt=performance.now();
   const action=typeof behavior==="string"?behavior:behavior?.action||"idle";
   const frameOffset=typeof behavior==="object"?Math.max(0,Number(behavior?.frameOffset)||0):0;
   const externalAudio=avatarPcmReady&&avatarAudioContext?.state==="running";
@@ -380,7 +428,7 @@ function prepareStreamingNeuralSpeech(text,emotion,batch,behavior={action:"idle"
     fetch(`/api/dinet/visual-turn/${encodeURIComponent(behavior.visualTurnId)}/skip`,{method:"POST",keepalive:true,headers:{"content-type":"application/json"},body:JSON.stringify({index:Number(behavior.visualSentenceIndex)})}).catch(()=>{});
   };
   const consume=(async()=>{
-    const response=await fetch("/api/dinet/speech-stream",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({text,emotion,voice:voiceProfile,action,frameOffset,externalAudio,binaryAudio:externalAudio,fragmentedVideo,renderBackpressure:fragmentedVideo,preferPrewarmed:options.preferPrewarmed===true,speculative:options.speculative===true,ttsConnectionId:options.ttsConnectionId,visualTurnId:behavior?.visualTurnId,visualSentenceIndex:behavior?.visualSentenceIndex}),signal:controller.signal});
+    const response=await fetch("/api/dinet/speech-stream",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({text,emotion,voice:voiceProfile,action,character:realAvatarCharacter,frameOffset,externalAudio,binaryAudio:externalAudio,fragmentedVideo,renderBackpressure:fragmentedVideo,preferPrewarmed:options.preferPrewarmed===true,speculative:options.speculative===true,ttsConnectionId:options.ttsConnectionId,visualTurnId:behavior?.visualTurnId,visualSentenceIndex:behavior?.visualSentenceIndex}),signal:controller.signal});
     if(!response.ok||!response.body){const data=await response.json().catch(()=>({}));throw new Error(data.error||"流式回答准备失败");}
     await consumeEventStream(response,async(event,data)=>{
       if(batch!==speechBatch){controller.abort();return;}
@@ -389,12 +437,13 @@ function prepareStreamingNeuralSpeech(text,emotion,batch,behavior={action:"idle"
         if(commitRequested&&serverStreamId)fetch(`/api/dinet/stream/${encodeURIComponent(serverStreamId)}/commit`,{method:"POST"}).catch(()=>{});
       }
       if(event==="audio-ready")expectedAudioMs=Math.max(0,Number(data.audioMs)||0);
+      if(event==="tts-first-audio"&&!options.speculative&&!portrait.dataset.ttsFirstAudioMs){portrait.dataset.ttsFirstAudioMs=String(data.firstAudioMs??"");portrait.dataset.ttsRequestSetupMs=String(data.requestSetupMs??"");portrait.dataset.ttsConnectionMs=String(data.connectionMs??"");portrait.dataset.ttsTaskMs=String(data.taskMs??"");portrait.dataset.ttsSynthesisMs=String(data.synthesisMs??"");}
       if(event==="segment"){
-        if(!firstSegmentObserved){firstSegmentObserved=true;firstSegmentReadyAt=performance.now();if(!options.speculative&&!portrait.dataset.avatarFirstSegmentMs)portrait.dataset.avatarFirstSegmentMs=String(Math.round(firstSegmentReadyAt-activeReplyStartedAt));}
+        if(!firstSegmentObserved){firstSegmentObserved=true;firstSegmentReadyAt=performance.now();if(!options.speculative&&!portrait.dataset.avatarFirstSegmentMs){const avatarPipelineMs=Math.round(firstSegmentReadyAt-pipelineStartedAt),ttsFirstAudioMs=Math.max(0,Number(portrait.dataset.ttsFirstAudioMs)||0),pcmBufferingMs=Math.max(0,Number(data?.firstSegmentTiming?.pcmBufferingMs)||0),renderMs=Math.max(0,Number(data?.segment?.renderMs)||0);portrait.dataset.avatarFirstSegmentMs=String(Math.round(firstSegmentReadyAt-activeReplyStartedAt));portrait.dataset.avatarPipelineMs=String(avatarPipelineMs);portrait.dataset.avatarPcmBufferingMs=String(pcmBufferingMs);portrait.dataset.avatarRenderMs=String(renderMs);portrait.dataset.avatarTransportMs=String(Math.max(0,avatarPipelineMs-ttsFirstAudioMs-pcmBufferingMs-renderMs));}}
         receivedAudioMs+=Math.max(0,Number(data?.segment?.audioMs)||0);
         queue.push(data);wake();
       }
-      if(event==="done"&&data.pipeline&&!options.speculative&&!portrait.dataset.avatarPipelineMs){portrait.dataset.ttsFirstAudioMs=String(data.pipeline.ttsFirstAudioMs??"");portrait.dataset.avatarPipelineMs=String(data.pipeline.firstSegmentMs??"");portrait.dataset.ttsConnectionReused=String(Boolean(data.tts?.connectionReused));portrait.dataset.ttsTaskPrimed=String(Boolean(data.tts?.taskPrimed));portrait.dataset.ttsConnectionLeadMs=String(data.tts?.connectionLeadMs??"");}
+      if(event==="done"&&!options.speculative){if(data.pipeline){if(!portrait.dataset.ttsFirstAudioMs)portrait.dataset.ttsFirstAudioMs=String(data.pipeline.ttsFirstAudioMs??"");if(!portrait.dataset.avatarPipelineMs)portrait.dataset.avatarPipelineMs=String(data.pipeline.firstSegmentMs??"");}portrait.dataset.ttsConnectionReused=String(Boolean(data.tts?.connectionReused));portrait.dataset.ttsTaskPrimed=String(Boolean(data.tts?.taskPrimed));portrait.dataset.ttsConnectionLeadMs=String(data.tts?.connectionLeadMs??"");}
       if(event==="error")throw new Error(data.error||"流式回答准备失败");
       if(event==="done"){ended=true;wake();}
     });
@@ -456,7 +505,7 @@ async function playSilentNeuralAction(url,batch){
 
 function prepareSpeechWork(text,emotion,batch,behavior,streamTurn,options={}){
   const action=typeof behavior==="string"?behavior:behavior?.action||"idle";
-  const silentAction=silentNeuralActions[action];
+  const silentAction=typeof behavior==="object"&&behavior?.explicit===true?silentNeuralAction(action):null;
   const visualSentence=streamingAvatarExperiment&&!silentAction&&streamTurn?streamTurn.allocateSentence():null;
   const preparedBehavior=visualSentence?{...(typeof behavior==="object"?behavior:{action}),...visualSentence}:behavior;
   const preparation=streamingAvatarExperiment&&!silentAction
@@ -536,10 +585,21 @@ function compactUploadedHistoryContent(value,limit=600){
   return `${content.slice(0,head)}…${content.slice(-tail)}`;
 }
 
-async function reply(message) {
+async function reply(message,{recognitionMetrics=null}={}) {
   sendButton.disabled = true; showTyping(); setEmotion("curious"); setVoiceState("thinking","正在理解你刚才说的话"); statusText.textContent = "正在想…";
   const controller = new AbortController(); activeReplyController = controller;
-  const batch = speechBatch,transcript=new ReplyTranscript(); activeReplyStartedAt=performance.now();realSpeechTimelineMs=0;delete portrait.dataset.chatFirstSentenceMs;delete portrait.dataset.avatarFirstSegmentMs;delete portrait.dataset.ttsFirstAudioMs;delete portrait.dataset.avatarPipelineMs;delete portrait.dataset.ttsConnectionReused;delete portrait.dataset.ttsTaskPrimed;delete portrait.dataset.ttsConnectionLeadMs;delete portrait.dataset.backchannelContinuation;delete portrait.dataset.backchannelContinuationMs;delete portrait.dataset.backchannelStartedMs;delete portrait.dataset.backchannelCompleted;delete portrait.dataset.avatarGapIdleMs;delete portrait.dataset.avatarGapIdleSourceMs;delete portrait.dataset.avatarGapMode;delete portrait.dataset.avatarGapAction;let article, streamedText = "", currentEmotion = "calm",currentAction="idle",spokenSentenceCount=0,firstTtsConnectionId="",waitingPreview=null,backchannelVisual=null,backchannelPlayback=null,actionFrameBias=0,biasedAction="";
+  const batch = speechBatch,transcript=new ReplyTranscript(); activeReplyStartedAt=performance.now();realSpeechTimelineMs=0;delete portrait.dataset.chatFirstSentenceMs;delete portrait.dataset.avatarFirstSegmentMs;delete portrait.dataset.avatarTransportMs;delete portrait.dataset.avatarPcmBufferingMs;delete portrait.dataset.avatarRenderMs;delete portrait.dataset.ttsFirstAudioMs;delete portrait.dataset.ttsRequestSetupMs;delete portrait.dataset.ttsConnectionMs;delete portrait.dataset.ttsTaskMs;delete portrait.dataset.ttsSynthesisMs;delete portrait.dataset.avatarPipelineMs;delete portrait.dataset.videoFirstFrameMs;delete portrait.dataset.videoHandoffLateMs;delete portrait.dataset.latencyReportStatus;delete portrait.dataset.latencyReportAttempts;delete portrait.dataset.ttsConnectionReused;delete portrait.dataset.ttsTaskPrimed;delete portrait.dataset.ttsConnectionLeadMs;delete portrait.dataset.backchannelContinuation;delete portrait.dataset.backchannelContinuationMs;delete portrait.dataset.backchannelStartedMs;delete portrait.dataset.backchannelCompleted;delete portrait.dataset.backchannelCompletedMs;delete portrait.dataset.longWaitBackchannelMs;delete portrait.dataset.avatarGapIdleMs;delete portrait.dataset.avatarGapIdleSourceMs;delete portrait.dataset.avatarGapMode;delete portrait.dataset.avatarGapAction;let article, streamedText = "", currentEmotion = "calm",currentAction="idle",spokenSentenceCount=0,firstTtsConnectionId="",waitingPreview=null,backchannelVisual=null,backchannelPlayback=null,actionFrameBias=0,biasedAction="",chatTraceId="",firstSpeechReported=false,formalSpeechReported=false;
+  const numericDataset=key=>{const raw=portrait.dataset[key];if(raw===undefined||raw.trim()==="")return undefined;const value=Number(raw);return Number.isFinite(value)?value:undefined;};
+  const reportClientTiming=(event,speechKind)=>{
+    if(!chatTraceId)return;
+    const requestToEventMs=Math.round(performance.now()-activeReplyStartedAt),rawStopToCommitMs=recognitionMetrics?.stopToCommitMs,stopToCommitMs=rawStopToCommitMs===null||rawStopToCommitMs===undefined?NaN:Number(rawStopToCommitMs),endpointSilenceMs=Number(recognitionMetrics?.endpointSilenceMs),commitObservedAt=Number(recognitionMetrics?.commitObservedAt),recognitionCommitToRequestMs=Number.isFinite(commitObservedAt)?Math.max(0,Math.round(activeReplyStartedAt-commitObservedAt)):0,stopToSubmitMs=Number.isFinite(stopToCommitMs)?stopToCommitMs+recognitionCommitToRequestMs:NaN,speechEndpointMs=Number.isFinite(endpointSilenceMs)&&Number.isFinite(stopToSubmitMs)?endpointSilenceMs+stopToSubmitMs:NaN;
+    const payload={traceId:chatTraceId,event,speechKind,avatarMode,requestToEventMs,recognitionTrigger:recognitionMetrics?.trigger||"text",recognitionTurnMs:recognitionMetrics?.turnMs,
+      ...(Number.isFinite(stopToSubmitMs)?{vadStopToSubmitMs:stopToSubmitMs,vadStopToEventMs:(Number.isFinite(speechEndpointMs)?speechEndpointMs:stopToSubmitMs)+requestToEventMs,recognitionCommitToRequestMs}:{}),
+      ...(Number.isFinite(speechEndpointMs)?{speechEndpointMs}:{}),
+      chatFirstSentenceMs:numericDataset("chatFirstSentenceMs"),avatarFirstSegmentMs:numericDataset("avatarFirstSegmentMs"),ttsFirstAudioMs:numericDataset("ttsFirstAudioMs"),ttsRequestSetupMs:numericDataset("ttsRequestSetupMs"),ttsConnectionMs:numericDataset("ttsConnectionMs"),ttsTaskMs:numericDataset("ttsTaskMs"),ttsSynthesisMs:numericDataset("ttsSynthesisMs"),avatarPipelineMs:numericDataset("avatarPipelineMs"),avatarTransportMs:numericDataset("avatarTransportMs"),avatarPcmBufferingMs:numericDataset("avatarPcmBufferingMs"),avatarRenderMs:numericDataset("avatarRenderMs"),videoFirstFrameMs:numericDataset("videoFirstFrameMs"),videoHandoffLateMs:numericDataset("videoHandoffLateMs"),backchannelCompletedMs:numericDataset("backchannelCompletedMs")};
+    void postClientTiming(payload).then(result=>{portrait.dataset.latencyReportStatus=result.ok?"saved":`failed-${result.status||"network"}`;portrait.dataset.latencyReportAttempts=String(result.attempts);});
+  };
+  const reportSpeechStart=speechKind=>{if(!firstSpeechReported){firstSpeechReported=true;reportClientTiming("first-speech",speechKind);}if(speechKind==="formal"&&!formalSpeechReported){formalSpeechReported=true;reportClientTiming("formal-speech",speechKind);}};
   const transcriptState={transcript,get article(){return article;},set article(value){article=value;}};activeReplyTranscript=transcriptState;
   const revealSentence=sentenceIndex=>{if(batch!==speechBatch)return;const spoken=transcript.start(sentenceIndex);if(!spoken)return;$("#typing")?.remove();article ||= addMessage("assistant","",false);article.querySelector("p").textContent=spoken;};
   const finishSentence=sentenceIndex=>{if(batch===speechBatch)transcript.finish(sentenceIndex);};
@@ -574,6 +634,10 @@ async function reply(message) {
           :performance.now()-waitingPreview.startedAt;
         plan=continueActionPlan(plan,{action:waitingPreview.action,elapsedMs:previewTimeMs,leadMs:AVATAR_FIRST_SEGMENT_LEAD_MS});
       }
+      else if(data.kind==="long-wait"&&backchannelVisual&&avatarMode!=="anime"){
+        const elapsedMs=backchannelVisualElapsedMs(backchannelVisual);
+        plan=continueActionPlan(plan,{action:backchannelVisual.action,baseFrameOffset:backchannelVisual.frameOffset,elapsedMs,leadMs:AVATAR_FIRST_SEGMENT_LEAD_MS});
+      }
       return{plan,work:prepareSpeechWork(data.text,plan.emotion,batch,plan,streamTurn,{preferPrewarmed:true,speculative:true})};
     },
     onCancel:(_data,prepared)=>prepared?.work?.preparation?.cancel?.(),
@@ -582,24 +646,27 @@ async function reply(message) {
     if(waitingPreview){waitingPreview=null;activeWaitingPreview=null;delete portrait.dataset.waitingPreview;}
     const plan=prepared?.plan||backchannelPlan(data);
     prepared?.work?.preparation?.commit?.();
-    if(plan.continuation&&avatarMode!=="anime")backchannelVisual={action:plan.action,frameOffset:plan.frameOffset,stream:prepared?.work?.preparation};
+    const visual=plan.continuation&&avatarMode!=="anime"?{action:plan.action,frameOffset:plan.frameOffset,stream:prepared?.work?.preparation,startedAt:0}:null;
+    if(visual)backchannelVisual=visual;
     const readyAt=prepared?.work?.preparation?.firstSegmentReadyAt;
     if(readyAt)portrait.dataset.backchannelPreparedLeadMs=String(Math.max(0,Math.round(performance.now()-readyAt)));
     portrait.dataset.backchannel=JSON.stringify({text:data.text,atMs:Math.round(performance.now()-activeReplyStartedAt),...plan});
+    backchannelPlayback?.close();
     const playback=new BackchannelPlayback(data.text);backchannelPlayback=playback;playback.onCancel(()=>prepared?.work?.preparation?.cancel?.());
+    if(data.kind==="long-wait")portrait.dataset.longWaitBackchannelMs=String(Math.round(performance.now()-activeReplyStartedAt));
     enqueueSpeech(data.text,plan.emotion,batch,plan,streamTurn,{preferPrewarmed:true,preparedWork:prepared?.work,cancellation:playback,
-      onStart:()=>{portrait.dataset.backchannelStartedMs=String(Math.round(performance.now()-activeReplyStartedAt));playback.start();},
-      onComplete:()=>{portrait.dataset.backchannelCompleted="true";playback.complete();}
+      onStart:()=>{if(visual&&!visual.startedAt)visual.startedAt=performance.now();portrait.dataset.backchannelStartedMs=String(Math.round(performance.now()-activeReplyStartedAt));reportSpeechStart(data.kind==="long-wait"?"long-wait":"backchannel");playback.start();},
+      onComplete:()=>{portrait.dataset.backchannelCompleted="true";portrait.dataset.backchannelCompletedMs=String(Math.round(performance.now()-activeReplyStartedAt));playback.complete();}
     });
   }});
   activeAvatarStreamTurn=streamTurn;
   try {
-    const response = await fetch("/api/chat/stream", { method:"POST", headers:{"content-type":"application/json"}, body:JSON.stringify({ message, history:history.slice(0,-1).slice(-6).map(item=>({...item,content:compactUploadedHistoryContent(item.content)})), userId, persona, voice:voiceProfile, fastSpeech:neuralAvatarProfile, responsiveSpeech:true, prewarmPcm:mode==="minimax" }), signal:controller.signal });
+    const response = await fetch("/api/chat/stream", { method:"POST", headers:{"content-type":"application/json"}, body:JSON.stringify({ message, history:history.slice(0,-1).slice(-6).map(item=>({...item,content:compactUploadedHistoryContent(item.content)})), userId, persona, voice:voiceProfile, realAvatarCharacter, fastSpeech:neuralAvatarProfile, responsiveSpeech:true, prewarmPcm:mode==="minimax" }), signal:controller.signal });
     if (!response.ok || !response.body) { const data=await response.json().catch(()=>({})); throw new Error(data.error || "连接失败"); }
     await consumeEventStream(response, async (event, data) => {
       if (controller.signal.aborted) return;
       if (event === "meta") {
-        mode=data.mode; currentEmotion=data.emotion || "calm"; setEmotion(currentEmotion);
+        mode=data.mode;chatTraceId=String(data.traceId||""); currentEmotion=data.emotion || "calm"; setEmotion(currentEmotion);
         firstTtsConnectionId=String(data.ttsConnectionId||"");
         const plan=conversationActions.startTurn({message,emotion:currentEmotion,action:data.action||"idle"});
         currentAction=plan.action;portrait.dataset.behavior=JSON.stringify(plan);
@@ -608,7 +675,7 @@ async function reply(message) {
         // latter immediately so its asset switch remains hidden behind M3.
         if(plan.cadenceManaged){
           const localPreview=plan.implicitMicroGesture?beginWaitingPreview(plan,null,{pending:avatarMode!=="anime"}):null;
-          if(avatarMode!=="anime")fetch("/api/dinet/prepare-action",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({action:plan.action}),signal:controller.signal})
+          if(avatarMode!=="anime")fetch("/api/dinet/prepare-action",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({action:plan.action,character:realAvatarCharacter}),signal:controller.signal})
             .then(response=>response.ok?response.json():null)
             .then(result=>{
               if(!localPreview)return;
@@ -651,9 +718,9 @@ async function reply(message) {
           waitingPreview=null;activeWaitingPreview=null;delete portrait.dataset.waitingPreview;
         }
         else if(sentenceIndex===0&&backchannelVisual&&avatarMode!=="anime"){
-          const elapsedMs=backchannelContinuationMs({expectedAudioMs:backchannelVisual.stream?.expectedAudioMs,receivedAudioMs:backchannelVisual.stream?.receivedAudioMs});
+          const elapsedMs=backchannelVisualElapsedMs(backchannelVisual);
           portrait.dataset.backchannelContinuationMs=String(elapsedMs);
-          sentencePlan=continueActionPlan(sentencePlan,{action:backchannelVisual.action,baseFrameOffset:backchannelVisual.frameOffset,elapsedMs});
+          sentencePlan=continueActionPlan(sentencePlan,{action:backchannelVisual.action,baseFrameOffset:backchannelVisual.frameOffset,elapsedMs,leadMs:AVATAR_FIRST_SEGMENT_LEAD_MS});
           if(sentencePlan.continuation){actionFrameBias=sentencePlan.frameOffset;biasedAction=sentencePlan.action;}
           backchannelVisual=null;
         }
@@ -665,7 +732,8 @@ async function reply(message) {
         if(!reusedBackchannel&&sentenceAction!=="idle"&&!sentencePlan.continuation)setDigitalHumanAction(sentenceAction,{force:true,hold:true,behavior:sentencePlan}).catch(()=>{});
         const ttsConnectionId=sentenceIndex===0?firstTtsConnectionId:"";
         firstTtsConnectionId="";
-        if(!reusedBackchannel)enqueueSpeech(speechText,currentEmotion,batch,sentencePlan,streamTurn,{ttsConnectionId,onStart:()=>revealSentence(transcriptIndex),onComplete:()=>finishSentence(transcriptIndex)});
+        const sentenceHasSpeech=!(neuralAvatarProfile&&sentencePlan.explicit&&silentNeuralAction(sentenceAction));
+        if(!reusedBackchannel)enqueueSpeech(speechText,currentEmotion,batch,sentencePlan,streamTurn,{ttsConnectionId,onStart:()=>{if(sentenceHasSpeech)reportSpeechStart("formal");revealSentence(transcriptIndex);},onComplete:()=>finishSentence(transcriptIndex)});
         if(continuedBackchannel)portrait.dataset.backchannelContinuation=speechText;
       }
       if(event==="backchannel"&&data.text)backchannelGate.offer(data);
@@ -678,14 +746,14 @@ async function reply(message) {
     });
     const completedQueue=streamTurn?streamTurn.finish():speechQueue;
     if(streamTurn)speechQueue=completedQueue;
-    completedQueue.finally(()=>{if(batch===speechBatch){settleActiveTranscript(false);if(streamTurn)speaking(false);if(activeAvatarStreamTurn===streamTurn)activeAvatarStreamTurn=null;conversationActions.finishTurn();if(switchableAvatarProfile&&avatarMode==="anime")digitalHumanFrame?.contentWindow?.postMessage({type:"vrm-finish-gesture"},location.origin);}});
+    completedQueue.finally(()=>{if(batch===speechBatch){const settlement=settleActiveTranscript(false);if(settlement&&!settlement.interrupted)reportClientTiming("playback-ended");if(streamTurn)speaking(false);if(activeAvatarStreamTurn===streamTurn)activeAvatarStreamTurn=null;conversationActions.finishTurn();if(switchableAvatarProfile&&avatarMode==="anime")digitalHumanFrame?.contentWindow?.postMessage({type:"vrm-finish-gesture"},location.origin);}});
   } catch (error) {
     backchannelGate.cancel();
     $("#typing")?.remove();
     if (error.name !== "AbortError") { stopSpeech();addMessage("assistant", `刚才的连接有点不稳定：${error.message}。再试一次好吗？`, false); setEmotion("caring"); speaking(false); setVoiceState("idle","连接不稳定，请点击麦克风重试"); }
   } finally { if(waitingPreview)digitalHumanFrame?.contentWindow?.postMessage({type:"wav2lip-preview-clear"},location.origin);if(activeWaitingPreview===waitingPreview)activeWaitingPreview=null;if(activeReplyController===controller)activeReplyController=null; sendButton.disabled=false; if(!form.hidden)input.focus(); }
 }
-async function submit(text) { const message = text.trim(); if (!message || sendButton.disabled) return; stopSpeech(); input.value=""; resize(); addMessage("user", message); await reply(message); }
+async function submit(text,options={}) { const message = text.trim(); if (!message || sendButton.disabled) return; stopSpeech(); input.value=""; resize(); addMessage("user", message); await reply(message,options); }
 form.addEventListener("submit", e => { e.preventDefault(); submit(input.value); });
 input.addEventListener("keydown", e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); form.requestSubmit(); } });
 function resize(){ input.style.height="auto"; input.style.height=`${Math.min(input.scrollHeight,110)}px`; } input.addEventListener("input",resize);
@@ -713,8 +781,8 @@ window.addEventListener("message",event=>{
   if(event.data?.type==="wav2lip-preview-started"&&event.data.purpose==="listening"){portrait.dataset.listeningGesture="started";}
   if(event.data?.type==="wav2lip-preview-ended"&&event.data.purpose==="listening"){listeningPreviewActive=false;portrait.dataset.listeningGesture="completed";}
   if(event.data?.type==="wav2lip-started"){
-    const start=pendingWav2LipStarts.get(event.data.requestId);pendingWav2LipStarts.delete(event.data.requestId);start?.();
     if(Number.isFinite(Number(event.data.handoffLateMs))){portrait.dataset.videoFirstFrameMs=String(event.data.firstFrameMs||0);portrait.dataset.videoHandoffLateMs=String(event.data.handoffLateMs||0);}
+    const start=pendingWav2LipStarts.get(event.data.requestId);pendingWav2LipStarts.delete(event.data.requestId);start?.();
   }
   if(event.data?.type==="wav2lip-video-sync"){portrait.dataset.videoDriftMs=String(event.data.driftMs||0);portrait.dataset.videoMaxDriftMs=String(event.data.maxDriftMs||0);}
   if(event.data?.type==="wav2lip-gap-idle"){portrait.dataset.avatarGapMode="idle";portrait.dataset.avatarGapIdleMs=String(event.data.gapMs||0);portrait.dataset.avatarGapIdleSourceMs=String(event.data.sourceTimeMs||0);}
@@ -737,16 +805,17 @@ window.addEventListener("message",event=>{
 
 
 const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-if (Recognition) { const recognition = new Recognition(); recognition.lang="zh-CN"; recognition.interimResults=true; recognition.continuous=false; let recognizedText="",recognizedFinal=false, recognitionFailed=false, recognitionRunning=false, restartListeningTimer,vadStream,vadContext,vadAnalyser,vadSamples,vadFrame,bargeInFrame=0,answerGeneration=0,answerPlaybackEndedAt=0;const listeningGesture=new ListeningGestureGate();
+if (Recognition) { const recognition = new Recognition(); recognition.lang="zh-CN"; recognition.interimResults=true; recognition.continuous=false; let recognizedText="",recognitionFailed=false, recognitionRunning=false, restartListeningTimer,vadStream,vadContext,vadAnalyser,vadSamples,vadFrame,bargeInFrame=0,answerGeneration=0,answerPlaybackEndedAt=0,latestEndpointSilenceMs=0;const listeningGesture=new ListeningGestureGate();
   const updateCallButton=()=>{voiceButton.classList.toggle("call-active",voiceCallActive);voiceButton.setAttribute("aria-pressed",String(voiceCallActive));voiceButton.setAttribute("aria-label",voiceCallActive?"结束通话":"开始通话");micButton.setAttribute("aria-label",voiceCallActive?"结束通话":"开始通话");micButton.title=voiceCallActive?"结束通话":"开始通话";};
   const stopVadLoop=()=>{if(vadFrame)cancelAnimationFrame(vadFrame);vadFrame=0;};
   const stopBargeInLoop=()=>{if(bargeInFrame)cancelAnimationFrame(bargeInFrame);bargeInFrame=0;};
+  const markRecognitionStopped=()=>{recognitionRunning=false;micButton.classList.remove("listening");voiceButton.classList.remove("listening");};
   const releaseVad=()=>{stopVadLoop();stopBargeInLoop();vadStream?.getTracks().forEach(track=>track.stop());vadStream=null;vadAnalyser=null;vadSamples=null;vadContext?.close().catch(()=>{});vadContext=null;};
   const ensureVad=async()=>{if(vadAnalyser)return true;if(!navigator.mediaDevices?.getUserMedia)return false;vadStream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true}});if(!voiceCallActive){vadStream.getTracks().forEach(track=>track.stop());vadStream=null;return false;}vadContext=new AudioContext();await vadContext.resume().catch(()=>{});vadAnalyser=vadContext.createAnalyser();vadAnalyser.fftSize=1024;vadAnalyser.smoothingTimeConstant=0;vadSamples=new Float32Array(vadAnalyser.fftSize);vadContext.createMediaStreamSource(vadStream).connect(vadAnalyser);return true;};
   const startBargeInLoop=generation=>{stopBargeInLoop();if(!vadAnalyser)return;const detector=new BargeInDetector();let answerAudioStarted=false;const inspect=()=>{if(!voiceCallActive||generation!==answerGeneration){bargeInFrame=0;return;}if(recognitionRunning){bargeInFrame=requestAnimationFrame(inspect);return;}const answerSpeaking=portrait.classList.contains("speaking");if(!answerAudioStarted&&!answerSpeaking){bargeInFrame=requestAnimationFrame(inspect);return;}const now=performance.now();if(!answerAudioStarted){answerAudioStarted=true;detector.reset(now);}vadAnalyser.getFloatTimeDomainData(vadSamples);let energy=0;for(const value of vadSamples)energy+=value*value;const rms=Math.sqrt(energy/vadSamples.length);portrait.dataset.bargeInLevel=rms.toFixed(4);portrait.dataset.bargeInBaseline=detector.baseline.toFixed(4);if(detector.sample(rms,now)){bargeInFrame=0;answerGeneration++;portrait.dataset.bargeInDetectedMs=String(Math.round(now-detector.startedAt));stopSpeech();setVoiceState("idle","已暂停，我在听");scheduleListening(60);return;}bargeInFrame=requestAnimationFrame(inspect);};bargeInFrame=requestAnimationFrame(inspect);};
-  const commitRecognizedTurn=async(text,metrics)=>{recognizedText="";const generation=++answerGeneration;portrait.dataset.recognitionCommitTrigger=metrics.trigger;portrait.dataset.recognitionTurnMs=String(metrics.turnMs);portrait.dataset.vadStopToSubmitMs=metrics.stopToCommitMs===null?"":String(metrics.stopToCommitMs);if(!voiceCallActive)return;setVoiceState("thinking",`${persona.name}正在回应`);startBargeInLoop(generation);await submit(text);const completedQueue=speechQueue;await completedQueue.catch(()=>{});if(generation!==answerGeneration)return;stopBargeInLoop();if(voiceCallActive){answerPlaybackEndedAt=performance.now();const outputLatencyMs=((avatarAudioContext?.outputLatency||avatarAudioContext?.baseLatency)||0)*1000;const resumeDelayMs=recognitionResumeDelayMs({preciseAudioTail:neuralAvatarProfile&&avatarPcmReady,outputLatencyMs});portrait.dataset.listenResumeDelayMs=String(resumeDelayMs);portrait.dataset.audioOutputLatencyMs=String(Math.round(outputLatencyMs));setVoiceState("idle","请继续说话");scheduleListening(resumeDelayMs);}};
+  const commitRecognizedTurn=async(text,metrics)=>{recognizedText="";const generation=++answerGeneration;portrait.dataset.recognitionCommitTrigger=metrics.trigger;portrait.dataset.recognitionTurnMs=String(metrics.turnMs);const endpointMs=Number(metrics.endpointSilenceMs),finalizeMs=Number(metrics.stopToCommitMs);portrait.dataset.vadStopToSubmitMs=Number.isFinite(finalizeMs)?String(Math.round((Number.isFinite(endpointMs)?endpointMs:0)+finalizeMs)):"";if(!voiceCallActive)return;setVoiceState("thinking",`${persona.name}正在回应`);startBargeInLoop(generation);await submit(text,{recognitionMetrics:{...metrics,commitObservedAt:performance.now()}});const completedQueue=speechQueue;await completedQueue.catch(()=>{});if(generation!==answerGeneration)return;stopBargeInLoop();if(voiceCallActive){answerPlaybackEndedAt=performance.now();const outputLatencyMs=((avatarAudioContext?.outputLatency||avatarAudioContext?.baseLatency)||0)*1000;const resumeDelayMs=recognitionResumeDelayMs({preciseAudioTail:neuralAvatarProfile&&avatarPcmReady,outputLatencyMs});portrait.dataset.listenResumeDelayMs=String(resumeDelayMs);portrait.dataset.audioOutputLatencyMs=String(Math.round(outputLatencyMs));setVoiceState("idle","请继续说话");scheduleListening(resumeDelayMs);}};
   const turnGate=new RecognitionTurnGate({onCommit:commitRecognizedTurn,finalizeDelayMs:90});
-  const startVadLoop=()=>{stopVadLoop();if(!vadAnalyser)return;let noiseFloor=.008,hasSpeech=false,silenceStarted=0;const warmupUntil=performance.now()+320;const inspect=()=>{if(!voiceCallActive||!recognitionRunning||!vadAnalyser){vadFrame=0;return;}vadAnalyser.getFloatTimeDomainData(vadSamples);let energy=0;for(const value of vadSamples)energy+=value*value;const rms=Math.sqrt(energy/vadSamples.length),now=performance.now();if(now<warmupUntil&&rms<.025)noiseFloor=noiseFloor*.82+rms*.18;const threshold=Math.max(.016,noiseFloor*2.35);if(rms>threshold){hasSpeech=true;silenceStarted=0;}else if(hasSpeech&&recognizedText){silenceStarted ||= now;const silenceTargetMs=recognitionSilenceMs({final:recognizedFinal,text:recognizedText});if(now-silenceStarted>=silenceTargetMs){portrait.dataset.vadSilenceMs=String(Math.round(now-silenceStarted));portrait.dataset.vadSilenceTargetMs=String(silenceTargetMs);stopVadLoop();turnGate.requestStop({final:recognizedFinal});try{recognition.stop();}catch{}return;}}vadFrame=requestAnimationFrame(inspect);};vadFrame=requestAnimationFrame(inspect);};
+  const startVadLoop=()=>{stopVadLoop();if(!vadAnalyser)return;const detector=new SpeechEndpointDetector();latestEndpointSilenceMs=0;let lastDiagnosticAt=0;const inspect=()=>{if(!voiceCallActive||!recognitionRunning||!vadAnalyser){vadFrame=0;return;}vadAnalyser.getFloatTimeDomainData(vadSamples);let energy=0;for(const value of vadSamples)energy+=value*value;const rms=Math.sqrt(energy/vadSamples.length),now=performance.now(),endpoint=detector.sample(rms,now,{hasTranscript:Boolean(recognizedText)});latestEndpointSilenceMs=endpoint.silenceMs;if(now-lastDiagnosticAt>=250){lastDiagnosticAt=now;portrait.dataset.vadNoiseFloor=endpoint.noiseFloor.toFixed(4);portrait.dataset.vadThreshold=endpoint.threshold.toFixed(4);}if(recognizedText){const silenceTargetMs=recognitionSilenceMs({text:recognizedText});if(endpoint.silenceMs>=silenceTargetMs){portrait.dataset.vadSilenceMs=String(Math.round(endpoint.silenceMs));portrait.dataset.vadSilenceTargetMs=String(silenceTargetMs);stopVadLoop();markRecognitionStopped();turnGate.requestStop({endpointSilenceMs:endpoint.silenceMs});try{recognition.stop();}catch{}return;}}vadFrame=requestAnimationFrame(inspect);};vadFrame=requestAnimationFrame(inspect);};
   const startListening=()=>{if(!voiceCallActive)return;clearTimeout(restartListeningTimer);if(recognitionRunning){restartListeningTimer=setTimeout(startListening,100);return;}try{recognition.start()}catch{restartListeningTimer=setTimeout(startListening,350)}};
   const scheduleListening=(delay=350)=>{clearTimeout(restartListeningTimer);if(voiceCallActive)restartListeningTimer=setTimeout(startListening,delay);};
   const clearListeningGesture=()=>{listeningGesture.cancel();if(listeningPreviewActive)digitalHumanFrame?.contentWindow?.postMessage({type:"wav2lip-preview-clear"},location.origin);listeningPreviewActive=false;if(["scheduled","triggered","started"].includes(portrait.dataset.listeningGesture))portrait.dataset.listeningGesture="cancelled";};
@@ -756,17 +825,17 @@ if (Recognition) { const recognition = new Recognition(); recognition.lang="zh-C
       if(avatarMode==="anime"){portrait.dataset.listeningGesture="started";setDigitalHumanAction("nod",{force:true,hold:false,behavior:{purpose:"listening",intensity:.2,holdMs:1300}}).catch(()=>{});}
       else if(neuralAvatarProfile){
         listeningPreviewActive=true;
-        digitalHumanFrame?.contentWindow?.postMessage({type:"wav2lip-preview",action:"nod",url:"/dh-live/actions/bedroom_agree_test/01.mp4",purpose:"listening",loop:false,durationMs:3600},location.origin);
+        digitalHumanFrame?.contentWindow?.postMessage({type:"wav2lip-preview",action:"nod",url:`/dh-live/actions/${realAvatarCharacter==="xiaotao"?"xiaotao_nod":"bedroom_agree_test"}/01.mp4`,purpose:"listening",loop:false,durationMs:3600},location.origin);
       }
     }}))portrait.dataset.listeningGesture="scheduled";
   };
-  const endCall=()=>{voiceCallActive=false;answerGeneration++;clearTimeout(restartListeningTimer);clearListeningGesture();turnGate.cancel();if(recognitionRunning)recognition.abort();releaseVad();stopSpeech();micButton.classList.remove("listening");voiceButton.classList.remove("listening","thinking","speaking");updateCallButton();setVoiceState("idle","通话已结束");statusText.textContent="在线 · 随时听你说";};
+  const endCall=()=>{voiceCallActive=false;answerGeneration++;clearTimeout(restartListeningTimer);clearListeningGesture();turnGate.cancel();if(recognitionRunning)recognition.abort();markRecognitionStopped();releaseVad();stopSpeech();voiceButton.classList.remove("thinking","speaking");updateCallButton();setVoiceState("idle","通话已结束");statusText.textContent="在线 · 随时听你说";};
   const beginCall=async()=>{if(voiceCallActive)return;voiceCallActive=true;stopSpeech();void unlockAvatarAudio();digitalHumanFrame?.contentWindow?.postMessage({type:"wav2lip-audio-unlock"},location.origin);updateCallButton();setVoiceState("idle","正在准备麦克风…");try{await ensureVad();}catch{}if(voiceCallActive){setVoiceState("idle","通话已开始，请自然说话");scheduleListening(80);}};
   const toggleCall=()=>voiceCallActive?endCall():beginCall();
-  recognition.onstart=()=>{recognitionRunning=true;stopBargeInLoop();if(answerPlaybackEndedAt){portrait.dataset.answerEndToListeningMs=String(Math.round(performance.now()-answerPlaybackEndedAt));answerPlaybackEndedAt=0;}recognizedText="";recognizedFinal=false;recognitionFailed=false;turnGate.begin();delete portrait.dataset.vadSilenceMs;delete portrait.dataset.vadSilenceTargetMs;delete portrait.dataset.vadStopToSubmitMs;delete portrait.dataset.recognitionCommitTrigger;clearListeningGesture();listeningGesture.reset();delete portrait.dataset.listeningGesture;conversationActions.finishTurn();digitalHumanFrame?.contentWindow?.postMessage({type:"vrm-finish-gesture"},location.origin);micButton.classList.add("listening");setVoiceState("listening","请自然说话，停顿后我会立即回答");setEmotion("curious");statusText.textContent="我在听…";startVadLoop();};
-  recognition.onresult=e=>{const results=Array.from(e.results);recognizedText=results.map(r=>r[0].transcript).join("").trim();recognizedFinal=Boolean(results.at(-1)?.isFinal);turnGate.update(recognizedText,{final:recognizedFinal});if(recognizedText)scheduleListeningGesture();};
-  recognition.onend=()=>{stopVadLoop();clearListeningGesture();recognitionRunning=false;micButton.classList.remove("listening");voiceButton.classList.remove("listening");if(!voiceCallActive)return;if(turnGate.committed)return;if(turnGate.end())return;recognizedText="";if(!recognitionFailed){setVoiceState("idle","我还在听，请继续说");scheduleListening(350)}};
-  recognition.onerror=e=>{stopVadLoop();clearListeningGesture();micButton.classList.remove("listening");voiceButton.classList.remove("listening");if(turnGate.committed)return;recognitionFailed=true;turnGate.fail();const denied=e.error==="not-allowed"||e.error==="service-not-allowed";if(denied){voiceCallActive=false;releaseVad();updateCallButton();setVoiceState("idle","请允许浏览器使用麦克风后重试");}else if(voiceCallActive){setVoiceState("idle","没有听清楚，正在继续聆听");scheduleListening(500)}};
+  recognition.onstart=()=>{recognitionRunning=true;stopBargeInLoop();if(answerPlaybackEndedAt){portrait.dataset.answerEndToListeningMs=String(Math.round(performance.now()-answerPlaybackEndedAt));answerPlaybackEndedAt=0;}recognizedText="";recognitionFailed=false;latestEndpointSilenceMs=0;turnGate.begin();delete portrait.dataset.vadSilenceMs;delete portrait.dataset.vadSilenceTargetMs;delete portrait.dataset.vadNoiseFloor;delete portrait.dataset.vadThreshold;delete portrait.dataset.vadStopToSubmitMs;delete portrait.dataset.recognitionCommitTrigger;clearListeningGesture();listeningGesture.reset();delete portrait.dataset.listeningGesture;conversationActions.finishTurn();digitalHumanFrame?.contentWindow?.postMessage({type:"vrm-finish-gesture"},location.origin);micButton.classList.add("listening");setVoiceState("listening","请自然说话，停顿后我会立即回答");setEmotion("curious");statusText.textContent="我在听…";startVadLoop();};
+  recognition.onresult=e=>{const results=Array.from(e.results);recognizedText=results.map(r=>r[0].transcript).join("").trim();const final=Boolean(results.at(-1)?.isFinal);if(turnGate.update(recognizedText,{final,endpointSilenceMs:latestEndpointSilenceMs})){stopVadLoop();clearListeningGesture();markRecognitionStopped();try{recognition.stop();}catch{}return;}if(recognizedText)scheduleListeningGesture();};
+  recognition.onend=()=>{stopVadLoop();clearListeningGesture();markRecognitionStopped();if(!voiceCallActive)return;if(turnGate.committed)return;if(turnGate.end())return;recognizedText="";if(!recognitionFailed){setVoiceState("idle","我还在听，请继续说");scheduleListening(350)}};
+  recognition.onerror=e=>{stopVadLoop();clearListeningGesture();markRecognitionStopped();if(turnGate.committed)return;recognitionFailed=true;turnGate.fail();const denied=e.error==="not-allowed"||e.error==="service-not-allowed";if(denied){voiceCallActive=false;releaseVad();updateCallButton();setVoiceState("idle","请允许浏览器使用麦克风后重试");}else if(voiceCallActive){setVoiceState("idle","没有听清楚，正在继续聆听");scheduleListening(500)}};
   micButton.onclick=toggleCall;voiceButton.onclick=toggleCall;updateCallButton();
 } else { micButton.disabled=true;voiceButton.disabled=true;voicePrompt.textContent="当前浏览器不支持语音识别";liveTranscript.textContent="请使用最新版 Chrome 或 Edge"; }
 

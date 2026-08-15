@@ -1,4 +1,4 @@
-import { continuousVideoSync,scheduledAudioAhead,videoBoundaryDelayMs,videoCatchupSeconds,videoPrestartDelayMs } from "../avatar-video-timing.js?v=20260813-bounded-stream-v3";
+import { continuousVideoOriginAfterGap,continuousVideoSync,scheduledAudioAhead,videoBoundaryDelayMs,videoCatchupSeconds,videoPrestartDelayMs } from "../avatar-video-timing.js?v=20260814-audio-gap-v1";
 import { loadPcmBytes } from "../pcm-segment.js?v=20260813-binary-pcm-v1";
 import { bufferedVideoAhead,removableVideoRange,splitFragmentedMp4 } from "../fmp4-segment.js?v=20260813-fmp4-v3";
 import { scheduleAfterMediaReady } from "../media-audio-gate.js?v=20260813-media-audio-gate-v1";
@@ -7,6 +7,17 @@ const idleVideo = document.querySelector("#avatar-idle");
 const speechVideo = document.querySelector("#avatar-speech");
 const stage = document.querySelector("#stage");
 const state = document.querySelector("#state");
+const characterProfiles={
+  lumi:{idleAsset:"bedroom_idle_test",idleVideo:"01-seamless.mp4?v=20260814-stable-face-v2"},
+  xiaotao:{idleAsset:"xiaotao_idle",idleVideo:"01.mp4?v=20260815-xiaotao-v2"}
+};
+const requestedCharacter=new URLSearchParams(location.search).get("character");
+const activeCharacter=characterProfiles[requestedCharacter]?requestedCharacter:"lumi";
+const characterProfile=characterProfiles[activeCharacter],characterRoot=`/dh-live/actions/${characterProfile.idleAsset}`;
+idleVideo.poster=`${characterRoot}/thumbnail.jpg`;
+idleVideo.src=`${characterRoot}/${characterProfile.idleVideo}`;
+stage.style.backgroundImage=`url("${characterRoot}/thumbnail.jpg")`;
+document.body.dataset.character=activeCharacter;
 let playToken = 0;
 let segmentPlaying=false;
 let externalSegmentsPending=0;
@@ -24,6 +35,8 @@ let streamAudioTail=0;
 let audioScheduleChain=Promise.resolve();
 let fragmentedAppendChain=Promise.resolve();
 let fragmentedPlayback=null;
+let fragmentedPlaybackPromise=null;
+let fragmentedPlaybackGeneration=0;
 let waitingPreview=null;
 let waitingPreviewTimer=0;
 const streamAudioSources=new Set();
@@ -36,9 +49,10 @@ const STREAM_GAP_IDLE_MS=320;
 const RESUMABLE_PREVIEW_ACTIONS=new Set(["thinking","caring","nod","happy","idle"]);
 
 function notify(type, data = {}) { parent.postMessage({ type, ...data }, location.origin); }
+function keepIdlePlaying(){idleVideo.play().catch(()=>{});}
 function supportsFragmentedVideo(){return typeof MediaSource!=="undefined"&&MediaSource.isTypeSupported?.('video/mp4; codecs="avc1.64001f"')===true;}
 function stopFragmentedPlayback(){
-  const playback=fragmentedPlayback;fragmentedPlayback=null;fragmentedAppendChain=Promise.resolve();
+  const playback=fragmentedPlayback;fragmentedPlayback=null;fragmentedPlaybackPromise=null;fragmentedPlaybackGeneration++;fragmentedAppendChain=Promise.resolve();
   if(!playback)return;try{if(playback.mediaSource.readyState==="open")playback.mediaSource.endOfStream();}catch{}
   playback.video.pause();playback.video.remove();URL.revokeObjectURL(playback.url);
 }
@@ -73,8 +87,9 @@ function playIdle() {
   segmentQueue.length=0;streamItems.clear();cancelledRequests.clear();segmentPlaying=false;externalSegmentsPending=0;segmentsPreparing=0;activeSegment=null;activeSegmentSequence=-1;nextPlaybackSequence=0;streamEnded=true;
   pendingIdleTimeMs=null;pendingIdleLingerMs=120;
   stopStreamAudio();stopFragmentedPlayback();
+  void prewarmFragmentedPlayback(playToken);
   clearTimeout(waitingPreviewTimer);waitingPreviewTimer=0;waitingPreview=null;
-  idleVideo.play().catch(() => {});
+  keepIdlePlaying();
 }
 
 function clearWaitingPreview({revealIdle=true}={}){
@@ -83,7 +98,7 @@ function clearWaitingPreview({revealIdle=true}={}){
   if(!video)return;
   video.classList.remove("active");
   if(activeSegment===video)activeSegment=null;
-  if(revealIdle)idleVideo.play().catch(()=>{});
+  if(revealIdle)keepIdlePlaying();
   setTimeout(()=>{video.pause();video.remove();},180);
 }
 
@@ -141,6 +156,7 @@ async function scheduleSegmentAudio(item,pcmBytesPromise,token){
   const source=context.createBufferSource();source.buffer=buffer;source.connect(context.destination);
   const when=Math.max(streamAudioTail,context.currentTime+.06);
   const gapMs=streamAudioTail?Math.max(0,Math.round((when-streamAudioTail)*1000)):0;
+  item.audioGapMs=gapMs;
   item.audioStart=when;item.audioEnd=when+buffer.duration;streamAudioTail=item.audioEnd;
   item.audioSource=source;source.onended=()=>{streamAudioSources.delete(source);if(item.audioSource===source)item.audioSource=null;};streamAudioSources.add(source);source.start(when);
   notify("wav2lip-audio-buffer",{aheadSeconds:Number(scheduledAudioAhead(streamAudioTail,context.currentTime).toFixed(3)),sources:streamAudioSources.size});
@@ -171,13 +187,26 @@ async function waitForFragmentCapacity(playback,token){
 
 async function ensureFragmentedPlayback(token){
   if(fragmentedPlayback)return fragmentedPlayback;
+  if(fragmentedPlaybackPromise)return fragmentedPlaybackPromise;
   if(token!==playToken||!supportsFragmentedVideo())return null;
-  const mediaSource=new MediaSource(),video=document.createElement("video"),url=URL.createObjectURL(mediaSource);
-  video.className="avatar-layer speech-segment";video.playsInline=true;video.preload="auto";video.muted=true;video.src=url;stage.append(video);
-  await new Promise((resolve,reject)=>{mediaSource.addEventListener("sourceopen",resolve,{once:true});mediaSource.addEventListener("error",reject,{once:true});});
-  if(token!==playToken){video.remove();URL.revokeObjectURL(url);return null;}
-  const sourceBuffer=mediaSource.addSourceBuffer('video/mp4; codecs="avc1.64001f"');sourceBuffer.mode="sequence";
-  fragmentedPlayback={mediaSource,sourceBuffer,video,url,initAppended:false,started:false,startPromise:null,audioOrigin:null,maxDriftMs:0,prunedSeconds:0};return fragmentedPlayback;
+  const generation=fragmentedPlaybackGeneration;
+  const pending=(async()=>{
+    const mediaSource=new MediaSource(),video=document.createElement("video"),url=URL.createObjectURL(mediaSource);
+    video.className="avatar-layer speech-segment";video.playsInline=true;video.preload="auto";video.muted=true;video.src=url;stage.append(video);
+    try{
+      await new Promise((resolve,reject)=>{mediaSource.addEventListener("sourceopen",resolve,{once:true});mediaSource.addEventListener("error",reject,{once:true});});
+      if(token!==playToken||generation!==fragmentedPlaybackGeneration){video.remove();URL.revokeObjectURL(url);return null;}
+      const sourceBuffer=mediaSource.addSourceBuffer('video/mp4; codecs="avc1.64001f"');sourceBuffer.mode="sequence";
+      fragmentedPlayback={mediaSource,sourceBuffer,video,url,initAppended:false,started:false,startPromise:null,audioOrigin:null,maxDriftMs:0,prunedSeconds:0};return fragmentedPlayback;
+    }catch(error){video.remove();URL.revokeObjectURL(url);throw error;}
+  })();
+  fragmentedPlaybackPromise=pending;
+  try{return await pending;}finally{if(fragmentedPlaybackPromise===pending)fragmentedPlaybackPromise=null;}
+}
+
+function prewarmFragmentedPlayback(token=playToken){
+  if(streamAudioContext?.state!=="running"||!supportsFragmentedVideo())return Promise.resolve(null);
+  return ensureFragmentedPlayback(token).catch(()=>null);
 }
 
 function appendFragmentBytes(sourceBuffer,bytes){
@@ -231,6 +260,10 @@ async function playFragmentedSegment(item,token){
       notify("wav2lip-started",{requestId:item.requestId,sequence:item.playbackSequence,firstFrameMs:Math.round(performance.now()-playRequestedAt),handoffLateMs:Math.round(Math.max(0,(streamAudioContext.currentTime-item.audioStart)*1000)),continuousVideo:true});return true;
     })();
     if(!await playback.startPromise)return;
+    if(item.audioGapMs>0&&!item.audioGapApplied){
+      playback.audioOrigin=continuousVideoOriginAfterGap(playback.audioOrigin,item.audioGapMs);
+      item.audioGapApplied=true;
+    }
     if(item.playbackSequence>0&&Number.isFinite(playback.audioOrigin)){
       const{driftMs,seekTo}=continuousVideoSync(playback.audioOrigin,streamAudioContext.currentTime,playback.video.currentTime,playback.video.duration);
       playback.maxDriftMs=Math.max(playback.maxDriftMs,Math.abs(driftMs));
@@ -364,34 +397,20 @@ async function playQueuedSegment(){
   }
 }
 
-async function alignIdleToTime(speechTime){
-  const target=reflectedIdleTime(speechTime);
-  if(Math.abs(idleVideo.currentTime-target)<=.05)return;
-  idleVideo.pause();
-  await new Promise(resolve=>{
-    let settled=false;
-    const done=()=>{if(settled)return;settled=true;clearTimeout(timer);idleVideo.removeEventListener("seeked",done);resolve();};
-    const timer=setTimeout(done,140);idleVideo.addEventListener("seeked",done,{once:true});
-    const duration=idleVideo.duration;
-    try{idleVideo.currentTime=Number.isFinite(duration)&&duration>0?Math.min(target,Math.max(0,duration-.04)):target;}catch{done();}
-  });
-}
-
 function scheduleIdleReveal(delayMs=120,idleTimeMs=null){
   clearTimeout(streamGapIdleTimer);streamGapIdleTimer=0;
   clearTimeout(idleRevealTimer);
-  if(Number.isFinite(Number(idleTimeMs)))void alignIdleToTime(Number(idleTimeMs)/1000);
   const audioRemainingMs=streamAudioContext?Math.max(0,(streamAudioTail-streamAudioContext.currentTime)*1000):0;
   idleRevealTimer=setTimeout(async()=>{
     if(segmentPlaying||externalSegmentsPending||segmentsPreparing||segmentQueue.length||!streamEnded)return;
-    if(Number.isFinite(Number(idleTimeMs)))await alignIdleToTime(Number(idleTimeMs)/1000);
     const previous=activeSegment,preview=waitingPreview;activeSegment=null;waitingPreview=null;
     clearTimeout(waitingPreviewTimer);waitingPreviewTimer=0;
-    idleVideo.play().catch(()=>{});
+    keepIdlePlaying();
     requestAnimationFrame(()=>{
       previous?.classList.remove("active");previous?.pause();previous?.remove();
       if(preview&&preview!==previous){preview.pause();preview.remove();}
       stopFragmentedPlayback();
+      void prewarmFragmentedPlayback(playToken);
       document.body.classList.remove("loading");
     });
   },Math.max(audioRemainingMs,Math.min(400,Math.max(80,Number(delayMs)||120))));
@@ -407,10 +426,10 @@ function scheduleStreamGapReveal(delayMs=STREAM_GAP_IDLE_MS){
     const previous=activeSegment;if(!previous)return;
     const sourceTime=Math.max(0,Number(fragmentedPlayback?.video?.currentTime||previous.currentTime)||0);
     const preview=canResumeWaitingPreview(waitingPreview)?waitingPreview:null;
-    if(preview)await preview.play().catch(()=>{});else await alignIdleToTime(sourceTime);
+    if(preview)await preview.play().catch(()=>{});else keepIdlePlaying();
     if(token!==playToken||streamEnded||segmentPlaying||externalSegmentsPending||segmentsPreparing||segmentQueue.length||activeSegment!==previous)return;
     activeSegment=preview;
-    if(!preview)idleVideo.play().catch(()=>{});
+    if(!preview)keepIdlePlaying();
     requestAnimationFrame(()=>{
       previous.classList.remove("active");
       preview?.classList.add("active");
@@ -421,25 +440,21 @@ function scheduleStreamGapReveal(delayMs=STREAM_GAP_IDLE_MS){
   },Math.max(120,Number(delayMs)||STREAM_GAP_IDLE_MS));
 }
 
-function reflectedIdleTime(speechTime) {
-  const duration = idleVideo.duration;
-  if (!Number.isFinite(duration) || duration <= 0) return Math.max(0, speechTime);
-  const phase = speechTime % (duration * 2);
-  return phase <= duration ? phase : duration * 2 - phase;
-}
-
 async function revealAlignedIdle(token) {
-  await alignIdleToTime(speechVideo.currentTime);
   if (token !== playToken) return false;
   speechVideo.classList.remove("active");
-  idleVideo.play().catch(() => {});
+  keepIdlePlaying();
   return true;
 }
 
 window.addEventListener("message", async event => {
   if (event.origin !== location.origin || event.source !== parent) return;
   if(event.data?.type==="wav2lip-audio-unlock"){
-    const context=await ensureStreamAudio();notify("wav2lip-audio-mode",{mode:context?"pcm-ready":"mp4",fragmentedVideo:Boolean(context&&supportsFragmentedVideo()),gapMs:0});return;
+    const context=await ensureStreamAudio();
+    if(!context){notify("wav2lip-audio-mode",{mode:"mp4",fragmentedVideo:false,gapMs:0});return;}
+    const canFragment=supportsFragmentedVideo();notify("wav2lip-audio-mode",{mode:"pcm-ready",fragmentedVideo:false,gapMs:0});
+    if(canFragment){const playback=await prewarmFragmentedPlayback(playToken);if(playback)notify("wav2lip-audio-mode",{mode:"pcm-ready",fragmentedVideo:true,gapMs:0,prewarmed:true});}
+    return;
   }
   if(event.data?.type==="wav2lip-preview"&&event.data.url){void showWaitingPreview(event.data);return;}
   if(event.data?.type==="wav2lip-preview-clear"){clearWaitingPreview();return;}
@@ -503,4 +518,6 @@ window.addEventListener("message", async event => {
 });
 
 idleVideo.addEventListener("canplay", () => notify("dh-live-ready"), { once:true });
+idleVideo.addEventListener("pause",()=>{if(!document.hidden&&!activeSegment&&streamEnded)queueMicrotask(keepIdlePlaying);});
+document.addEventListener("visibilitychange",()=>{if(!document.hidden&&!activeSegment)keepIdlePlaying();});
 playIdle();

@@ -5,7 +5,7 @@ const DEFAULT_CHANNELS = 1;
 const DEFAULT_MAX_AUDIO_MS = 60_000;
 const DEFAULT_SEGMENT_MS = 800;
 const DEFAULT_FIRST_SEGMENT_MS = 800;
-const MIN_FIRST_SEGMENT_MS = 320;
+const MIN_FIRST_SEGMENT_MS = 240;
 const DEFAULT_MIN_TAIL_MS = 240;
 const MIN_TAIL_MS = 160;
 const DEFAULT_MAX_UNACKNOWLEDGED_SEGMENTS=6;
@@ -50,7 +50,7 @@ export class DINetStreamSessionStore {
     this.sessions = new Map();
   }
 
-  start({ action = "idle", sampleRate = DEFAULT_SAMPLE_RATE, channels = DEFAULT_CHANNELS, frameOffset = 0, videoOnly = false, binaryAudio = false, fragmentedVideo = false, renderBackpressure = false, visualTurnId="", visualSentenceIndex=0, firstSegmentMs, minimumTailMs=DEFAULT_MIN_TAIL_MS } = {}) {
+  start({ action = "idle", character="lumi", sampleRate = DEFAULT_SAMPLE_RATE, channels = DEFAULT_CHANNELS, frameOffset = 0, videoOnly = false, binaryAudio = false, fragmentedVideo = false, renderBackpressure = false, visualTurnId="", visualSentenceIndex=0, firstSegmentMs, minimumTailMs=DEFAULT_MIN_TAIL_MS } = {}) {
     if (sampleRate !== DEFAULT_SAMPLE_RATE || channels !== DEFAULT_CHANNELS) {
       throw streamError("流式 DINet 当前只接受 16 kHz、单声道 PCM16", 415);
     }
@@ -65,12 +65,12 @@ export class DINetStreamSessionStore {
     const id = randomUUID();
     const startedAt = this.now();
     this.sessions.set(id, {
-      id, action, sampleRate, channels, startedAt,
+      id, action, character:String(character||"lumi"), sampleRate, channels, startedAt,
       firstChunkAt:null, nextSequence:0, bytes:0, chunks:[], state:"open",
       segmentSequence:0, acknowledgedSequence:-1,ackWaiters:new Set(),retentionTimer:null,idleTimer:null,frameOffset, renderedAudioMs:0,firstSegmentMs,minimumTailMs,videoOnly:Boolean(videoOnly),binaryAudio:Boolean(videoOnly&&binaryAudio),fragmentedVideo:Boolean(videoOnly&&fragmentedVideo),renderBackpressure:Boolean(videoOnly&&fragmentedVideo&&renderBackpressure),visualTurnId:String(visualTurnId||""),visualSentenceIndex:Math.max(0,Number(visualSentenceIndex)||0)
     });
     this.#touch(this.sessions.get(id));
-    return { id, action, sampleRate, channels, frameOffset,firstSegmentMs,minimumTailMs,videoOnly:Boolean(videoOnly),binaryAudio:Boolean(videoOnly&&binaryAudio),fragmentedVideo:Boolean(videoOnly&&fragmentedVideo),renderBackpressure:Boolean(videoOnly&&fragmentedVideo&&renderBackpressure),maxUnacknowledgedSegments:this.maxUnacknowledgedSegments,nextSequence:0, mode:"stateful-segments" };
+    return { id, action, character:String(character||"lumi"), sampleRate, channels, frameOffset,firstSegmentMs,minimumTailMs,videoOnly:Boolean(videoOnly),binaryAudio:Boolean(videoOnly&&binaryAudio),fragmentedVideo:Boolean(videoOnly&&fragmentedVideo),renderBackpressure:Boolean(videoOnly&&fragmentedVideo&&renderBackpressure),maxUnacknowledgedSegments:this.maxUnacknowledgedSegments,nextSequence:0, mode:"stateful-segments" };
   }
 
   append(id, sequence, chunk) {
@@ -106,7 +106,7 @@ export class DINetStreamSessionStore {
     const finishRequestedAt = this.now();
     try {
       const wav = encodePcm16Wav(Buffer.concat(session.chunks), session.sampleRate, session.channels);
-      const rendered = await this.renderer.render(wav, session.action);
+      const rendered = await this.renderer.render(wav, session.action,{character:session.character});
       const completedAt = this.now();
       return {
         ...rendered,
@@ -148,7 +148,7 @@ export class DINetStreamSessionStore {
       const rendered=await this.renderer.render(
         encodePcm16Wav(pcm,session.sampleRate,session.channels),
         session.action,
-        {frameOffset,outputFrames,streamId:id,streamFinal:final,videoOnly:session.videoOnly,fragmentedVideo:session.fragmentedVideo,...(session.visualTurnId?{visualTurnId:session.visualTurnId,visualSentenceIndex:session.visualSentenceIndex}:{})}
+        {frameOffset,outputFrames,streamId:id,streamFinal:final,videoOnly:session.videoOnly,fragmentedVideo:session.fragmentedVideo,character:session.character,...(session.visualTurnId?{visualTurnId:session.visualTurnId,visualSentenceIndex:session.visualSentenceIndex}:{})}
       );
       if(this.sessions.get(id)!==session||session.state!=="open")throw streamError("流式会话已经取消",409);
       this.#touch(session);

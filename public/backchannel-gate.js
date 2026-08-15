@@ -42,6 +42,12 @@ export function backchannelContinuationMs({expectedAudioMs=0,receivedAudioMs=0,f
   return measured||Math.max(0,Number(fallbackMs)||0);
 }
 
+export function backchannelVisualElapsedMs(visual,{now=performance.now(),fallbackMs=400}={}){
+  const audioMs=backchannelContinuationMs({expectedAudioMs:visual?.stream?.expectedAudioMs,receivedAudioMs:visual?.stream?.receivedAudioMs,fallbackMs});
+  const startedAt=Number(visual?.startedAt),wallMs=Number.isFinite(startedAt)&&startedAt>0?Math.max(0,Number(now)-startedAt):0;
+  return Math.max(audioMs,Math.round(wallMs));
+}
+
 export class BackchannelPlayback{
   constructor(text){this.text=String(text||"");this.started=false;this.completed=false;this.claimed=false;this.closed=false;this.cancelled=false;this.startListeners=[];this.completeListeners=[];this.cancelListeners=[];}
   start(){if(this.started||this.cancelled)return;this.started=true;for(const listener of this.startListeners.splice(0))listener();}

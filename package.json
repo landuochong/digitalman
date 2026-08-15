@@ -4,10 +4,12 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "start": "node server.mjs",
-    "dev": "node --watch-path=server.mjs --watch-path=src server.mjs",
+    "start": "exec node server.mjs",
+    "dev": "exec node --watch-path=server.mjs --watch-path=src server.mjs",
     "test": "node --test test/*.test.mjs",
-    "test:live": "node scripts/live_smoke.mjs"
+    "test:live": "node scripts/live_smoke.mjs",
+    "audit:real-actions": "node scripts/audit_real_action_frames.mjs",
+    "audit:xiaotao-motion": ".venv-dh-live/bin/python scripts/validate_xiaotao_motion.py --json"
   },
   "engines": {
     "node": ">=18"

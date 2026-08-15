@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { buildChatPayload, buildMiniMaxChatPayload, buildMiniMaxReply, buildMiniMaxSpeechPayload, buildResponsiveBackchannel, buildSpeechPayload, companionContextPolicy, companionIdentityReply, companionPresenceReply, completedReplySentenceCount, conversationalSentenceLimit, decodeMiniMaxAudio, demoReply, extractMiniMaxChatText, extractResponseText, inferCompanionState, inferExplicitActionRequest, isCompanionIdentityQuestion, isCompanionPresenceQuestion, isRedundantClosingQuestion, limitReplyForRequest, normalizeAction, normalizeEmotion, normalizePersona, parseCompanionReply, requestedSentenceLimit, sanitizeReplyText, takeCompleteSentences } from "../src/companion.mjs";
+import { buildChatPayload, buildLongWaitBackchannel, buildMiniMaxChatPayload, buildMiniMaxReply, buildMiniMaxSpeechPayload, buildResponsiveBackchannel, buildSpeechPayload, companionContextPolicy, companionIdentityReply, companionPresenceReply, completedReplySentenceCount, conversationalSentenceLimit, decodeMiniMaxAudio, demoReply, extractMiniMaxChatText, extractResponseText, inferCompanionState, inferExplicitActionRequest, isCompanionIdentityQuestion, isCompanionPresenceQuestion, isRedundantClosingQuestion, limitReplyForRequest, normalizeAction, normalizeEmotion, normalizePersona, parseCompanionReply, requestedSentenceLimit, sanitizeReplyText, takeCompleteSentences } from "../src/companion.mjs";
 
 test("extracts Responses API output text", () => {
   assert.equal(extractResponseText({ output:[{ type:"message", content:[{ type:"output_text", text:"你好" }] }] }), "你好");
@@ -49,8 +49,23 @@ test("builds short contextual backchannels without pretending they are answers",
     assert.ok([...backchannel.text.replace(/[，。！？!?\s]/g,"")].length<=5,`${message} 的接话过长：${backchannel.text}`);
   }
 });
+test("adds one long-wait cue only for deliberative turns",()=>{
+  assert.deepEqual(buildLongWaitBackchannel("帮我分析一下两个方案哪个好"),{text:"这个我再想仔细一点。",emotion:"curious",action:"thinking",kind:"long-wait"});
+  assert.deepEqual(buildLongWaitBackchannel("周末帮我安排学习和运动"),{text:"这个我再想仔细一点。",emotion:"curious",action:"thinking",kind:"long-wait"});
+  assert.equal(buildLongWaitBackchannel("你好"),null);
+  assert.equal(buildLongWaitBackchannel("我今天吃了很好吃的面"),null);
+  assert.equal(buildLongWaitBackchannel("我饿了"),null);
+});
 test("demo maps the good-news suggestion to an excited response", () => {
   const result = demoReply("我有个好消息"); assert.equal(result.emotion, "excited"); assert.equal(result.action, "clap"); assert.match(result.reply, /开心|高兴/);
+});
+
+test("ordinary thanks stays spoken and does not become a silent bow",()=>{
+  assert.deepEqual(inferCompanionState("谢谢你"),{emotion:"happy",action:"happy"});
+  assert.deepEqual(inferCompanionState("辛苦了"),{emotion:"happy",action:"happy"});
+  const result=demoReply("谢谢你");
+  assert.equal(result.action,"happy");
+  assert.match(result.reply,/不用客气|开心/);
 });
 test("demo uses the thinking expression for questions", () => assert.equal(demoReply("这个要怎么做？").action, "thinking"));
 test("persona changes the demo name and is safely normalized", () => {

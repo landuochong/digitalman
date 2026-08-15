@@ -296,6 +296,144 @@
       "useFor": [
         "confident_arms_crossed"
       ]
+    },
+    "lakeside_thumbs_up": {
+      "asset": "lakeside_thumbs_up",
+      "returnTo": "idle",
+      "interruptible": true,
+      "useFor": [
+        "thumbs_up"
+      ]
+    },
+    "bedroom_thumbs_up": {
+      "asset": "bedroom_thumbs_up",
+      "returnTo": "bedroom_idle_test",
+      "interruptible": true,
+      "mouthMotionScale": 0.88,
+      "useFor": [
+        "thumbs_up"
+      ]
+    },
+    "lakeside_wave_v2": {
+      "asset": "lakeside_wave_v2",
+      "returnTo": "idle",
+      "interruptible": true,
+      "useFor": [
+        "wave"
+      ]
+    },
+    "bedroom_wave_v2": {
+      "asset": "bedroom_wave_v2",
+      "returnTo": "bedroom_idle_test",
+      "interruptible": true,
+      "mouthMotionScale": 0.88,
+      "useFor": [
+        "wave_approval"
+      ]
+    },
+    "xiaotao_idle": {
+      "asset": "xiaotao_idle",
+      "loop": true,
+      "interruptible": true,
+      "useFor": [
+        "idle"
+      ]
+    },
+    "xiaotao_smile": {
+      "asset": "xiaotao_smile",
+      "returnTo": "xiaotao_idle",
+      "interruptible": true,
+      "useFor": [
+        "smile"
+      ]
+    },
+    "xiaotao_nod": {
+      "asset": "xiaotao_nod",
+      "returnTo": "xiaotao_idle",
+      "interruptible": true,
+      "useFor": [
+        "agree_subtle"
+      ]
+    },
+    "xiaotao_wave": {
+      "asset": "xiaotao_wave",
+      "returnTo": "xiaotao_idle",
+      "interruptible": true,
+      "useFor": [
+        "wave"
+      ]
+    },
+    "xiaotao_thumbs_up": {
+      "asset": "xiaotao_thumbs_up",
+      "returnTo": "xiaotao_idle",
+      "interruptible": true,
+      "useFor": [
+        "thumbs_up"
+      ]
+    },
+    "xiaotao_clap": {
+      "asset": "xiaotao_clap",
+      "returnTo": "xiaotao_idle",
+      "interruptible": true,
+      "useFor": [
+        "clap"
+      ]
+    },
+    "xiaotao_cheer": {
+      "asset": "xiaotao_cheer",
+      "returnTo": "xiaotao_idle",
+      "interruptible": true,
+      "useFor": [
+        "cheer"
+      ]
+    },
+    "xiaotao_shy": {
+      "asset": "xiaotao_shy",
+      "returnTo": "xiaotao_idle",
+      "interruptible": true,
+      "useFor": [
+        "shy"
+      ]
+    },
+    "xiaotao_thinking": {
+      "asset": "xiaotao_thinking",
+      "returnTo": "xiaotao_idle",
+      "interruptible": true,
+      "useFor": [
+        "thinking"
+      ]
+    },
+    "xiaotao_caring": {
+      "asset": "xiaotao_caring",
+      "returnTo": "xiaotao_idle",
+      "interruptible": true,
+      "useFor": [
+        "caring"
+      ]
+    },
+    "xiaotao_shrug": {
+      "asset": "xiaotao_shrug",
+      "returnTo": "xiaotao_idle",
+      "interruptible": true,
+      "useFor": [
+        "shrug_palms_up_left"
+      ]
+    },
+    "xiaotao_cross": {
+      "asset": "xiaotao_cross",
+      "returnTo": "xiaotao_idle",
+      "interruptible": true,
+      "useFor": [
+        "cross"
+      ]
+    },
+    "xiaotao_arms_crossed": {
+      "asset": "xiaotao_arms_crossed",
+      "returnTo": "xiaotao_idle",
+      "interruptible": true,
+      "useFor": [
+        "arms_crossed"
+      ]
     }
   }
 }

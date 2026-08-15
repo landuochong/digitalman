@@ -10,6 +10,7 @@ const DEFAULT_OUTPUT = path.join(PROJECT_ROOT, "resources", "minimax-generated",
 const API_BASE = "https://api.minimaxi.com";
 const POLL_INTERVAL_MS = 10_000;
 const LAKESIDE_ACTION_BASE = `Use the exact same cute young adult woman from the reference image: identical face, long dark hair, pink flower accessory, sailor-style white top, pleated skirt, body proportions, lakeside sunset background, framing, lighting and colors. Locked camera, full body centered, no zoom, no reframing, no background change. Her eyes remain naturally focused toward the camera. Her small narrow lips stay gently closed for the entire video, with warm coral-pink color, no teeth, no speech, no singing and no lip movement. The motion is subtle and physically natural, never exaggerated. Start from the exact reference pose and return smoothly to that exact pose at the end.`;
+const XIAOTAO_GREEN_BASE = `Use the exact same adult East Asian woman from the reference image: identical face, long dark-brown hair, white fitted T-shirt with the original pastel cherry-blossom-and-ribbon illustration, pastel-pink high-waisted A-line skirt, white shoes and natural body proportions. Preserve the perfectly uniform chroma green #00FF00 background exactly across every frame: no room, scenery, floor horizon, texture, gradient, shadow, reflection, green spill or background movement. Locked straight-on camera, full body centered at the exact same scale, complete hair, arms, hands, skirt, legs and shoes visible, no zoom, pan, crop or reframing. Soft even frontal studio lighting, no backlight, rim light or hair halo. Her eyes remain naturally focused toward the camera. Her small natural lips stay gently closed for the entire video, no teeth, speech, singing or lip movement. Motion is subtle, anatomically correct and physically natural. Start from the exact reference pose and return smoothly to that exact pose at the end.`;
 
 const ACTIONS = {
   idle: {
@@ -40,7 +41,11 @@ const ACTIONS = {
   },
   wave: {
     filename:"wave.mp4",
-    prompt:`${LAKESIDE_ACTION_BASE} She brings only her right hand from behind her back to shoulder height, gives two small relaxed waves with the palm facing the camera, then lowers it behind her back. Keep the left arm, shoulders and torso still. Do not raise the elbow above shoulder level.`,
+    prompt:`${LAKESIDE_ACTION_BASE} She brings only her right hand from behind her back to shoulder height and gives two very small relaxed waves with the palm facing the camera. Keep the index, middle, ring and little fingers straight, naturally aligned and CLOSE TOGETHER as one clean silhouette, with absolutely no visible gaps, holes or bright slivers between those four fingers. Keep the thumb relaxed close to the side of the palm. The hand remains anatomically correct and sharply defined without fused, duplicated, missing or translucent fingers. Keep the wrist mostly straight and move the whole hand only a few degrees from the wrist; no fast motion blur. Then lower it behind her back. Keep the left arm, shoulders and torso still. Do not raise the elbow above shoulder level.`,
+  },
+  thumbs_up: {
+    filename:"thumbs-up.mp4",
+    prompt:`${LAKESIDE_ACTION_BASE} She brings only her right forearm forward to lower-chest height and makes one unmistakable thumbs-up gesture toward the camera. Her four fingers curl naturally into a compact fist while the thumb is fully extended straight vertically upward. The thumb must remain clearly separated from the curled fingers and fully visible; this is not an open palm, pointing gesture, wave, or nod. Keep the wrist straight, elbow relaxed below chest level, left arm behind her back, shoulders and torso still. Hold the vertical thumbs-up for about one second, then return the right hand behind her back.`,
   },
   clap: {
     filename:"clap.mp4",
@@ -52,7 +57,7 @@ const ACTIONS = {
   },
   bow: {
     filename:"bow.mp4",
-    prompt:`${LAKESIDE_ACTION_BASE} She performs one small polite bow from the waist, approximately ten degrees, keeping her head aligned with her torso and both hands behind her back, then returns upright. This is a short courteous bow, not a deep bow.`,
+    prompt:`${LAKESIDE_ACTION_BASE} Before bowing, she brings both hands from behind her back to the FRONT of her lower abdomen and rests one open hand gently over the other. Both complete arms must remain clearly visible from shoulder to elbow to wrist throughout the entire motion, with no forearm hidden behind her torso and no missing limb. Keeping the hands together in front, elbows relaxed slightly outward and wrists visible, she performs one small polite bow from the waist of approximately ten degrees. Her head stays aligned with her torso. She then returns upright and smoothly returns both hands behind her back. This is a short courteous bow, not a deep bow. No arm-body intersection, no hands behind the body during the bow, no disappearing arm, no cropped limb.`,
   },
   shy: {
     filename:"shy.mp4",
@@ -100,6 +105,69 @@ const ACTIONS = {
   },
 };
 
+const XIAOTAO_GREEN_ACTIONS = {
+  idle: {
+    filename: "idle.mp4",
+    prompt: `${XIAOTAO_GREEN_BASE} She remains almost still with only subtle natural breathing and one soft blink. Both arms hang naturally with relaxed elbows and fingers. No head sway, wandering eyes, hair movement or skirt movement.`,
+  },
+  smile: {
+    filename: "smile.mp4",
+    prompt: `${XIAOTAO_GREEN_BASE} She slowly forms a tiny warm closed-mouth smile, cheeks lift only slightly, holds briefly, then returns to the exact neutral expression. Arms and body remain still. Never widen the mouth or create dark mouth corners.`,
+  },
+  agree_subtle: {
+    filename: "agree-subtle.mp4",
+    prompt: `${XIAOTAO_GREEN_BASE} Match a quick subtle friendly agreement nod like a person acknowledging one sentence. Remain perfectly upright and look directly into the camera for the first second. In the middle of the video, lower ONLY the chin by about three degrees for a fraction of a second and immediately lift it back to the exact starting angle; the complete down-and-up gesture lasts about 0.6 seconds. Both pupils and the whites of both eyes must remain clearly visible in EVERY frame, with continuous eye contact and no blink during the nod. Keep a tiny closed-mouth smile. Shoulders, torso, hair, arms and hands remain completely still. No prolonged downward gaze, no closed or lowered eyelids, no repeated nod, no side tilt and no bowing from the waist.`,
+  },
+  wave: {
+    filename: "wave.mp4",
+    prompt: `${XIAOTAO_GREEN_BASE} She raises only her right hand to shoulder height and gives two small relaxed waves, palm facing camera. Four fingers stay naturally aligned with only narrow realistic gaps; thumb remains visible and relaxed. Keep the hand sharp, opaque and anatomically correct, then return it to the natural resting pose. Left arm and torso remain still.`,
+  },
+  thumbs_up: {
+    filename: "thumbs-up.mp4",
+    prompt: `${XIAOTAO_GREEN_BASE} She raises only her right forearm to lower-chest height and makes a clear vertical thumbs-up. Four fingers form a compact natural fist and the thumb points straight upward, fully visible. Hold briefly, then return to the resting pose.`,
+  },
+  clap: {
+    filename: "clap.mp4",
+    prompt: `${XIAOTAO_GREEN_BASE} Match a natural gentle applause gesture. From the resting pose, lift both forearms smoothly along the FRONT of the torso without first spreading the arms sideways. Keep elbows relaxed near the waist. Bring two vertical palms together at mid-chest height, below the chin, with straight relaxed fingers pointing upward. Make two or three very small soft claps while the palms stay close together; only the upper palms separate slightly and the heel of each palm remains nearly touching. Do not swing the forearms, cross or merge the hands, or open the arms wide. Hold the final near-contact briefly, then lower both hands smoothly along the front of the torso to the exact resting pose.`,
+  },
+  cheer: {
+    filename: "cheer.mp4",
+    prompt: `${XIAOTAO_GREEN_BASE} She makes one restrained celebratory gesture: both forearms rise beside the shoulders with small relaxed fists, pause briefly, then lower. Elbows remain below head height; torso and feet stay fixed.`,
+  },
+  bow: {
+    filename: "bow.mp4",
+    prompt: `${XIAOTAO_GREEN_BASE} She places one open hand gently over the other in front of the lower abdomen, with both complete arms visible, and performs one polite ten-degree bow from the waist. She returns upright and lowers both arms. No disappearing limb or arm-body intersection.`,
+  },
+  shy: {
+    filename: "shy.mp4",
+    prompt: `${XIAOTAO_GREEN_BASE} She brings both hands lightly toward the lower face, covering the mouth area without covering the eyes or nose, with a tiny shy head tilt and closed-mouth smile. Hold briefly, then lower both hands and return upright. Hands and fingers remain opaque and anatomically correct.`,
+  },
+  thinking: {
+    filename: "thinking.mp4",
+    prompt: `${XIAOTAO_GREEN_BASE} She rests her right index finger lightly near the side of the chin, tilts her head only a few degrees and shifts her gaze slightly upward, then returns her hand and gaze to neutral.`,
+  },
+  caring: {
+    filename: "caring.mp4",
+    prompt: `${XIAOTAO_GREEN_BASE} She brings both hands softly together over the upper chest in a gentle caring gesture, shoulders relaxed, with a very slight sympathetic head tilt. Hold briefly, then return both hands and head to neutral.`,
+  },
+  surprise: {
+    filename: "surprise.mp4",
+    prompt: `${XIAOTAO_GREEN_BASE} She shows mild surprise: her right hand rises lightly in front of the closed mouth without touching the nose, eyebrows lift slightly and her head leans back only a few degrees. Then she returns to neutral. Hand and face remain fully opaque with clean edges.`,
+  },
+  shrug_palms_up_left: {
+    filename: "shrug-palms-up-left.mp4",
+    prompt: `${XIAOTAO_GREEN_BASE} She makes a restrained natural shrug: both shoulders lift slightly, elbows stay near the waist and both forearms move forward with open palms clearly facing upward. Her head tilts about six degrees toward screen-left. Hold briefly, then return to neutral.`,
+  },
+  cross: {
+    filename: "cross.mp4",
+    prompt: `${XIAOTAO_GREEN_BASE} She brings both forearms in front of the upper chest to form a clear gentle X-shaped refusal gesture below the chin, holds briefly, then uncrosses and returns to neutral. Arms remain in front of the clothing without intersecting.`,
+  },
+  arms_crossed: {
+    filename: "arms-crossed.mp4",
+    prompt: `${XIAOTAO_GREEN_BASE} She folds both arms naturally across the lower chest in a calm confident pose, elbows relaxed and forearms clearly visible in front of the shirt. Hold briefly, then unfold and return to neutral.`,
+  },
+};
+
 function loadEnv(envPath) {
   if (!fs.existsSync(envPath)) return;
   for (const rawLine of fs.readFileSync(envPath, "utf8").split(/\r?\n/)) {
@@ -122,6 +190,7 @@ function parseArgs(argv) {
     output: DEFAULT_OUTPUT,
     outputExplicit: false,
     engine: "h3",
+    profile: "legacy",
     actions: Object.keys(ACTIONS),
     dryRun: false,
   };
@@ -133,14 +202,17 @@ function parseArgs(argv) {
       options.outputExplicit = true;
     }
     else if (arg === "--engine") options.engine = argv[++index];
+    else if (arg === "--profile") options.profile = argv[++index];
     else if (arg === "--actions") options.actions = argv[++index].split(",").map((value) => value.trim()).filter(Boolean);
     else if (arg === "--dry-run") options.dryRun = true;
     else throw new Error(`未知参数：${arg}`);
   }
-  for (const name of options.actions) {
-    if (!ACTIONS[name]) throw new Error(`不支持的动作：${name}`);
-  }
+  if (!new Set(["legacy", "xiaotao-green"]).has(options.profile)) throw new Error(`不支持的人物配置：${options.profile}`);
+  options.catalog = options.profile === "xiaotao-green" ? XIAOTAO_GREEN_ACTIONS : ACTIONS;
+  if (options.profile === "xiaotao-green" && options.actions.length === Object.keys(ACTIONS).length && options.actions.every((name, index) => name === Object.keys(ACTIONS)[index])) options.actions = Object.keys(options.catalog);
+  for (const name of options.actions) if (!options.catalog[name]) throw new Error(`不支持的动作：${name}`);
   if (!new Set(["h3", "hailuo02"]).has(options.engine)) throw new Error(`不支持的引擎：${options.engine}`);
+  if (options.profile === "xiaotao-green" && !options.outputExplicit) options.output = path.join(PROJECT_ROOT, "resources", "minimax-generated", "xiaotao-green-v1");
   if (options.engine === "hailuo02" && !options.outputExplicit) options.output = `${DEFAULT_OUTPUT}-hailuo02`;
   return options;
 }
@@ -312,7 +384,8 @@ async function main() {
       model: profile.model,
       resolution: profile.resolution,
       duration: profile.duration,
-      actions: options.actions.map((name) => ({ name, filename: ACTIONS[name].filename, prompt: ACTIONS[name].prompt })),
+      profile: options.profile,
+      actions: options.actions.map((name) => ({ name, filename: options.catalog[name].filename, prompt: options.catalog[name].prompt })),
     }, null, 2));
     return;
   }
@@ -325,7 +398,7 @@ async function main() {
   const imageUrl = imageDataUrl(options.reference);
 
   for (const name of options.actions) {
-    const action = ACTIONS[name];
+    const action = options.catalog[name];
     const outputPath = path.join(options.output, action.filename);
     const record = state.actions[name] || { prompt: action.prompt };
     state.actions[name] = record;
@@ -333,6 +406,14 @@ async function main() {
     if (fs.existsSync(outputPath) && fs.statSync(outputPath).size > 0) {
       console.log(`${name} 已存在，跳过：${outputPath}`);
       continue;
+    }
+    if (["failed","cancelled"].includes(record.status) && record.taskId) {
+      record.previousTaskId = record.taskId;
+      delete record.taskId;
+      delete record.error;
+      record.status = "retrying";
+      record.retriedAt = new Date().toISOString();
+      writeState(statePath, state);
     }
     try {
       if (!record.taskId) {
@@ -363,8 +444,13 @@ async function main() {
       writeState(statePath, state);
       console.log(`${name} 已下载：${outputPath}`);
     } catch (error) {
-      record.status = "failed";
-      record.failedAt = new Date().toISOString();
+      // A transport error such as "fetch failed" does not mean the remote
+      // video task failed. Keep its task id so the next run resumes polling
+      // instead of accidentally submitting and charging for a duplicate.
+      const terminalFailure=/任务 .+ (?:failed|cancelled|失败)|insufficient balance|video_generation_failed/i.test(error.message);
+      record.status = terminalFailure ? "failed" : "submitted";
+      if (terminalFailure) record.failedAt = new Date().toISOString();
+      else record.lastQueryErrorAt = new Date().toISOString();
       record.error = error.message;
       writeState(statePath, state);
       throw error;

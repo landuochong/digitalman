@@ -29,6 +29,23 @@ test("commits a final recognition correction immediately after VAD stop",()=>{
   assert.equal(pending(),0);
 });
 
+test("carries the measured last-speech silence without counting the whole turn",()=>{
+  const {gate,commits,advance}=harness();
+  gate.update("今天有点累");
+  assert.equal(gate.requestStop({endpointSilenceMs:520}),true);
+  advance(24);gate.update("今天有点累。",{final:true,endpointSilenceMs:544});
+  assert.deepEqual(commits,[{text:"今天有点累。",trigger:"final-result",turnMs:24,stopToCommitMs:24,endpointSilenceMs:544}]);
+});
+
+test("treats a non-continuous Web Speech final result as the utterance boundary",()=>{
+  const {gate,commits,pending}=harness();
+  gate.update("我想吃");
+  assert.equal(gate.update("我想吃火锅",{final:true}),true);
+  assert.deepEqual(commits,[{text:"我想吃火锅",trigger:"final-result",turnMs:0,stopToCommitMs:0}]);
+  assert.equal(pending(),0);
+  assert.equal(gate.requestStop({final:true}),false);
+});
+
 test("uses adaptive silence without cutting off very short utterances",()=>{
   assert.equal(recognitionSilenceMs({text:"嗯"}),650);
   assert.equal(recognitionSilenceMs({text:"我想一下"}),560);
@@ -48,9 +65,9 @@ test("resumes listening sooner only after a precise shared PCM tail",()=>{
   assert.equal(recognitionResumeDelayMs(),180);
 });
 
-test("submits an already-final transcript at the VAD boundary without another timer",()=>{
+test("can still accept an explicit final VAD boundary from another caller",()=>{
   const {gate,commits,pending}=harness();
-  gate.update("这句已经确认",{final:true});
+  gate.update("这句已经确认");
   assert.equal(gate.requestStop({final:true}),true);
   assert.deepEqual(commits,[{text:"这句已经确认",trigger:"vad-final",turnMs:0,stopToCommitMs:0}]);
   assert.equal(pending(),0);

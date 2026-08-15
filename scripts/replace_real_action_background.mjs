@@ -10,10 +10,19 @@ const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "
 const actionsRoot = path.join(projectRoot, "public", "dh-live", "actions");
 const background = path.join(projectRoot, "public", "assets", "lumi-bedroom-background-v1.png");
 const swiftSource = path.join(projectRoot, "scripts", "replace_video_background.swift");
-const actions = [
+const defaultActions = [
   "idle_test", "smile_test", "agree_test", "wave", "clap", "cheer",
   "shy", "thinking", "caring", "shrug", "cross", "arms_crossed",
 ];
+
+function parseActions(argv) {
+  const optionIndex = argv.indexOf("--actions");
+  if (optionIndex < 0) return defaultActions;
+  const value = argv[optionIndex + 1] || "";
+  const selected = value.split(",").map(action => action.trim()).filter(Boolean);
+  if (!selected.length) throw new Error("--actions 至少需要一个动作名称");
+  return selected;
+}
 
 function run(command, args, options = {}) {
   const result = spawnSync(command, args, { cwd:projectRoot, stdio:"inherit", ...options });
@@ -30,6 +39,7 @@ function capture(command, args) {
 
 async function main() {
   const force = process.argv.includes("--force");
+  const actions = parseActions(process.argv.slice(2));
   const workspace = await mkdtemp(path.join(os.tmpdir(), "digitalman-bedroom-actions-"));
   const binary = path.join(workspace, "replace-video-background");
   const moduleCache = path.join(workspace, "swift-module-cache");
@@ -70,7 +80,9 @@ async function main() {
       run("ffmpeg", [
         "-hide_banner", "-loglevel", "error", "-y", "-framerate", fps,
         "-i", path.join(outputFrames, "%06d.png"), "-an", "-c:v", "libx264",
-        "-preset", "slow", "-crf", "14", "-pix_fmt", "yuv420p", "-movflags", "+faststart",
+        "-preset", "slow", "-crf", "14", "-pix_fmt", "yuv420p",
+        "-color_range", "tv", "-color_primaries", "bt709", "-color_trc", "iec61966-2-1",
+        "-movflags", "+faststart",
         path.join(target, "01.mp4"),
       ]);
       await cp(path.join(source, "combined_data.json.gz"), path.join(target, "combined_data.json.gz"));

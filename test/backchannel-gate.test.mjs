@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { BackchannelGate,BackchannelPlayback,backchannelContinuationMs,remainingAfterSpokenBackchannel } from "../public/backchannel-gate.js";
+import { BackchannelGate,BackchannelPlayback,backchannelContinuationMs,backchannelVisualElapsedMs,remainingAfterSpokenBackchannel } from "../public/backchannel-gate.js";
 
 function fakeClock(){let task=null;return{set(fn){task=fn;return 1;},clear(){task=null;},fire(){const fn=task;task=null;fn?.();}};}
 
@@ -97,4 +97,11 @@ test("advances the action by measured backchannel audio instead of gesture hold 
   assert.equal(backchannelContinuationMs({expectedAudioMs:690,receivedAudioMs:400}),690);
   assert.equal(backchannelContinuationMs({expectedAudioMs:690,receivedAudioMs:690}),690);
   assert.equal(backchannelContinuationMs({}),400);
+});
+
+test("keeps the visible action clock advancing through a silent model gap",()=>{
+  const visual={startedAt:1000,stream:{expectedAudioMs:690,receivedAudioMs:640}};
+  assert.equal(backchannelVisualElapsedMs(visual,{now:3100}),2100);
+  assert.equal(backchannelVisualElapsedMs(visual,{now:1400}),690);
+  assert.equal(backchannelVisualElapsedMs({stream:visual.stream},{now:9000}),690);
 });

@@ -1,6 +1,7 @@
 const HIGH_ENERGY_ACTIONS=new Set(["wave_approval","clap","cheer","surprise","bow","shrug","cross","confident_arms_crossed","shy"]);
 const DEFER_ON_SHORT_OPENER=new Set(["caring","thinking","shy","confident_arms_crossed"]);
 const HOLD_ACROSS_SENTENCES=new Set(["happy","caring","thinking"]);
+const PREVIEW_ONLY_REACTIONS=new Set(["surprise"]);
 // Ordinary conversation should not look frozen, but applying a gesture to
 // every turn is just as mechanical. This restrained four-turn cadence gives
 // three low-amplitude responses and one genuinely quiet turn.
@@ -103,6 +104,13 @@ export class ConversationActionScheduler{
     let proposed=String(candidateAction||"idle");
     if(proposed===this.requestedPrimary)proposed=this.primary;
     if(index===0){
+      // Surprise is visually clear before speech, but the authored hand-over-
+      // mouth clip must not receive a generated mouth patch. Keep it as the
+      // waiting reaction, then speak with a restrained smile. Explicit action
+      // requests still play the complete silent gesture exactly as requested.
+      if(!this.explicit&&PREVIEW_ONLY_REACTIONS.has(this.primary)){
+        this.primary="happy";this.requestedPrimary="happy";proposed="happy";
+      }
       if(!this.explicit&&proposed!=="idle"&&!sameActionIntent(proposed,this.primary)){this.primary=this.resolveBudget(proposed);this.cadenceManaged=false;this.implicitMicroGesture=false;}
       this.deferPrimary=!this.explicit&&DEFER_ON_SHORT_OPENER.has(this.primary)&&spokenLength(text)<6;
       return this.plan(this.deferPrimary?"idle":this.primary,{emotion,index,text,deferred:this.deferPrimary});
@@ -121,4 +129,4 @@ export class ConversationActionScheduler{
   finishTurn(){this.reset();return "idle";}
 }
 
-export const conversationActionPolicy=Object.freeze({cooldownMs:3000,shortOpenerCharacters:6,sourceFrames:REAL_SOURCE_FRAMES,sourceFps:REAL_SOURCE_FPS,sourceLoopMs:REAL_SOURCE_LOOP_MS,naturalGestureCycleMs:NATURAL_GESTURE_CYCLE_MS,holdAcrossSentences:[...HOLD_ACROSS_SENTENCES],microGestureCadence:[...MICRO_GESTURE_CADENCE],intentGroups:ACTION_INTENT_GROUPS.map(group=>[...group]),behaviorActions:Object.keys(ACTION_BEHAVIOR)});
+export const conversationActionPolicy=Object.freeze({cooldownMs:3000,shortOpenerCharacters:6,sourceFrames:REAL_SOURCE_FRAMES,sourceFps:REAL_SOURCE_FPS,sourceLoopMs:REAL_SOURCE_LOOP_MS,naturalGestureCycleMs:NATURAL_GESTURE_CYCLE_MS,holdAcrossSentences:[...HOLD_ACROSS_SENTENCES],previewOnlyReactions:[...PREVIEW_ONLY_REACTIONS],microGestureCadence:[...MICRO_GESTURE_CADENCE],intentGroups:ACTION_INTENT_GROUPS.map(group=>[...group]),behaviorActions:Object.keys(ACTION_BEHAVIOR)});

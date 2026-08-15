@@ -33,6 +33,21 @@ test("plays a complete first-sentence gesture immediately",()=>{
   assert.equal(scheduler.actionForSentence("重点有两个。",1),"thinking");
 });
 
+test("uses surprise as a waiting reaction and speaks with a restrained smile",()=>{
+  const scheduler=new ConversationActionScheduler();
+  assert.equal(scheduler.startTurn({message:"哇，真的吗",action:"surprise",emotion:"excited"}).action,"surprise");
+  assert.equal(scheduler.planForSentence("真的呀，我也有点意外。",0,"surprise","excited").action,"happy");
+  assert.deepEqual(conversationActionPolicy.previewOnlyReactions,["surprise"]);
+});
+
+test("keeps an explicitly requested surprise as the complete gesture",()=>{
+  const scheduler=new ConversationActionScheduler();
+  scheduler.startTurn({message:"请做个惊讶动作",action:"surprise",emotion:"excited"});
+  const plan=scheduler.planForSentence("好呀。",0,"surprise","excited");
+  assert.equal(plan.action,"surprise");
+  assert.equal(plan.explicit,true);
+});
+
 test("accepts one reply-derived micro gesture during a neutral turn",()=>{
   const scheduler=new ConversationActionScheduler();
   // Advance to the cadence's deliberately quiet turn so this test continues

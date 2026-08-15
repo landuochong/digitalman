@@ -9,7 +9,7 @@
   <link rel="stylesheet" href="/mobile.css" />
   <link rel="stylesheet" href="/voice.css?v=20260813-video-handoff-v11" />
   <link rel="stylesheet" href="/realistic.css" />
-  <link rel="stylesheet" href="/mode-switch.css" />
+  <link rel="stylesheet" href="/mode-switch.css?v=20260814-action-test-v1" />
 </head>
 <body>
   <main class="shell">
@@ -20,6 +20,12 @@
         <button type="button" data-avatar-mode="real" aria-pressed="true">真人</button>
         <button type="button" data-avatar-mode="anime" aria-pressed="false">动漫</button>
       </div>
+      <label class="real-character-control" id="realCharacterControl">真人角色
+        <select id="realCharacterSelect" aria-label="选择真人角色">
+          <option value="lumi">露米</option>
+          <option value="xiaotao">小桃</option>
+        </select>
+      </label>
       <label class="anime-look-control" id="animeLookControl" hidden>动漫造型
         <select id="animeLookSelect" aria-label="选择动漫人物造型">
           <option value="soft">学院日常</option>
@@ -36,7 +42,7 @@
       </div>
       <div class="ambient ambient-one"></div><div class="ambient ambient-two"></div>
       <div class="portrait" id="portrait" data-emotion="happy">
-        <iframe class="dh-live-frame" id="digitalHumanFrame" src="/wav2lip-avatar/avatar.html?v=20260813-listen-resume-v16" title="露米的人物形象" allow="autoplay" aria-label="露米的人物形象"></iframe>
+        <iframe class="dh-live-frame" id="digitalHumanFrame" src="/wav2lip-avatar/avatar.html?v=20260814-atomic-action-v19" title="露米的人物形象" allow="autoplay" aria-label="露米的人物形象"></iframe>
         <svg class="illustrated-avatar" viewBox="0 0 520 660" role="img" aria-label="露米的动画形象">
           <defs>
             <linearGradient id="hair" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#393044"/><stop offset="1" stop-color="#181522"/></linearGradient>
@@ -77,6 +83,26 @@
 
     <section class="chat-panel voice-panel">
       <header><div><p class="eyebrow">VOICE COMPANION</p><h1>点一下，和我说话</h1></div><div class="header-actions">
+        <details class="action-test-panel" id="actionTestPanel" hidden>
+          <summary>动作测试</summary>
+          <div class="action-test-buttons" role="group" aria-label="临时动作测试">
+            <button type="button" data-action-test="idle">待机</button>
+            <button type="button" data-action-test="happy">微笑</button>
+            <button type="button" data-action-test="shy">害羞</button>
+            <button type="button" data-action-test="wave_approval">挥手</button>
+            <button type="button" data-action-test="nod">点头</button>
+            <button type="button" data-action-test="thumbs_up">点赞</button>
+            <button type="button" data-action-test="clap">鼓掌</button>
+            <button type="button" data-action-test="cheer">欢呼</button>
+            <button type="button" data-action-test="bow">鞠躬</button>
+            <button type="button" data-action-test="caring">关心</button>
+            <button type="button" data-action-test="thinking">思考</button>
+            <button type="button" data-action-test="surprise">惊讶</button>
+            <button type="button" data-action-test="shrug">耸肩</button>
+            <button type="button" data-action-test="cross">拒绝</button>
+            <button type="button" data-action-test="confident_arms_crossed">抱臂</button>
+          </div>
+        </details>
         <details class="persona-settings" id="personaSettings">
           <summary>人物设置</summary>
           <form id="personaForm">
@@ -110,6 +136,6 @@
       </form>
     </section>
   </main>
-  <script type="module" src="/app.js?v=20260814-gap-preview-v38"></script>
+  <script type="module" src="/app.js?v=20260815-wave-crown-v64"></script>
 </body>
 </html>

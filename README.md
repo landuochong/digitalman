@@ -28,6 +28,8 @@ npm start
 
 打开 <http://localhost:3000>。语音识别推荐使用 Chrome 或 Edge。
 
+开发模式可使用 `npm run dev`。源码变更触发重启时，服务会先释放 HTTP 端口并关闭 TTS 预连接和 DINet 常驻 worker，再启动新实例；无需手动查杀残留 Node/Python 进程。
+
 如果 3000 端口已被占用：
 
 ```bash
@@ -59,9 +61,15 @@ MINIMAX_API_KEY=你的聊天与语音Key
 MINIMAX_BASE_URL=https://api.minimaxi.com/v1
 MINIMAX_TTS_BASE_URL=https://api-bj.minimaxi.com/v1
 MINIMAX_TEXT_MODEL=MiniMax-M3
+MINIMAX_CHAT_WARMUP=0
+MINIMAX_HEDGE_DELAY_MS=0
 MINIMAX_TTS_MODEL=speech-2.8-turbo
 MINIMAX_TTS_VOICE=female-tianmei
 ```
+
+`MINIMAX_CHAT_WARMUP` 默认是 `0`：启动服务不会为“预热”自动生成一次文案请求。现有冷启动 A/B 未证明它能稳定消除 M3 长尾，频繁重启反而会重复计费并可能与首轮用户请求竞争。只有长期稳定部署自行验证有收益后才设为 `1`；`/api/health` 的 `chatWarmupEnabled` 可确认实际状态。
+
+`MINIMAX_HEDGE_DELAY_MS` 默认是 `0`，不会增加请求。若更在意极端长尾且可以接受慢请求可能产生一次额外调用，可设为 `2500`：主请求 2.5 秒仍未取得响应头时启动第二条相同请求，先建立流的一条继续，另一条立即取消。服务端本机诊断记录会写出 `providerConnection.hedged` 和 `winner`，方便确认是否实际触发。
 
 人物设置中的“声音类型”会从服务端 `/api/voices` 加载。MiniMax 模式内置甜美、柔和、温暖、成熟、淡雅、嗲气 6 种陪伴女声，以及经典御姐、妩媚御姐、傲娇御姐、强势小姐 4 种御姐音色，用户选择保存在浏览器；`MINIMAX_TTS_VOICE` 决定第一次打开时的默认项。音色只影响 TTS，不会写入人物提示词或聊天历史。
 
@@ -123,7 +131,7 @@ MiniMax 视频生成使用独立的 `MINIMAX_VIDEO_API_KEY`，避免测试视频
 - 湖畔人物使用嘴宽、形变幅度与珊瑚粉唇色校准；
 - 浏览器使用常驻待机层和有声口型层双视频叠加，回答结束淡出上层，不换空画面，因此不会闪白。
 
-已验证的整句渲染 RTF 约为 0.33–0.35，推理快于实时；当前主要延迟仍来自等待完整 TTS 和首个可播放视频，而不是 DINet 算力。详细原理见 [DH_live 原理分析](docs/DH_LIVE_PRINCIPLE_ANALYSIS.md) 和 [洁净真人架构](docs/CLEAN_AVATAR_ARCHITECTURE.md)。
+已验证的整句渲染 RTF 约为 0.33–0.35，推理快于实时。当前默认链路不再等待完整 TTS：WebSocket TTS 返回 PCM 后，240 ms 首音频窗口立即进入 DINet 并追加到连续 fMP4。已有真实样本表明主要长尾多发生在 M3 正文输出前；之后按匿名自然对话汇总分别判断 M3、TTS、DINet 和浏览器交接，不再凭单次感觉重复调参。详细原理见 [DH_live 原理分析](docs/DH_LIVE_PRINCIPLE_ANALYSIS.md) 和 [当前架构](docs/CURRENT_ARCHITECTURE.md)。
 
 ## VRM 动漫人物
 
@@ -147,9 +155,14 @@ npm run test:live
 
 ```bash
 curl http://localhost:3000/api/chat/debug/recent
+curl http://localhost:3000/api/chat/debug/summary
 ```
 
 返回内容最多 20 条，只保存在当前 Node 进程内存中，包含人物设定、实际历史顺序、发给模型的消息、MiniMax 原始正文、已发送的流式短句和最终结果，不包含 API Key。
+
+正常语音聊天还会把浏览器的 VAD 停顿、TTS、DINet、视频首帧和真实开口耗时按 `traceId` 自动合并到对应记录的 `clientTimings`。这份上报只含白名单数值与事件类型，不增加模型请求，也不会阻塞人物播放。
+
+`/api/chat/debug/summary` 只返回这些计时的聚合结果，不包含聊天内容。`speechPipelineFirstSegment` 表示含 TTS 的人物首片段总流水线，`avatarRender` 才是 DINet 首片段自身耗时；`backchannelToFormal` 表示最后一段接话播放完成到正式回答开口的真实沉默空档。瓶颈判断使用纯渲染时间，避免重复归因。至少积累 3 个有效样本后才判断当前主慢阶段；样本不足时返回 `dominantStage: "insufficient-data"`。原始诊断仍只在内存中；人物正式正文真实开口时，最近 100 条匿名计时样本会持久化到 `data/chat-latency-samples.json`，无需等待整轮播放结束，跨重启保留且不包含时间戳、`traceId`、用户标识、人物设定或聊天正文。
 
 ## 相关文档
 
@@ -163,4 +176,4 @@ curl http://localhost:3000/api/chat/debug/recent
 
 ## 隐私与发布边界
 
-服务端不落盘保存完整聊天；浏览器仅保留有限历史，本地文件只保存经过过滤的结构化记忆。诊断记录是短期内存数据，服务重启即消失。生产部署仍需增加账户隔离、权限认证、内容安全、限流、用户可见的记忆管理和危机干预流程，并重新核对所有人物模型、动作、推理权重和生成素材的许可证。
+服务端不落盘保存完整聊天；浏览器仅保留有限历史。本地文件只保存经过过滤的结构化记忆和有界匿名延迟样本；含聊天正文的原始诊断仍是短期内存数据，服务重启即消失。生产部署仍需增加账户隔离、权限认证、内容安全、限流、用户可见的记忆管理和危机干预流程，并重新核对所有人物模型、动作、推理权重和生成素材的许可证。

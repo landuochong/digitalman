@@ -74,6 +74,35 @@
   backdrop-filter: blur(12px);
   box-shadow: 0 8px 24px rgba(75,55,67,.08);
 }
+.real-character-control {
+  position: absolute;
+  z-index: 8;
+  left: 18px;
+  bottom: 18px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 7px 6px 13px;
+  border: 1px solid rgba(255,255,255,.72);
+  border-radius: 22px;
+  background: rgba(255,255,255,.62);
+  color: #766b74;
+  font-size: 11px;
+  backdrop-filter: blur(12px);
+  box-shadow: 0 8px 24px rgba(75,55,67,.08);
+}
+.real-character-control[hidden] { display: none; }
+.real-character-control select {
+  height: 28px;
+  max-width: 116px;
+  border: 0;
+  border-radius: 15px;
+  padding: 0 25px 0 10px;
+  background: #fff;
+  color: #5f555e;
+  font: 11px inherit;
+  outline: none;
+}
 .anime-look-control[hidden] { display: none; }
 .anime-look-control select {
   height: 28px;
@@ -115,6 +144,53 @@
 }
 .anime-view-controls button:hover,.anime-view-controls button.active { background: rgba(255,255,255,.3); }
 .persona-settings { position: relative; }
+.action-test-panel { position: relative; }
+.action-test-panel summary {
+  list-style: none;
+  height: 38px;
+  display: grid;
+  place-items: center;
+  padding: 0 13px;
+  border: 1px dashed rgba(207,112,103,.48);
+  border-radius: 20px;
+  background: rgba(255,250,247,.92);
+  color: var(--coral-dark);
+  font-size: 11px;
+  cursor: pointer;
+}
+.action-test-panel summary::-webkit-details-marker { display: none; }
+.action-test-panel[open] summary { border-style: solid; background: #fff; }
+.action-test-buttons {
+  position: absolute;
+  z-index: 31;
+  top: 48px;
+  right: 0;
+  width: 310px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  padding: 14px;
+  border: 1px solid rgba(66,52,62,.12);
+  border-radius: 18px;
+  background: rgba(255,253,249,.98);
+  box-shadow: 0 24px 70px rgba(49,35,45,.2);
+}
+.action-test-buttons button {
+  min-width: 52px;
+  height: 30px;
+  padding: 0 10px;
+  border: 1px solid rgba(207,112,103,.2);
+  border-radius: 16px;
+  background: #fff8f5;
+  color: #80656d;
+  font: 11px inherit;
+  cursor: pointer;
+}
+.action-test-buttons button:hover,.action-test-buttons button[aria-pressed="true"] {
+  border-color: var(--coral);
+  background: var(--coral);
+  color: #fff;
+}
 .persona-settings summary {
   list-style: none;
   height: 38px;
@@ -154,5 +230,7 @@
   .anime-view-controls { bottom: 50px; }
   .avatar-panel .emotion-label,.avatar-panel .sound-wave { display: none; }
   .persona-settings form { position: fixed; top: 68px; left: 18px; right: 18px; width: auto; }
+  .action-test-buttons { position: fixed; top: 68px; left: 18px; right: 18px; width: auto; }
   .persona-settings summary { padding: 0 10px; }
+  .action-test-panel summary { padding: 0 10px; }
 }

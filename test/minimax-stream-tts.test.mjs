@@ -20,10 +20,12 @@ class FakeWebSocket {
 }
 
 test("MiniMax websocket TTS requests PCM and yields audio before task completion",async()=>{
-  const chunks=[];
-  const metrics=await streamMiniMaxPcm({apiKey:"secret",text:"你好",voice:"voice",WebSocketImpl:FakeWebSocket,onAudio:pcm=>chunks.push(pcm)});
+  const chunks=[],timings=[];
+  const metrics=await streamMiniMaxPcm({apiKey:"secret",text:"你好",voice:"voice",WebSocketImpl:FakeWebSocket,onAudio:pcm=>chunks.push(pcm),onTiming:(event,timing)=>timings.push({event,...timing})});
   assert.equal(chunks.length,1);assert.equal(chunks[0].length,3200);
   assert.equal(metrics.audioMs,100);assert.ok(metrics.firstAudioMs>=0);
+  assert.equal(timings.length,1);assert.equal(timings[0].event,"first-audio");
+  for(const field of ["connectionMs","taskMs","synthesisMs"]){assert.ok(timings[0][field]>=0);assert.equal(metrics.firstAudioStages[field],timings[0][field]);}
 });
 
 test("only sends MiniMax-supported speech emotions",async()=>{
@@ -70,6 +72,8 @@ test("primes the TTS task while reply text is still pending",async()=>{
   assert.equal(result.taskPrimed,true);
   assert.equal(result.connectionWaitMs,0);
   assert.equal(result.taskWaitMs,0);
+  assert.equal(result.firstAudioStages.connectionMs,0);
+  assert.equal(result.firstAudioStages.taskMs,0);
   const taskStart=connection.socket.sent.find(item=>item.event==="task_start");
   assert.equal(taskStart.voice_setting.voice_id,"voice");
   assert.equal(taskStart.voice_setting.emotion,"happy");

@@ -24,6 +24,7 @@ function usage() {
   --resize               允许 DH_live 将大视频缩小到支持范围
   --loop                 将动作配置为循环播放
   --return-to <动作名>   非循环动作结束后的状态，默认 idle
+  --baseline <动作名>    对齐检查使用的待机动作，默认 manifest 的 idle
   --use-for <a,b,c>      记录适用语义标签
   --non-interruptible    标记为不适合中途打断
   --allow-size-mismatch  允许与当前 idle 分辨率不同
@@ -63,6 +64,7 @@ export function parseArguments(argv) {
     else if (argument === "--python") options.python = next();
     else if (argument === "--work-dir") options.workDir = next();
     else if (argument === "--return-to") options.returnTo = next();
+    else if (argument === "--baseline") options.baseline = validateActionName(next());
     else if (argument === "--use-for") options.useFor = next().split(",").map(value => value.trim()).filter(Boolean);
     else if (argument === "--check-only") options.checkOnly = true;
     else if (argument === "--matting") options.matting = true;
@@ -198,8 +200,9 @@ async function installAction(options, assetsDir, packageData, packageVideo) {
   const targetDir = path.join(actionsRoot, options.name);
 
   if (options.name !== "idle" && !options.allowSizeMismatch) {
-    const baselineDefinition = manifest.actions?.idle;
+    const baselineDefinition = options.baseline ? manifest.actions?.[options.baseline] : manifest.actions?.idle;
     const baselineAsset = baselineDefinition?.asset;
+    if(options.baseline&&!baselineAsset)throw new Error(`对齐基准动作不存在：${options.baseline}`);
     if (baselineAsset) {
       const baselineDir = path.join(actionsRoot, baselineAsset);
       const baselineVideo = inspectVideo(path.join(baselineDir, "01.mp4"));

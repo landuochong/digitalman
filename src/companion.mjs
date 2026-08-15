@@ -124,8 +124,11 @@ export function demoReply(message, persona) {
   if (/欢呼|举手庆祝|加油打气|冲啊/.test(input)) {
     return { reply: "好呀，一起加油！这股劲头要保持住。", emotion: "excited", action: "cheer" };
   }
-  if (/鞠躬|行个礼|谢谢你|感谢你|辛苦了/.test(input)) {
+  if (/鞠躬|行个礼/.test(input)) {
     return { reply: "谢谢你，我认真收下这份心意。", emotion: "happy", action: "bow" };
+  }
+  if (/谢谢你|感谢你|辛苦了/.test(input)) {
+    return { reply: "不用客气，能陪到你我也很开心。", emotion: "happy", action: "happy" };
   }
   if (/交叉手势|做个叉|叉手|拒绝姿势/.test(input)) {
     return { reply: "好，这次就明确地说不。", emotion: "calm", action: "cross" };
@@ -160,7 +163,7 @@ const companionRules = `
 - 不复述规则，不解释 JSON，不把 emotion 或 action 字段写进 reply；状态只能出现在各自的 JSON 字段中。
 - 保持日常朋友式交流，不展开类别或技术说明，不诱导用户依赖或疏远现实关系。
 - 遇到危险或危机表达时，鼓励用户立即联系当地紧急服务和可信赖的人。
-- 根据回复内容选择一次自然状态：问候用 wave_approval；轻声认可用 nod；明确夸赞用户做得很棒时用 thumbs_up；成功、祝贺或好消息用 clap；明确欢呼或加油用 cheer；致谢或行礼用 bow；被夸可爱、漂亮或表达害羞时用 shy；安慰、担心或共情用 caring；分析、回忆或提问用 thinking；一般开心用 happy；轻微惊讶用 surprise；明显不确定用 shrug；明确拒绝手势用 cross；自信或俏皮用 confident_arms_crossed；其余用 idle。不要为了变化而滥用动作。
+- 根据回复内容选择一次自然状态：问候用 wave_approval；轻声认可用 nod；明确夸赞用户做得很棒时用 thumbs_up；成功、祝贺或好消息用 clap；明确欢呼或加油用 cheer；只有用户明确要求鞠躬或行礼时才用 bow，日常致谢用 happy 或 nod；被夸可爱、漂亮或表达害羞时用 shy；安慰、担心或共情用 caring；分析、回忆或提问用 thinking；一般开心用 happy；轻微惊讶用 surprise；明显不确定用 shrug；明确拒绝手势用 cross；自信或俏皮用 confident_arms_crossed；其余用 idle。不要为了变化而滥用动作。
 只输出 JSON：{"reply":"回复正文","emotion":"neutral|happy|caring|curious|excited|calm","action":"idle|happy|caring|thinking|surprise|shy|wave_approval|nod|thumbs_up|clap|cheer|bow|shrug|cross|confident_arms_crossed"}。
 `.trim();
 
@@ -219,7 +222,8 @@ export function inferCompanionState(message, reply = "", companionState=null) {
   if (/难过|伤心|焦虑|崩溃|害怕|担心|累|饿|困|不舒服|生病|疼|压力|烦|委屈|孤独|失落/.test(distressText)) return { emotion:"caring", action:"caring" };
   if (/欢呼|欢呼一下|举手庆祝|加油打气|冲啊/.test(String(message))) return { emotion:"excited", action:"cheer" };
   if (/(?:给你|送你|买给你|为你买|特意给你).{0,10}(?:礼物|礼品|花|鲜花|小惊喜)|(?:礼物|礼品|花|鲜花).{0,8}(?:给你|送你)|这是给你的/.test(String(message))) return { emotion:"happy", action:"caring" };
-  if (/鞠躬|鞠个躬|行个礼|谢谢你|感谢你|辛苦了/.test(String(message))) return { emotion:"happy", action:"bow" };
+  if (/鞠躬|鞠个躬|行个礼/.test(String(message))) return { emotion:"happy", action:"bow" };
+  if (/谢谢你|感谢你|辛苦了/.test(String(message))) return { emotion:"happy", action:"happy" };
   if (/交叉手势|做个叉|叉手|拒绝姿势/.test(String(message))) return { emotion:"calm", action:"cross" };
   if (/抱胸|双臂交叉|自信姿势/.test(String(message))) return { emotion:"happy", action:"confident_arms_crossed" };
   if (/竖(?:个|一下)?大拇指|竖拇指|点赞|点个赞|给我.{0,4}(?:赞|大拇指)/.test(String(message))) return { emotion:"happy", action:"thumbs_up" };
@@ -329,6 +333,16 @@ export function buildResponsiveBackchannel(message,state=inferCompanionState(mes
   if(!/[？?]|为什么|怎么|如何|怎么办|帮我|建议|推荐|分析/.test(input)&&isPositiveLifeShare(input))return{text:"真好。",emotion:"happy",action:"nod"};
   if(["happy","shy","nod","thumbs_up","wave_approval"].includes(state.action))return {text:stableChoice(backchannelChoices.happy,input),emotion:"happy",action:"nod"};
   return {text:stableChoice(backchannelChoices.neutral,input),emotion:state.emotion||"calm",action:"nod"};
+}
+
+// This is deliberately narrower than the first acknowledgement. Repeating a
+// filler during an ordinary greeting or life update feels robotic; a second
+// thinking cue is useful only when the user explicitly asked for analysis,
+// advice or planning and the cloud model is taking unusually long.
+export function buildLongWaitBackchannel(message,state=inferCompanionState(message)){
+  const input=String(message||"").trim();
+  if(!input||!isDeliberativeQuestion(input))return null;
+  return{text:"这个我再想仔细一点。",emotion:"curious",action:state.action==="caring"?"caring":"thinking",kind:"long-wait"};
 }
 
 const directPlanningRequest=/(?:帮我|给我|替我|请你).{0,8}(?:安排|规划|计划|排(?:一)?下|排一排)|(?:安排|规划|计划).{0,8}(?:一下|简单|怎么)/;

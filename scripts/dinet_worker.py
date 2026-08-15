@@ -145,6 +145,7 @@ class PersistentDINetRenderer:
         self.audio_streams = {}
         self.visual_turn_frames = {}
         self.visual_turn_assets = {}
+        self.visual_turn_frame_offsets = {}
         self.render_model = RenderModel_Mini()
         self.render_model.loadModel(str(render_checkpoint))
 
@@ -404,14 +405,25 @@ class PersistentDINetRenderer:
             raise RuntimeError("无法启动视频编码器")
 
         last_valid = np.zeros(12, dtype=np.float32)
-        transition_source = self.visual_turn_frames.get(visual_turn_id) if visual_turn_id else None
         previous_visual_asset = self.visual_turn_assets.get(visual_turn_id) if visual_turn_id else None
-        visual_asset_changed = previous_visual_asset is not None and previous_visual_asset != str(self.asset)
-        transition_frames = (
-            min(4, len(coefficients))
-            if visual_asset_changed and visual_sentence_index > 0 and transition_source is not None
-            else 0
-        )
+        # A following sentence can be prepared before the previous TTS duration
+        # is known, so its browser-estimated frame offset may drift. Once the
+        # serialized worker reaches it, continue the same action from the exact
+        # source frame rendered by the preceding segment instead.
+        if (
+            visual_turn_id
+            and visual_sentence_index > 0
+            and previous_visual_asset == str(self.asset)
+            and visual_turn_id in self.visual_turn_frame_offsets
+        ):
+            frame_offset = self.visual_turn_frame_offsets[visual_turn_id]
+        source_frame_offset = frame_offset
+        # Every authored action is already returned to the shared neutral pose.
+        # Blending two complete frames here double-exposes hair and moving limbs,
+        # which appears as a halo or small black fragments. The browser waits for
+        # the next decoded frame before atomically revealing it, so switch the
+        # foreground in one frame instead of mixing two different silhouettes.
+        transition_frames = 0
         last_output_frame = None
         try:
             with torch.inference_mode():
@@ -462,11 +474,6 @@ class PersistentDINetRenderer:
                     x0, y0, x1, y1 = self.crop_rects[frame_index]
                     frame = self.frames[frame_index][:, :, :3].copy()
                     frame[y0:y1, x0:x1] = cv2.resize(face, (x1 - x0, y1 - y0))[:, :, :3]
-                    if transition_frames and audio_index < transition_frames:
-                        alpha = float(audio_index + 1) / float(transition_frames + 1)
-                        frame = cv2.addWeighted(
-                            transition_source, 1.0 - alpha, frame, alpha, 0.0
-                        )
                     last_output_frame = frame.copy()
                     encoder.stdin.write(np.ascontiguousarray(frame[:, :, ::-1]).tobytes())
         except Exception:
@@ -491,12 +498,19 @@ class PersistentDINetRenderer:
         if visual_turn_id and last_output_frame is not None:
             self.visual_turn_frames[visual_turn_id] = last_output_frame
             self.visual_turn_assets[visual_turn_id] = str(self.asset)
+            self.visual_turn_frame_offsets[visual_turn_id] = (
+                source_frame_offset + len(coefficients)
+            ) % len(self.frames)
         return {
             "frames": len(coefficients),
             "audioMode": "stateful" if stream_id else "whole-wav",
             "videoOnly": video_only,
             "fragmentedVideo": fragmented_video,
             "transitionFrames": transition_frames,
+            "sourceFrameOffset": source_frame_offset,
+            "nextSourceFrameOffset": (
+                source_frame_offset + len(coefficients)
+            ) % len(self.frames),
             "audioMs": round((audio_ready - started) * 1000),
             "framesMs": round((frames_ready - audio_ready) * 1000),
             "muxMs": round((finished - frames_ready) * 1000),
@@ -541,6 +555,9 @@ def main() -> None:
                     str(request.get("visualTurnId") or ""), None
                 )
                 renderer.visual_turn_assets.pop(
+                    str(request.get("visualTurnId") or ""), None
+                )
+                renderer.visual_turn_frame_offsets.pop(
                     str(request.get("visualTurnId") or ""), None
                 )
                 send({"type": "done", "id": request_id, "closed": removed is not None})

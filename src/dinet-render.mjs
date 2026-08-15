@@ -5,10 +5,10 @@ import { constants } from "node:fs";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
 import { inferAudioExtension } from "./wav2lip-render.mjs";
-import { listRealActionAssets, resolveRealActionAsset } from "./real-actions.mjs";
+import { listRealActionAssets, normalizeRealAvatarCharacter, resolveRealActionAsset } from "./real-actions.mjs";
 import { GeneratedMediaCache } from "./generated-media-cache.mjs";
 
-const RENDER_PROFILE = "dinet-mini-25fps-bedroom-background-v13-action-transition";
+const RENDER_PROFILE = "dinet-mini-25fps-bedroom-background-v15-atomic-action-switch";
 
 export function buildDINetWorkerCommand(projectRoot) {
   return {
@@ -33,9 +33,11 @@ class PersistentDINetWorker {
     this.active = null;
     this.chain = Promise.resolve();
     this.stderr = "";
+    this.closed = false;
   }
 
   start() {
+    if(this.closed)return Promise.reject(Object.assign(new Error("DINet 服务正在关闭"),{status:503}));
     if (this.child) return Promise.resolve();
     if (this.starting) return this.starting;
     const command = buildDINetWorkerCommand(this.projectRoot);
@@ -149,6 +151,21 @@ class PersistentDINetWorker {
     this.chain=task.catch(()=>{});return task;
   }
 
+  close(){
+    if(this.closed)return Promise.resolve();
+    this.closed=true;
+    const child=this.child;
+    this.#fail(Object.assign(new Error("DINet 服务已关闭"),{status:503}));
+    if(!child){this.child=null;this.starting=null;return Promise.resolve();}
+    return new Promise(resolve=>{
+      let settled=false,forceTimer;
+      const finish=()=>{if(settled)return;settled=true;clearTimeout(forceTimer);this.child=null;this.starting=null;resolve();};
+      child.once("exit",finish);
+      forceTimer=setTimeout(()=>{if(child.exitCode===null)child.kill("SIGKILL");finish();},1000);forceTimer.unref?.();
+      if(child.exitCode===null)child.kill("SIGTERM");else finish();
+    });
+  }
+
 }
 
 export class DINetRenderStore {
@@ -181,11 +198,12 @@ export class DINetRenderStore {
 
   warmup(){return this.worker.start();}
   cacheStatus(){return this.cache.snapshot();}
-  prepareAction(action="idle"){return this.worker.prepare(resolveRealActionAsset(action));}
+  prepareAction(action="idle",character="lumi"){return this.worker.prepare(resolveRealActionAsset(action,character));}
   cancelStream(streamId){return this.worker.cancelStream(streamId);}
   closeVisualTurn(visualTurnId){return this.worker.closeVisualTurn(visualTurnId);}
+  close(){return this.worker.close();}
 
-  async render(audioBuffer, action="idle", { frameOffset=0, audioOffsetMs=0, outputFrames=0, streamId="", streamFinal=false, videoOnly=false, fragmentedVideo=false, visualTurnId="", visualSentenceIndex=0 }={}) {
+  async render(audioBuffer, action="idle", { frameOffset=0, audioOffsetMs=0, outputFrames=0, streamId="", streamFinal=false, videoOnly=false, fragmentedVideo=false, visualTurnId="", visualSentenceIndex=0, character="lumi" }={}) {
     const extension = inferAudioExtension(audioBuffer);
     if (extension !== "wav") {
       throw Object.assign(new Error("DINet 当前仅接受 PCM WAV 音频"), { status:415 });
@@ -193,7 +211,8 @@ export class DINetRenderStore {
     const readiness = await this.readiness();
     if (!readiness.ready) throw Object.assign(new Error("DINet 本地模型尚未准备完成"), { status:503 });
 
-    const asset=resolveRealActionAsset(action);
+    character=normalizeRealAvatarCharacter(character);
+    const asset=resolveRealActionAsset(action,character);
     const assetRoot=join(this.projectRoot,"public","dh-live","actions",asset);
     const [videoInfo,dataInfo]=await Promise.all([
       stat(join(assetRoot,"01.mp4")),
@@ -201,6 +220,7 @@ export class DINetRenderStore {
     ]);
     const hash = createHash("sha256")
       .update(RENDER_PROFILE)
+      .update(`character:${character}`)
       .update(asset)
       .update(`frame-offset:${frameOffset}`)
       .update(`audio-offset-ms:${audioOffsetMs}`)
@@ -217,16 +237,16 @@ export class DINetRenderStore {
     const outputName = `${hash}.mp4`;
     const outputPath = join(this.outputDir, outputName);
     const cachedInfo=await this.cache.use(outputPath);
-    if(cachedInfo)return { url:`/dinet-avatar/generated/${outputName}`, bytes:cachedInfo.size, cached:true,action,asset,videoOnly:Boolean(videoOnly),fragmentedVideo:Boolean(videoOnly&&fragmentedVideo) };
+    if(cachedInfo)return { url:`/dinet-avatar/generated/${outputName}`, bytes:cachedInfo.size, cached:true,action,asset,character,videoOnly:Boolean(videoOnly),fragmentedVideo:Boolean(videoOnly&&fragmentedVideo) };
     if (this.pending.has(hash)) return this.pending.get(hash);
 
-    const task = this.#render(hash, audioBuffer, outputPath, outputName,asset,action,frameOffset,audioOffsetMs,outputFrames,streamId,streamFinal,Boolean(videoOnly),Boolean(videoOnly&&fragmentedVideo),visualTurnId,visualSentenceIndex)
+    const task = this.#render(hash, audioBuffer, outputPath, outputName,asset,action,frameOffset,audioOffsetMs,outputFrames,streamId,streamFinal,Boolean(videoOnly),Boolean(videoOnly&&fragmentedVideo),visualTurnId,visualSentenceIndex,character)
       .finally(() => this.pending.delete(hash));
     this.pending.set(hash, task);
     return task;
   }
 
-  async #render(hash, audioBuffer, outputPath, outputName,asset,action,frameOffset,audioOffsetMs,outputFrames,streamId,streamFinal,videoOnly,fragmentedVideo,visualTurnId,visualSentenceIndex) {
+  async #render(hash, audioBuffer, outputPath, outputName,asset,action,frameOffset,audioOffsetMs,outputFrames,streamId,streamFinal,videoOnly,fragmentedVideo,visualTurnId,visualSentenceIndex,character) {
     await mkdir(this.workDir, { recursive:true });
     await mkdir(this.outputDir, { recursive:true });
     const audioPath = join(this.workDir, `${hash}.wav`);
@@ -241,7 +261,7 @@ export class DINetRenderStore {
         url:`/dinet-avatar/generated/${outputName}`,
         bytes:info.size,
         cached:false,
-        action,asset,frameOffset,videoOnly,fragmentedVideo,
+        action,asset,character,frameOffset,videoOnly,fragmentedVideo,
         metrics:{
           frames:metrics.frames,
           audioMode:metrics.audioMode,
@@ -252,7 +272,9 @@ export class DINetRenderStore {
           muxMs:metrics.muxMs,
           totalMs:metrics.totalMs,
           queueMs:metrics.queueMs,
-          transitionFrames:metrics.transitionFrames||0
+          transitionFrames:metrics.transitionFrames||0,
+          sourceFrameOffset:Number(metrics.sourceFrameOffset)||0,
+          nextSourceFrameOffset:Number(metrics.nextSourceFrameOffset)||0
         }
       };
     } finally {

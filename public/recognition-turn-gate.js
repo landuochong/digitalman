@@ -29,16 +29,22 @@ export class RecognitionTurnGate {
     this.failed=false;
     this.committed=false;
     this.stopRequestedAt=null;
+    this.endpointSilenceMs=null;
     this.startedAt=this.now();
   }
 
-  update(text,{final=false}={}){
+  update(text,{final=false,endpointSilenceMs=null}={}){
     this.text=String(text||"").trim();
-    if(final&&this.stopRequestedAt!==null)this.commit("final-result");
+    // In non-continuous Web Speech mode, isFinal is already the browser's
+    // utterance boundary. Waiting for a second VAD silence window adds
+    // 340–430 ms without yielding another transcript correction.
+    if(final){const measured=finiteNonNegative(endpointSilenceMs);if(measured!==null)this.endpointSilenceMs=measured;this.stopRequestedAt??=this.now();return this.commit("final-result");}
+    return false;
   }
 
-  requestStop({final=false}={}){
+  requestStop({final=false,endpointSilenceMs=null}={}){
     if(this.failed||this.committed||this.stopRequestedAt!==null)return false;
+    this.endpointSilenceMs=finiteNonNegative(endpointSilenceMs);
     this.stopRequestedAt=this.now();
     if(final){this.commit("vad-final");return true;}
     this.timer=this.setTimer(()=>{this.timer=0;this.commit("vad-timeout");},this.finalizeDelayMs);
@@ -59,8 +65,13 @@ export class RecognitionTurnGate {
     void this.onCommit(this.text,{
       trigger,
       turnMs:Math.round(committedAt-this.startedAt),
-      stopToCommitMs:this.stopRequestedAt===null?null:Math.round(committedAt-this.stopRequestedAt)
+      stopToCommitMs:this.stopRequestedAt===null?null:Math.round(committedAt-this.stopRequestedAt),
+      ...(this.endpointSilenceMs===null?{}:{endpointSilenceMs:Math.round(this.endpointSilenceMs)})
     });
     return true;
   }
+}
+
+function finiteNonNegative(value){
+  const number=Number(value);return value===null||value===""||!Number.isFinite(number)?null:Math.max(0,number);
 }

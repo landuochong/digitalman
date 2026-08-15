@@ -23,4 +23,13 @@ export function continuousVideoSync(audioOrigin,audioTime,videoTime,duration,thr
   return{expected,driftMs,seekTo:driftMs>thresholdMs?Math.min(expected,Math.max(0,(Number(duration)||expected)-.01)):null};
 }
 
+// MediaSource sequence mode joins only encoded speech frames. Web Audio can
+// have a real wall-clock gap while the next sentence is still rendering, so
+// move the audio origin forward by that gap instead of seeking past the newly
+// appended video when speech resumes.
+export function continuousVideoOriginAfterGap(audioOrigin,gapMs){
+  const origin=Number(audioOrigin);
+  return Number.isFinite(origin)?origin+Math.max(0,Number(gapMs)||0)/1000:audioOrigin;
+}
+
 export function scheduledAudioAhead(tail,currentTime){return Math.max(0,Number(tail)-Number(currentTime));}
