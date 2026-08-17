@@ -19,6 +19,13 @@ const CHARACTER_ACTION_ASSETS=Object.freeze({
   }),
 });
 
+// Some expressive source clips are safe as silent reactions but provide a
+// poor neutral mouth canvas for DINet. Keep the visible action catalog intact
+// and only substitute the source used while synthesizing speech.
+const CHARACTER_SPEECH_OVERRIDES=Object.freeze({
+  xiaotao:Object.freeze({happy:"xiaotao_idle",smile:"xiaotao_idle"}),
+});
+
 export const REAL_AVATAR_CHARACTERS=Object.freeze({
   lumi:Object.freeze({id:"lumi",label:"露米",idleAsset:"bedroom_idle_test"}),
   xiaotao:Object.freeze({id:"xiaotao",label:"小桃",idleAsset:"xiaotao_idle"}),
@@ -37,6 +44,11 @@ export function listRealActionAssets(character=DEFAULT_REAL_CHARACTER){
 export function resolveRealActionAsset(action,character=DEFAULT_REAL_CHARACTER){
   const assets=CHARACTER_ACTION_ASSETS[normalizeRealAvatarCharacter(character)];
   return assets[String(action||"").trim()]||assets.idle;
+}
+
+export function resolveRealSpeechActionAsset(action,character=DEFAULT_REAL_CHARACTER){
+  const characterId=normalizeRealAvatarCharacter(character),normalized=String(action||"").trim();
+  return CHARACTER_SPEECH_OVERRIDES[characterId]?.[normalized]||resolveRealActionAsset(normalized,characterId);
 }
 
 const WAITING_PREVIEW_ACTIONS=new Set(["happy","caring","thinking","nod","thumbs_up","shy"]);

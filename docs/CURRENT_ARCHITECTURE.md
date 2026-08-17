@@ -1,13 +1,13 @@
 # 当前系统架构
 
-更新时间：2026-08-12
+更新时间：2026-08-16
 
 本文只描述当前可运行实现；调研过程、失败方案和参数演进统一记录在 `EXPERIMENT_LOG.md`。
 
 ## 1. 主链路
 
 ```text
-浏览器语音识别 / 文字降级输入
+浏览器 PCM 采集 + 本地 VAD → Sherpa-ONNX/SenseVoice / Web Speech 降级 / 文字输入
   → POST /api/chat/stream
   → 人物设定标准化
   → 召回相关长期记忆和连续状态
@@ -26,7 +26,8 @@
 | 文件 | 职责 |
 | --- | --- |
 | `public/index.html` | 统一聊天页面和控制区 |
-| `public/app.js` | 语音识别、聊天历史、SSE、TTS 队列、真人/动漫切换 |
+| `public/app.js` | 连续通话、VAD、ASR 调度、聊天历史、SSE、TTS 队列、真人/动漫切换 |
+| `public/local-asr-recorder.js` | 麦克风单声道采集、16 kHz 重采样和 PCM WAV 编码 |
 | `public/wav2lip-avatar/avatar.js` | 真人常驻待机层与口型视频层播放 |
 | `public/dh-live/actions/bedroom_idle_test/01-seamless.mp4` | 真人常驻待机的正反向无缝循环素材，避免人脸在首尾硬切 |
 | `public/vrm-embed.js` | 统一页内嵌 VRM 桥接 |
@@ -42,6 +43,7 @@
 | `src/companion.mjs` | 人物提示词、上下文清理、回复正文清理、情绪和动作推断 |
 | `src/memory.mjs` | 本地结构化记忆、召回、去重、衰减和清理 |
 | `src/voices.mjs` | TTS 音色白名单、默认项和自定义音色配置解析 |
+| `src/local-asr.mjs` | Node 到本地 AgentVoiceGateway 的纯 ASR 代理与健康检查 |
 | `src/dinet-render.mjs` | DINet worker 生命周期、串行任务、缓存和临时文件 |
 | `scripts/dinet_worker.py` | Audio2BlendShape、OpenGL 提示图、DINet 重绘和封装 |
 
@@ -187,7 +189,9 @@ DINet 动作素材采用“提前切换、单套常驻”，不缓存多套完�
 
 同一轮回答跨句使用相同动作时，worker 使用上一真实分片结束后保存的下一源帧，覆盖浏览器在 TTS 时长未知时给出的文字估算偏移。动作素材不同时不再混合两张完整画面：旧 4 帧渐变会把位置略有差异的黑发、手臂和衣袖同时显示，形成头发虚影和瞬时黑块。播放器会先等待新视频首帧解码完成，再原子切换到新动作；各动作首尾均回到共享自然站姿，因此无需用双轮廓换取连续性。
 
-连续通话的浏览器识别收尾不再完全依赖 Web Speech 延迟不定的 `onend`。当前识别器使用 `continuous=false`：一旦浏览器给出 `isFinal=true`，该事件本身就是本轮语音边界，页面立即提交并停止 VAD，不再重复等待 340–430 毫秒静音。仍是临时转写时继续由本地 VAD 与语义完整度判断停顿，再设置最多 90 毫秒的最终修正窗口；`onend` 提前到达也会立即提交。final 或 VAD 已请求 `recognition.stop()` 时，页面会立即把本轮逻辑捕获状态标为停止，而不是继续用迟到的 `onend` 控制 `recognitionRunning`；这样人物开口后的本地插话检测不会被旧识别状态挡住，迟到的 final/onend/error 仍由同一个单次提交门安全吸收。浏览器 final 与 VAD 边界都把已观察到的静音时长传入同一个提交门；匿名 `speechEndpointMs` 再加上 final 修正与请求发起间隔，才表示最后一次实际发声到请求发起的完整本地端点耗时。触发源分别标记为 `final-result` 与 `vad-timeout/recognition-end`，便于真机复测且不混淆来源。该优化削减的是“用户说完到 M3 请求发起”的本地空等，不改变或掩盖 M3 首正文的云端波动。
+默认连续通话已经切换到本地 Sherpa-ONNX/SenseVoice。页面复用原有带回声消除、降噪和自动增益的麦克风流，本地 VAD 检测到有效人声后的 560 毫秒静音边界便停止本轮采集；录音在浏览器重采样为 16 kHz 单声道 PCM WAV，通过同源 `/api/asr/transcribe` 上传。Node 再以 multipart 转发到 AgentVoiceGateway 的无副作用 `/api/asr/transcribe`，该接口不会解释控制意图、执行小车命令或转发微信。识别完成后文字进入原有 MiniMax、TTS、DINet 和动作链路，回答播放完继续自动聆听；人物说话期间仍沿用本地能量插话检测。
+
+页面启动时先查询 `/api/asr/status`。只有 Gateway 健康检查成功才接管通话按钮；否则保留 Web Speech 降级链。一次本地识别请求失败且 `LOCAL_ASR_BROWSER_FALLBACK=1` 时会释放本地麦克风和 AudioContext，再恢复浏览器识别按钮，避免两个识别器同时占用音频。降级识别仍使用 `continuous=false`：浏览器给出 `isFinal=true` 后立即提交；临时转写由本地 VAD 和最多 90 毫秒的最终修正窗口收尾。
 
 流式真人分片采用显式音频能力协商。点击开始通话后，父页面先解锁共享 `AudioContext`，人物 iframe 再回报 `pcm-ready`；只有两项同时成立，`/api/dinet/speech-stream` 才设置 `externalAudio=true`，worker 输出 `-an` 的纯 H.264 MP4，声音由分片对应的 PCM 按 Web Audio 绝对时钟连续播放。不满足协商条件时仍生成带 AAC 的完整 MP4，保证不支持或未解锁 Web Audio 的环境有声音。`videoOnly` 进入渲染缓存键，纯视频与带声回退不会交叉命中。800 毫秒实测首段由 160,286 字节降到 152,046 字节（约 5.1%），`ffprobe` 确认纯视频只有 H.264，回退文件仍有 H.264+AAC；神经推理占主耗时，因此本轮不宣称显著降低渲染时间，收益是去除无用音轨、减少传输并消除双音频轨潜在干扰。
 

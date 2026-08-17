@@ -7,7 +7,7 @@ const numericFields=[
 const eventKinds=new Set(["first-speech","formal-speech","playback-ended"]);
 const speechKinds=new Set(["backchannel","long-wait","formal"]);
 const avatarModes=new Set(["real","anime"]);
-const recognitionTriggers=new Set(["final-result","vad-final","vad-timeout","recognition-end","text"]);
+const recognitionTriggers=new Set(["final-result","vad-final","vad-timeout","recognition-end","local-asr","text"]);
 
 function boundedNumber(value){
   if(value===""||value===null||value===undefined)return undefined;

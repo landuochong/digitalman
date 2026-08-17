@@ -7,6 +7,7 @@ export {
   listRealActionSupport,
   normalizeRealAvatarCharacter,
   resolveRealActionAsset,
+  resolveRealSpeechActionAsset,
   resolveSilentRealAction,
   resolveWaitingActionPreview,
 } from "../public/real-action-catalog.js";

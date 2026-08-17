@@ -1,12 +1,12 @@
 # 露米 · 语音数字人好友
 
-一个本地优先、语音优先的数字人好友实验项目。用户说完一句话后，浏览器把识别结果发送给服务端；服务端流式生成中文回复并合成女性语音，真人或 VRM 动漫人物同步完成口型、表情和低幅动作。真人与动漫共用同一套聊天、人物设定、记忆和打断机制，可以在主页面直接切换。
+一个本地优先、语音优先的数字人好友实验项目。用户说完一句话后，浏览器把本地录音交给 Sherpa-ONNX 识别；服务端流式生成中文回复并合成女性语音，真人或 VRM 动漫人物同步完成口型、表情和低幅动作。真人与动漫共用同一套聊天、人物设定、记忆和打断机制，可以在主页面直接切换。
 
 当前实现和模块边界见 [当前架构](docs/CURRENT_ARCHITECTURE.md)，完整调研与实验过程见 [实验日志](docs/EXPERIMENT_LOG.md)。
 
 ## 当前能力
 
-- 语音优先交互，字幕默认关闭，也保留文字输入作为浏览器不支持语音识别时的降级入口。
+- 语音优先交互，默认复用 WALL-E 的本地 Sherpa-ONNX/SenseVoice 服务；服务不可用时可回退浏览器识别，也保留文字输入。
 - 支持 MiniMax、OpenAI 和无 Key 演示模式；API Key 只存在于 Node 服务端。
 - MiniMax 文案按句流式返回，TTS、动作准备和界面状态并行执行，支持用户中途打断。
 - 主页面直接切换真人 DINet 神经口型与 VRM 动漫人物，不重建聊天上下文。
@@ -26,7 +26,14 @@ cp .env.example .env
 npm start
 ```
 
-打开 <http://localhost:3000>。语音识别推荐使用 Chrome 或 Edge。
+先启动本地 ASR Gateway，再打开 <http://localhost:3000>：
+
+```bash
+/Users/Admin/whb/robot/WALL-E/tools/agent_voice_gateway/scripts/start_xiaozhi_sherpa.sh
+npm start
+```
+
+页面录制 16 kHz 单声道 PCM WAV，经当前 Node 服务的 `/api/asr/transcribe` 同源代理送到 Gateway；浏览器不会直接访问 8010 端口。
 
 开发模式可使用 `npm run dev`。源码变更触发重启时，服务会先释放 HTTP 端口并关闭 TTS 预连接和 DINet 常驻 worker，再启动新实例；无需手动查杀残留 Node/Python 进程。
 
@@ -52,6 +59,17 @@ PORT=3417 npm start
 默认真人模式依赖本地 DINet 环境和模型。如果只验证聊天、人物设置或动漫动作，可以切换到动漫模式；DINet 所需文件可通过 `/api/dinet/status` 检查。
 
 ## 服务配置
+
+本地语音识别：
+
+```dotenv
+ASR_PROVIDER=local_sherpa
+LOCAL_ASR_BASE_URL=http://127.0.0.1:8010
+LOCAL_ASR_PATH=/api/asr/transcribe
+LOCAL_ASR_BROWSER_FALLBACK=1
+```
+
+`LOCAL_ASR_BROWSER_FALLBACK=1` 表示 Gateway 未启动或一次识别失败时恢复原有 Web Speech 入口。`GET /api/asr/status` 同时检查配置和 Gateway 健康状态。Gateway 的纯识别接口只返回文字，不执行小车控制，也不转发微信。
 
 MiniMax 示例：
 

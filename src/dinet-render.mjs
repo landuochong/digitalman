@@ -5,7 +5,7 @@ import { constants } from "node:fs";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
 import { inferAudioExtension } from "./wav2lip-render.mjs";
-import { listRealActionAssets, normalizeRealAvatarCharacter, resolveRealActionAsset } from "./real-actions.mjs";
+import { listRealActionAssets, normalizeRealAvatarCharacter, resolveRealSpeechActionAsset } from "./real-actions.mjs";
 import { GeneratedMediaCache } from "./generated-media-cache.mjs";
 
 const RENDER_PROFILE = "dinet-mini-25fps-bedroom-background-v15-atomic-action-switch";
@@ -198,7 +198,7 @@ export class DINetRenderStore {
 
   warmup(){return this.worker.start();}
   cacheStatus(){return this.cache.snapshot();}
-  prepareAction(action="idle",character="lumi"){return this.worker.prepare(resolveRealActionAsset(action,character));}
+  prepareAction(action="idle",character="lumi"){return this.worker.prepare(resolveRealSpeechActionAsset(action,character));}
   cancelStream(streamId){return this.worker.cancelStream(streamId);}
   closeVisualTurn(visualTurnId){return this.worker.closeVisualTurn(visualTurnId);}
   close(){return this.worker.close();}
@@ -212,7 +212,7 @@ export class DINetRenderStore {
     if (!readiness.ready) throw Object.assign(new Error("DINet 本地模型尚未准备完成"), { status:503 });
 
     character=normalizeRealAvatarCharacter(character);
-    const asset=resolveRealActionAsset(action,character);
+    const asset=resolveRealSpeechActionAsset(action,character);
     const assetRoot=join(this.projectRoot,"public","dh-live","actions",asset);
     const [videoInfo,dataInfo]=await Promise.all([
       stat(join(assetRoot,"01.mp4")),

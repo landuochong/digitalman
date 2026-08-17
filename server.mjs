@@ -26,6 +26,7 @@ import { fetchWithConnectionHedge } from "./src/hedged-fetch.mjs";
 import { sanitizeClientTiming } from "./src/client-timing.mjs";
 import { summarizeLatencySamples, traceToLatencySample } from "./src/chat-latency-summary.mjs";
 import { LatencySampleStore } from "./src/latency-sample-store.mjs";
+import { readLocalAsrHealth, transcribeLocalAudio } from "./src/local-asr.mjs";
 
 function loadLocalEnv() {
   try {
@@ -77,6 +78,10 @@ const miniMaxTtsVoice = process.env.MINIMAX_TTS_VOICE || "female-tianmei";
 const miniMaxTtsWsUrl = process.env.MINIMAX_TTS_WS_URL || "wss://api.minimaxi.com/ws/v1/t2a_v2";
 const miniMaxChatWarmup = process.env.MINIMAX_CHAT_WARMUP === "1";
 const miniMaxHedgeDelayMs=Math.min(10_000,Math.max(0,Number(process.env.MINIMAX_HEDGE_DELAY_MS??0)||0));
+const asrProvider=process.env.ASR_PROVIDER||"browser";
+const localAsrBaseUrl=process.env.LOCAL_ASR_BASE_URL||"http://127.0.0.1:8010";
+const localAsrPath=process.env.LOCAL_ASR_PATH||"/api/asr/transcribe";
+const localAsrFallback=process.env.LOCAL_ASR_BROWSER_FALLBACK!=="0";
 const voiceCatalog=buildVoiceCatalog({
   provider:apiKey?provider:"demo",
   defaultVoice:provider==="minimax"?miniMaxTtsVoice:ttsVoice,
@@ -615,6 +620,16 @@ export const server = http.createServer(async (req, res) => {
       if (!isLoopbackAddress(req.socket.remoteAddress)) return json(res, 403, { error:"本地 DINet 口型接口仅允许本机访问" });
       return json(res, 200, {...await dinetRenders.readiness(),cache:await dinetRenders.cacheStatus(),pcm:ephemeralPcm.snapshot(),streams:dinetStreams.snapshot()});
     }
+    if(pathname==="/api/asr/status"&&req.method==="GET"){
+      if(asrProvider!=="local_sherpa")return json(res,200,{provider:asrProvider,ready:asrProvider==="browser",fallback:localAsrFallback});
+      const health=await readLocalAsrHealth({baseUrl:localAsrBaseUrl});
+      return json(res,200,{provider:asrProvider,upstreamProvider:health.provider,ready:health.ready,fallback:localAsrFallback});
+    }
+    if(pathname==="/api/asr/transcribe"&&req.method==="POST"){
+      if(asrProvider!=="local_sherpa")return json(res,503,{error:"本地语音识别尚未启用"});
+      const audio=await binaryBody(req,8_000_000),result=await transcribeLocalAudio(audio,{baseUrl:localAsrBaseUrl,path:localAsrPath,language:String(req.headers["x-asr-language"]||"zh-CN")});
+      return json(res,200,result);
+    }
     const pcmMatch=pathname.match(/^\/api\/dinet\/pcm\/([a-f0-9]{32})$/);
     if(pcmMatch&&req.method==="GET"){
       if(!isLoopbackAddress(req.socket.remoteAddress))return json(res,403,{error:"本地 PCM 分片仅允许本机访问"});
@@ -762,7 +777,7 @@ export const server = http.createServer(async (req, res) => {
       const speculativeState=speculativeStreams.get(sessionId);if(speculativeState){for(const wake of speculativeState.waiters)wake();speculativeState.waiters.clear();speculativeStreams.delete(sessionId);}
       return json(res, 200, dinetStreams.cancel(sessionId));
     }
-    if (req.method === "GET" && pathname === "/api/health") return json(res, 200, { ok:true, mode:apiKey ? provider : "demo", memory:true, continuity:true, textModel:provider === "minimax" ? miniMaxTextModel : textModel, ttsModel:provider === "minimax" ? miniMaxTtsModel : ttsModel, chatWarmupEnabled:miniMaxChatWarmup });
+    if (req.method === "GET" && pathname === "/api/health") return json(res, 200, { ok:true, mode:apiKey ? provider : "demo", memory:true, continuity:true, textModel:provider === "minimax" ? miniMaxTextModel : textModel, ttsModel:provider === "minimax" ? miniMaxTtsModel : ttsModel, chatWarmupEnabled:miniMaxChatWarmup,asr:{provider:asrProvider,fallback:localAsrFallback} });
     if (req.method === "GET" && pathname === "/api/voices") return json(res,200,{provider:voiceCatalog.provider,defaultKey:voiceCatalog.defaultKey,voices:voiceCatalog.voices});
     if (req.method === "GET" && pathname === "/api/chat/debug/recent") {
       if (!isLoopbackAddress(req.socket.remoteAddress)) return json(res,403,{error:"聊天诊断记录仅允许本机访问"});

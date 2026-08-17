@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { buildDINetWorkerCommand, DINetRenderStore } from "../src/dinet-render.mjs";
-import { listRealActionSupport, normalizeRealAvatarCharacter, resolveRealActionAsset, resolveSilentRealAction, resolveWaitingActionPreview } from "../src/real-actions.mjs";
+import { listRealActionSupport, normalizeRealAvatarCharacter, resolveRealActionAsset, resolveRealSpeechActionAsset, resolveSilentRealAction, resolveWaitingActionPreview } from "../src/real-actions.mjs";
 
 test("development watch excludes generated avatar media",async()=>{
   const pkg=JSON.parse(await readFile(new URL("../package.json",import.meta.url),"utf8"));
@@ -43,6 +43,11 @@ test("maps anime action names onto same-character real video assets",()=>{
   assert.equal(resolveRealActionAsset("clap","xiaotao"),"xiaotao_clap");
   assert.equal(resolveRealActionAsset("thinking","xiaotao"),"xiaotao_thinking");
   assert.equal(resolveRealActionAsset("unknown","xiaotao"),"xiaotao_idle");
+  assert.equal(resolveRealActionAsset("happy","xiaotao"),"xiaotao_smile");
+  assert.equal(resolveRealSpeechActionAsset("happy","xiaotao"),"xiaotao_idle");
+  assert.equal(resolveRealSpeechActionAsset("smile","xiaotao"),"xiaotao_idle");
+  assert.equal(resolveRealSpeechActionAsset("clap","xiaotao"),"xiaotao_clap");
+  assert.equal(resolveRealSpeechActionAsset("happy","lumi"),"bedroom_smile_test");
   assert.equal(normalizeRealAvatarCharacter("missing"),"lumi");
   assert.deepEqual(resolveWaitingActionPreview("shy","xiaotao"),{action:"shy",asset:"xiaotao_idle",url:"/dh-live/actions/xiaotao_shy/01.mp4"});
   assert.equal(resolveSilentRealAction("bow","xiaotao"),"/dh-live/actions/xiaotao_bow/01.mp4");
@@ -320,7 +325,8 @@ test("stream endpoint reports TTS and first playable segment timing",async()=>{
 
 test("prepares a character-specific resolved action through the serialized persistent worker",async()=>{
   const source=await readFile(new URL("../src/dinet-render.mjs",import.meta.url),"utf8");
-  assert.match(source,/prepareAction\(action="idle",character="lumi"\)\{return this\.worker\.prepare\(resolveRealActionAsset\(action,character\)\);\}/);
+  assert.match(source,/prepareAction\(action="idle",character="lumi"\)\{return this\.worker\.prepare\(resolveRealSpeechActionAsset\(action,character\)\);\}/);
+  assert.match(source,/const asset=resolveRealSpeechActionAsset\(action,character\)/);
   assert.match(source,/op:"prepare_asset"/);
   assert.match(source,/this\.chain\.then/);
 });
