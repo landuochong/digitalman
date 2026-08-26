@@ -149,6 +149,22 @@ MiniMax 视频生成使用独立的 `MINIMAX_VIDEO_API_KEY`，避免测试视频
 - 湖畔人物使用嘴宽、形变幅度与珊瑚粉唇色校准；
 - 浏览器使用常驻待机层和有声口型层双视频叠加，回答结束淡出上层，不换空画面，因此不会闪白。
 
+真人共用同一套 Audio2BlendShape/DINet 口型逻辑，每个人物的尺寸、位置和唇色参数配置在
+[`config/real-avatar-mouth-profiles.json`](config/real-avatar-mouth-profiles.json)。修改配置后需要重启服务；配置内容会进入生成视频缓存键，不会误用旧参数生成的口型。
+
+| 参数 | 作用 | 允许范围 |
+| --- | --- | --- |
+| `mouthMotionScale` | 六维 BlendShape 的整体动作幅度 | 0.65–1.15 |
+| `mouthWidthScale` | 合成嘴部区域的横向比例 | 0.65–1.10 |
+| `mouthHeightScale` | 合成嘴部区域的纵向比例 | 0.75–1.15 |
+| `compositeCenterX/Y` | 嘴部合成区域在人脸局部图中的中心 | X 0.42–0.58；Y 0.32–0.52 |
+| `lipColorCenterX/Y` | 唇色采样与恢复区域的中心 | X 0.42–0.58；Y 0.40–0.58 |
+| `lipColorStrength` | 原人物唇色恢复强度；0 为关闭 | 0–1 |
+| `lipBrightnessOffset` | 唇部区域最终亮度补偿 | -12–20 |
+| `teethStrength` | 小开口时上牙恢复层的混合强度；0 为关闭 | 0–1 |
+
+新增真人角色时，应同时在人物动作目录和该配置文件的 `characters` 中增加同名条目。`defaults` 只用于未知人物的安全回退。
+
 已验证的整句渲染 RTF 约为 0.33–0.35，推理快于实时。当前默认链路不再等待完整 TTS：WebSocket TTS 返回 PCM 后，240 ms 首音频窗口立即进入 DINet 并追加到连续 fMP4。已有真实样本表明主要长尾多发生在 M3 正文输出前；之后按匿名自然对话汇总分别判断 M3、TTS、DINet 和浏览器交接，不再凭单次感觉重复调参。详细原理见 [DH_live 原理分析](docs/DH_LIVE_PRINCIPLE_ANALYSIS.md) 和 [当前架构](docs/CURRENT_ARCHITECTURE.md)。
 
 ## VRM 动漫人物

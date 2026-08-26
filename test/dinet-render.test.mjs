@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { buildDINetWorkerCommand, DINetRenderStore } from "../src/dinet-render.mjs";
 import { listRealActionSupport, normalizeRealAvatarCharacter, resolveRealActionAsset, resolveRealSpeechActionAsset, resolveSilentRealAction, resolveWaitingActionPreview } from "../src/real-actions.mjs";
+import { REAL_MOUTH_PROFILE_VERSION, resolveRealMouthProfile } from "../src/real-mouth-profiles.mjs";
 
 test("development watch excludes generated avatar media",async()=>{
   const pkg=JSON.parse(await readFile(new URL("../package.json",import.meta.url),"utf8"));
@@ -65,6 +66,18 @@ test("browser and server re-export the same real action catalog",async()=>{
   assert.doesNotMatch(source,/CHARACTER_ACTION_ASSETS/);
 });
 
+test("resolves one bounded mouth profile per real character",()=>{
+  assert.equal(REAL_MOUTH_PROFILE_VERSION,1);
+  assert.deepEqual(resolveRealMouthProfile("lumi"),{
+    mouthMotionScale:0.79,mouthWidthScale:0.94,mouthHeightScale:0.97,
+    compositeCenterX:0.5,compositeCenterY:0.39,
+    lipColorCenterX:0.512,lipColorCenterY:0.481,lipColorStrength:0.82,
+    lipBrightnessOffset:8,teethStrength:0.38
+  });
+  assert.notEqual(resolveRealMouthProfile("lumi"),resolveRealMouthProfile("xiaotao"));
+  assert.ok(Object.isFrozen(resolveRealMouthProfile("lumi")));
+});
+
 test("bedroom wave repair uses only clean low-amplitude hand frames",async()=>{
   const source=await readFile(new URL("../scripts/repair_bedroom_wave.py",import.meta.url),"utf8");
   assert.match(source,/CLEAN_SOURCE_FRAMES = \(23, 24, 25, 26, 27\)/);
@@ -100,6 +113,8 @@ test("includes action package version in the DINet cache key",async()=>{
   assert.match(source,/videoInfo\.size/);
   assert.match(source,/videoInfo\.mtimeMs/);
   assert.match(source,/dataInfo\.mtimeMs/);
+  assert.match(source,/mouth-profile-v/);
+  assert.match(source,/JSON\.stringify\(mouthProfile\)/);
 });
 
 test("bounds generated DINet media while protecting a newly returned file",async()=>{

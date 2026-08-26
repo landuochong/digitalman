@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { createInterface } from "node:readline";
 import { inferAudioExtension } from "./wav2lip-render.mjs";
 import { listRealActionAssets, normalizeRealAvatarCharacter, resolveRealSpeechActionAsset } from "./real-actions.mjs";
+import { REAL_MOUTH_PROFILE_VERSION, resolveRealMouthProfile } from "./real-mouth-profiles.mjs";
 import { GeneratedMediaCache } from "./generated-media-cache.mjs";
 
 const RENDER_PROFILE = "dinet-mini-25fps-bedroom-background-v15-atomic-action-switch";
@@ -75,7 +76,7 @@ class PersistentDINetWorker {
     clearTimeout(this.active.timer); this.active.reject(error); this.active = null;
   }
 
-  render(audioPath, outputPath, asset, frameOffset=0, audioOffsetMs=0, outputFrames=0, streamId="", streamFinal=false, videoOnly=false, fragmentedVideo=false, visualTurnId="", visualSentenceIndex=0) {
+  render(audioPath, outputPath, asset, frameOffset=0, audioOffsetMs=0, outputFrames=0, streamId="", streamFinal=false, videoOnly=false, fragmentedVideo=false, visualTurnId="", visualSentenceIndex=0, mouthProfile={}) {
     const queuedAt=performance.now();
     const task = this.chain.then(async () => {
       await this.start();
@@ -100,6 +101,7 @@ class PersistentDINetWorker {
           fragmentedVideo,
           visualTurnId,
           visualSentenceIndex,
+          mouthProfile,
           asset:join(this.projectRoot, "public", "dh-live", "actions", asset)
         })}\n`);
       });
@@ -213,6 +215,7 @@ export class DINetRenderStore {
 
     character=normalizeRealAvatarCharacter(character);
     const asset=resolveRealSpeechActionAsset(action,character);
+    const mouthProfile=resolveRealMouthProfile(character);
     const assetRoot=join(this.projectRoot,"public","dh-live","actions",asset);
     const [videoInfo,dataInfo]=await Promise.all([
       stat(join(assetRoot,"01.mp4")),
@@ -221,6 +224,7 @@ export class DINetRenderStore {
     const hash = createHash("sha256")
       .update(RENDER_PROFILE)
       .update(`character:${character}`)
+      .update(`mouth-profile-v${REAL_MOUTH_PROFILE_VERSION}:${JSON.stringify(mouthProfile)}`)
       .update(asset)
       .update(`frame-offset:${frameOffset}`)
       .update(`audio-offset-ms:${audioOffsetMs}`)
@@ -237,23 +241,23 @@ export class DINetRenderStore {
     const outputName = `${hash}.mp4`;
     const outputPath = join(this.outputDir, outputName);
     const cachedInfo=await this.cache.use(outputPath);
-    if(cachedInfo)return { url:`/dinet-avatar/generated/${outputName}`, bytes:cachedInfo.size, cached:true,action,asset,character,videoOnly:Boolean(videoOnly),fragmentedVideo:Boolean(videoOnly&&fragmentedVideo) };
+    if(cachedInfo)return { url:`/dinet-avatar/generated/${outputName}`, bytes:cachedInfo.size, cached:true,action,asset,character,mouthProfile,videoOnly:Boolean(videoOnly),fragmentedVideo:Boolean(videoOnly&&fragmentedVideo) };
     if (this.pending.has(hash)) return this.pending.get(hash);
 
-    const task = this.#render(hash, audioBuffer, outputPath, outputName,asset,action,frameOffset,audioOffsetMs,outputFrames,streamId,streamFinal,Boolean(videoOnly),Boolean(videoOnly&&fragmentedVideo),visualTurnId,visualSentenceIndex,character)
+    const task = this.#render(hash, audioBuffer, outputPath, outputName,asset,action,frameOffset,audioOffsetMs,outputFrames,streamId,streamFinal,Boolean(videoOnly),Boolean(videoOnly&&fragmentedVideo),visualTurnId,visualSentenceIndex,character,mouthProfile)
       .finally(() => this.pending.delete(hash));
     this.pending.set(hash, task);
     return task;
   }
 
-  async #render(hash, audioBuffer, outputPath, outputName,asset,action,frameOffset,audioOffsetMs,outputFrames,streamId,streamFinal,videoOnly,fragmentedVideo,visualTurnId,visualSentenceIndex,character) {
+  async #render(hash, audioBuffer, outputPath, outputName,asset,action,frameOffset,audioOffsetMs,outputFrames,streamId,streamFinal,videoOnly,fragmentedVideo,visualTurnId,visualSentenceIndex,character,mouthProfile) {
     await mkdir(this.workDir, { recursive:true });
     await mkdir(this.outputDir, { recursive:true });
     const audioPath = join(this.workDir, `${hash}.wav`);
     const stagingPath = join(this.workDir, `${hash}.partial.mp4`);
     await writeFile(audioPath, audioBuffer, { mode:0o600 });
     try {
-      const metrics = await this.worker.render(audioPath, stagingPath, asset, frameOffset, audioOffsetMs, outputFrames, streamId, streamFinal, videoOnly, fragmentedVideo, visualTurnId, visualSentenceIndex);
+      const metrics = await this.worker.render(audioPath, stagingPath, asset, frameOffset, audioOffsetMs, outputFrames, streamId, streamFinal, videoOnly, fragmentedVideo, visualTurnId, visualSentenceIndex, mouthProfile);
       await rename(stagingPath, outputPath);
       const info = await stat(outputPath);
       void this.cache.prune({protectedPaths:[outputPath]}).catch(()=>{});
@@ -261,7 +265,7 @@ export class DINetRenderStore {
         url:`/dinet-avatar/generated/${outputName}`,
         bytes:info.size,
         cached:false,
-        action,asset,character,frameOffset,videoOnly,fragmentedVideo,
+        action,asset,character,mouthProfile,frameOffset,videoOnly,fragmentedVideo,
         metrics:{
           frames:metrics.frames,
           audioMode:metrics.audioMode,

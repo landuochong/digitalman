@@ -1,0 +1,41 @@
+{
+  "version": 1,
+  "defaults": {
+    "mouthMotionScale": 0.82,
+    "mouthWidthScale": 0.88,
+    "mouthHeightScale": 1.0,
+    "compositeCenterX": 0.5,
+    "compositeCenterY": 0.39,
+    "lipColorCenterX": 0.5,
+    "lipColorCenterY": 0.49,
+    "lipColorStrength": 0.78,
+    "lipBrightnessOffset": 0,
+    "teethStrength": 0
+  },
+  "characters": {
+    "lumi": {
+      "mouthMotionScale": 0.79,
+      "mouthWidthScale": 0.94,
+      "mouthHeightScale": 0.97,
+      "compositeCenterX": 0.5,
+      "compositeCenterY": 0.39,
+      "lipColorCenterX": 0.512,
+      "lipColorCenterY": 0.481,
+      "lipColorStrength": 0.82,
+      "lipBrightnessOffset": 8,
+      "teethStrength": 0.38
+    },
+    "xiaotao": {
+      "mouthMotionScale": 0.78,
+      "mouthWidthScale": 0.91,
+      "mouthHeightScale": 1.0,
+      "compositeCenterX": 0.5,
+      "compositeCenterY": 0.39,
+      "lipColorCenterX": 0.513,
+      "lipColorCenterY": 0.457,
+      "lipColorStrength": 0.92,
+      "lipBrightnessOffset": 10,
+      "teethStrength": 0.44
+    }
+  }
+}

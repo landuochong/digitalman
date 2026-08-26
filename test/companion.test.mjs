@@ -44,6 +44,9 @@ test("builds short contextual backchannels without pretending they are answers",
   assert.match(buildResponsiveBackchannel("我不想活了").text,/安全/);
   assert.equal(buildResponsiveBackchannel(""),null);
   assert.deepEqual(buildResponsiveBackchannel("今天有点累"),caring);
+  for(const message of ["随便聊聊","我刚才出去走了一圈","今天看到一只小猫"]){
+    assert.notEqual(buildResponsiveBackchannel(message)?.text,"听着呢。");
+  }
   for(const message of ["你好","今天有点累","这个怎么处理？","我终于成功了","随便聊聊"]){
     const backchannel=buildResponsiveBackchannel(message);
     assert.ok([...backchannel.text.replace(/[，。！？!?\s]/g,"")].length<=5,`${message} 的接话过长：${backchannel.text}`);

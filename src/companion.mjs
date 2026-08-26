@@ -266,7 +266,7 @@ const backchannelChoices={
   happy:["嗯。","好呀。"],
   excited:["真的呀？","哇。"],
   greeting:["嗨。","我在。"],
-  neutral:["嗯。","听着呢。"]
+  neutral:["嗯。","嗯嗯。"]
 };
 
 function stableChoice(values,text){
