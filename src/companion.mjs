@@ -55,7 +55,7 @@ export function sanitizeReplyText(value) {
     .replace(new RegExp(`(?:\\s*[（(]\\s*(?:${stateWords})\\s*[）)])+$`, "i"), "")
     .replace(new RegExp(`(?:^|\\n)\\s*(?:emotion|action)\\s*[:：]\\s*(?:${stateWords})\\s*(?=\\n|$)`, "gi"), "\n")
     .replace(/(?:^|(?<=[。！？!?；;\n]))(?:来[，,]?\s*)?(?:啪){2,}[～~！!，,。\s]*/gu, "")
-    .replace(/^(?:(?:鼓掌|拍手)[～~！!，,。\s]*)+/u, "")
+    .replace(/^(?:(?:鼓(?:个|鼓)?掌|拍手)[～~！!，,。\s]*)+/u, "")
     .replace(/(?:\*\*|__)([^\n]+?)(?:\*\*|__)/g,"$1")
     .replace(/^\s{0,3}#{1,6}\s*/gm,"")
     .replace(/^\s*[-*+]\s+/gm,"")
@@ -139,7 +139,7 @@ export function demoReply(message, persona) {
   if (/不确定|不知道|也许|可能吧|耸肩/.test(input)) {
     return { reply: "这个我也不想装作确定，咱们再看看。", emotion: "curious", action: "shrug" };
   }
-  if (/鼓掌|拍手|庆祝一下|帮我庆祝|为我庆祝|开心|高兴|成功|搞定|太好了|哈哈|好消息/.test(input)) {
+  if (/鼓(?:个|鼓)?掌|拍手|庆祝一下|帮我庆祝|为我庆祝|开心|高兴|成功|搞定|太好了|哈哈|好消息/.test(input)) {
     return { reply: "这份开心我收到啦！你一说，我也忍不住跟着高兴。快讲讲发生了什么？", emotion: "excited", action: "clap" };
   }
   if (/害羞|脸红|不好意思|真可爱|好可爱|你.{0,4}可爱|你.{0,4}漂亮|喜欢你/.test(input)) {
@@ -191,7 +191,7 @@ export function inferExplicitActionRequest(message){
   const requested=/(?:给我|帮我|请|做|来|摆|表演|可以|能不能|能否|想看你|让我看|向我)(?:.{0,8})/;
   if(!requested.test(input))return null;
   if(/欢呼|加油打气|举手庆祝/.test(input))return{emotion:"excited",action:"cheer"};
-  if(/鼓掌|拍手/.test(input))return{emotion:"excited",action:"clap"};
+  if(/鼓(?:个|鼓)?掌|拍手/.test(input))return{emotion:"excited",action:"clap"};
   if(/惊讶|吃惊|捂嘴/.test(input))return{emotion:"excited",action:"surprise"};
   if(/鞠躬|鞠个躬|行礼|行个礼/.test(input))return{emotion:"happy",action:"bow"};
   if(/耸肩|摊手/.test(input))return{emotion:"curious",action:"shrug"};
@@ -232,7 +232,7 @@ export function inferCompanionState(message, reply = "", companionState=null) {
   if (/害羞|脸红|不好意思|真可爱|好可爱|你.{0,6}(?:可爱|漂亮|好看|温柔|贴心|优秀|真棒|厉害)|喜欢你|夸夸你/.test(String(message))) return { emotion:"happy", action:"shy" };
   if (/你(?:真的)?(?:很|太)(?:棒|厉害|优秀|善良|贴心|了不起)|(?:真|很)(?:棒|厉害|优秀|善良|贴心|了不起)|做得(?:很好|真棒)|为你(?:感到)?骄傲/.test(String(reply))) return { emotion:"happy", action:"thumbs_up" };
   if (/(?:挺|很)(?:好|不错|有心)|真(?:不错|有心)/.test(String(reply))) return { emotion:"happy", action:"nod" };
-  if (/鼓掌|拍手|庆祝一下|帮我庆祝|为我庆祝|成功|搞定|太好了|好消息|恭喜|完成|做到了|(?:做完|办完|搞完)(?:了|啦)|通过了|赢了|录取|升职|顺利|终于/.test(userMessage)) {
+  if (/鼓(?:个|鼓)?掌|拍手|庆祝一下|帮我庆祝|为我庆祝|成功|搞定|太好了|好消息|恭喜|完成|做到了|(?:做完|办完|搞完)(?:了|啦)|通过了|赢了|录取|升职|顺利|终于/.test(userMessage)) {
     return { emotion:"excited", action:"clap" };
   }
   if (/惊讶|没想到|居然|竟然|真的假的|真的吗|不会吧|天啊|我的天|怎么可能|太夸张|吓我一跳|震惊|哇/.test(userMessage)) return { emotion:"excited", action:"surprise" };

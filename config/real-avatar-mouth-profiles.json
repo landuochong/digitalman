@@ -28,14 +28,14 @@
     "xiaotao": {
       "mouthMotionScale": 0.78,
       "mouthWidthScale": 0.91,
-      "mouthHeightScale": 1.0,
+      "mouthHeightScale": 0.97,
       "compositeCenterX": 0.5,
       "compositeCenterY": 0.39,
       "lipColorCenterX": 0.513,
       "lipColorCenterY": 0.457,
       "lipColorStrength": 0.92,
-      "lipBrightnessOffset": 10,
-      "teethStrength": 0.44
+      "lipBrightnessOffset": 9,
+      "teethStrength": 0.46
     }
   }
 }

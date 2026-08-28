@@ -11,6 +11,10 @@ const API_BASE = "https://api.minimaxi.com";
 const POLL_INTERVAL_MS = 10_000;
 const LAKESIDE_ACTION_BASE = `Use the exact same cute young adult woman from the reference image: identical face, long dark hair, pink flower accessory, sailor-style white top, pleated skirt, body proportions, lakeside sunset background, framing, lighting and colors. Locked camera, full body centered, no zoom, no reframing, no background change. Her eyes remain naturally focused toward the camera. Her small narrow lips stay gently closed for the entire video, with warm coral-pink color, no teeth, no speech, no singing and no lip movement. The motion is subtle and physically natural, never exaggerated. Start from the exact reference pose and return smoothly to that exact pose at the end.`;
 const XIAOTAO_GREEN_BASE = `Use the exact same adult East Asian woman from the reference image: identical face, long dark-brown hair, white fitted T-shirt with the original pastel cherry-blossom-and-ribbon illustration, pastel-pink high-waisted A-line skirt, white shoes and natural body proportions. Preserve the perfectly uniform chroma green #00FF00 background exactly across every frame: no room, scenery, floor horizon, texture, gradient, shadow, reflection, green spill or background movement. Locked straight-on camera, full body centered at the exact same scale, complete hair, arms, hands, skirt, legs and shoes visible, no zoom, pan, crop or reframing. Soft even frontal studio lighting, no backlight, rim light or hair halo. Her eyes remain naturally focused toward the camera. Her small natural lips stay gently closed for the entire video, no teeth, speech, singing or lip movement. Motion is subtle, anatomically correct and physically natural. Start from the exact reference pose and return smoothly to that exact pose at the end.`;
+const FEIYIN_GREEN_BASE = `Use the exact same clearly adult anime woman from the reference image: identical mature face, pale skin, clear blue eyes, center-parted very long black hair, symmetrical gold drop earrings, fitted deep-red satin shirt-dress with the exact same tasteful deep V open collar and breast coverage, gold buttons, three-quarter sleeves, asymmetrical hem, black pumps and natural adult body proportions. Never alter the neckline depth, cleavage, dress closure, facial identity, earrings or body shape. Preserve the perfectly uniform chroma green #00FF00 background exactly across every frame: no room, scenery, floor horizon, texture, gradient, shadow, reflection, green spill or background movement. Locked straight-on camera, full body centered at the exact same scale, complete hair, arms, hands, dress, legs and shoes visible, no zoom, pan, crop or reframing. Soft even frontal studio lighting, no backlight, rim light or hair halo. Keep the long black hair behind the torso and separated from both arms. Her eyes remain naturally focused toward the camera. Her natural lips stay gently closed for the entire video, no teeth, speech, singing or lip movement. Motion is subtle, anatomically correct and physically natural. Start from the exact neutral reference stance with both arms hanging naturally beside the body and the feet close together, then return smoothly to that exact relaxed stance at the end. Never raise or spread the arms unless the requested action explicitly requires it, and never widen the standing stance.`;
+const FEIYIN_IDLE_PROMPT = `${FEIYIN_GREEN_BASE} 让人物产生清楚可见但幅度克制的自然待机动作。在视频前三秒内，上胸口和肩膀完成一次缓慢自然的呼吸循环：吸气时轻微抬起，呼气时平滑落回；正常速度播放时必须可以看出呼吸，不能保持静止。约1.5秒时，两只眼睛同时完成一次自然眨眼，眼皮完整闭合后重新睁开。约3秒时，双手手指各做一次极轻微的放松调整，然后恢复原始形状。头部保持正直并面向镜头，双臂自然垂下，双脚保持窄站姿。人物不能左右摇摆、迈步、微笑或移动嘴唇。呼吸、眨眼和手指动作必须真实发生在人物身体上，绝对不能用背景、灯光、镜头或场景变化代替人物运动。视频最后平滑回到与参考图完全相同的人物位置、大小、头部角度、手臂位置、双手位置、双腿间距和中性表情。`;
+const FEIYIN_WAVE_PROMPT = `${FEIYIN_GREEN_BASE} 人物先短暂保持自然站姿，随后只将右前臂和右手沿身体右前方抬到肩膀高度。右手掌心朝向镜头，用克制的手腕动作友好挥手两次。食指、中指、无名指和小指自然排列，只留狭窄真实间隙，拇指清晰显示在手掌侧面；整只右手必须清晰、不透明且符合人体结构。左臂、躯干、髋部、双腿和双脚保持不动，右肘不得高于肩膀。第二次挥手结束后，右臂沿原路径平滑放下，右手回到大腿外侧的初始位置。所有运动必须发生在人物右臂和右手上，背景必须在每一帧保持完全相同的纯绿色 #00FF00，禁止用背景、灯光、镜头或场景变化代替人物动作。视频最后平滑回到与参考图完全相同的人物位置、大小、头部角度、双臂位置、双手位置、双腿间距和中性表情。`;
+const FEIYIN_NOD_PROMPT = `${FEIYIN_GREEN_BASE} 人物在第一秒保持身体完全直立并直视镜头。随后眼神变得略微柔和，形成极轻微、自然的认同式闭嘴微笑。视频中段只让下巴向下移动约三度，随后立即沿相同路径抬回初始角度。完整下压和回正持续约0.6秒，并且只发生一次。点头过程中，两只眼睛的瞳孔和眼白在每一帧都必须清晰可见，不得眨眼或闭眼。肩膀、锁骨、躯干、头发、双臂、双手、髋部、双腿和双脚保持不动。这是聊天中表示认同的一次短促轻点头，不是鞠躬。禁止长时间低头、重复点头、左右歪头、弯腰、肩膀下沉或向上过冲。所有运动必须发生在人物头部和轻微表情上，背景必须在每一帧保持完全相同的纯绿色 #00FF00。点头完成后，头部角度和轻微微笑平滑恢复为参考图的中性状态。`;
 
 const ACTIONS = {
   idle: {
@@ -207,12 +211,27 @@ function parseArgs(argv) {
     else if (arg === "--dry-run") options.dryRun = true;
     else throw new Error(`未知参数：${arg}`);
   }
-  if (!new Set(["legacy", "xiaotao-green"]).has(options.profile)) throw new Error(`不支持的人物配置：${options.profile}`);
-  options.catalog = options.profile === "xiaotao-green" ? XIAOTAO_GREEN_ACTIONS : ACTIONS;
-  if (options.profile === "xiaotao-green" && options.actions.length === Object.keys(ACTIONS).length && options.actions.every((name, index) => name === Object.keys(ACTIONS)[index])) options.actions = Object.keys(options.catalog);
+  if (!new Set(["legacy", "xiaotao-green", "feiyin-green"]).has(options.profile)) throw new Error(`不支持的人物配置：${options.profile}`);
+  const feiyinGreenActions = Object.fromEntries(Object.entries(XIAOTAO_GREEN_ACTIONS).map(([name, action]) => [name, {
+    ...action,
+    prompt: name === "idle"
+      ? FEIYIN_IDLE_PROMPT
+      : name === "wave"
+        ? FEIYIN_WAVE_PROMPT
+        : name === "agree_subtle"
+          ? FEIYIN_NOD_PROMPT
+        : action.prompt.replace(XIAOTAO_GREEN_BASE, FEIYIN_GREEN_BASE),
+  }]));
+  options.catalog = options.profile === "xiaotao-green"
+    ? XIAOTAO_GREEN_ACTIONS
+    : options.profile === "feiyin-green"
+      ? feiyinGreenActions
+      : ACTIONS;
+  if (["xiaotao-green", "feiyin-green"].includes(options.profile) && options.actions.length === Object.keys(ACTIONS).length && options.actions.every((name, index) => name === Object.keys(ACTIONS)[index])) options.actions = Object.keys(options.catalog);
   for (const name of options.actions) if (!options.catalog[name]) throw new Error(`不支持的动作：${name}`);
   if (!new Set(["h3", "hailuo02"]).has(options.engine)) throw new Error(`不支持的引擎：${options.engine}`);
   if (options.profile === "xiaotao-green" && !options.outputExplicit) options.output = path.join(PROJECT_ROOT, "resources", "minimax-generated", "xiaotao-green-v1");
+  if (options.profile === "feiyin-green" && !options.outputExplicit) options.output = path.join(PROJECT_ROOT, "resources", "minimax-generated", "feiyin-green-v1");
   if (options.engine === "hailuo02" && !options.outputExplicit) options.output = `${DEFAULT_OUTPUT}-hailuo02`;
   return options;
 }

@@ -321,6 +321,7 @@ test("infers natural daily phrases for VRM gestures", () => {
   assert.deepEqual(inferCompanionState("晚上好"), { emotion:"happy", action:"wave_approval" });
   assert.deepEqual(inferCompanionState("我终于成功了"), { emotion:"excited", action:"clap" });
   assert.deepEqual(inferCompanionState("给我鼓鼓掌"), { emotion:"excited", action:"clap" });
+  assert.deepEqual(inferCompanionState("给我鼓个掌"), { emotion:"excited", action:"clap" });
   assert.deepEqual(inferCompanionState("拍手庆祝一下"), { emotion:"excited", action:"clap" });
   assert.deepEqual(inferCompanionState("给我欢呼一下"), { emotion:"excited", action:"cheer" });
   assert.deepEqual(inferCompanionState("给我鞠个躬"), { emotion:"happy", action:"bow" });

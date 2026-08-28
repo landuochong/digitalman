@@ -16,7 +16,9 @@ test("main voice page offers real and anime modes in one conversation",async()=>
   assert.match(html,/id="personaVoice"/);
   assert.match(html,/人物设置/);
   assert.match(app,/lumi-avatar-mode/);
-  assert.match(html,/app\.js\?v=20260815-wave-crown-v64/);
+  assert.match(html,/app\.js\?v=20260828-remove-feiyin-v1/);
+  assert.doesNotMatch(html,/value="feiyin"|绯音手工重建版/);
+  assert.doesNotMatch(app,/feiyin:"绯音手工重建版"/);
   assert.match(html,/aria-label="开始通话" aria-pressed="false"/);
   assert.match(app,/avatarRuntimeVersion="20260815-real-character-v46"/);
   assert.match(app,/from "\.\/real-action-catalog\.js\?v=20260815-shared-real-actions-v1"/);
@@ -31,7 +33,7 @@ test("main voice page offers real and anime modes in one conversation",async()=>
   assert.match(app,/voice:voiceProfile/);
   assert.match(app,/action=\$\{encodeURIComponent\(action\)\}&character=\$\{encodeURIComponent\(realAvatarCharacter\)\}/);
   assert.match(app,/conversationActions\.planForSentence\(data\.text,sentenceIndex,data\.action\|\|currentAction,currentEmotion\)/);
-  assert.match(app,/const sentenceHasSpeech=!\(neuralAvatarProfile&&sentencePlan\.explicit&&silentNeuralAction\(sentenceAction\)\)/);
+  assert.match(app,/const sentenceHasSpeech=true/);
   assert.match(app,/behavior\?\.explicit===true\?silentNeuralAction\(action\):null/);
   assert.match(app,/if\(!reusedBackchannel\)enqueueSpeech\(speechText,currentEmotion,batch,sentencePlan,streamTurn,\{ttsConnectionId,onStart:\(\)=>\{if\(sentenceHasSpeech\)reportSpeechStart\("formal"\);revealSentence\(transcriptIndex\);\}/);
   assert.match(app,/new BackchannelGate\(\{delayMs:BACKCHANNEL_GRACE_MS/);
@@ -70,7 +72,8 @@ test("main voice page offers real and anime modes in one conversation",async()=>
   assert.match(app,/return resolveSilentRealAction\(action,realAvatarCharacter\)/);
   assert.match(realActions,/bedroom_\$\{asset\}\/01\.mp4|`\/dh-live\/actions\/\$\{asset\}\/01\.mp4`/);
   assert.match(realActions,/bedroom_bow_front_silent\.mp4/);
-  assert.match(app,/if\(silentAction\)\{if\(streamTurn\)await streamTurn\.waitForPlayback\(\);options\.onStart\?\.\(\);await playSilentNeuralAction/);
+  assert.match(app,/if\(silentAction\)\{\s*if\(streamTurn\)await streamTurn\.waitForPlayback\(\);\s*await playSilentNeuralAction/);
+  assert.match(app,/playPreparedNeuralSpeech\(await preparation/);
   assert.match(app,/\/wav2lip-avatar\/avatar\.html/);
   assert.match(app,/\/vrm-embed\.html/);
   assert.match(app,/history:history\.slice\(0,-1\)\.slice\(-6\)/);
@@ -111,7 +114,7 @@ test("localhost page exposes temporary direct action testing controls",async()=>
   assert.match(app,/purpose:"action-test"/);
   assert.match(app,/function rawActionTestUrl\(action\)/);
   assert.match(app,/resolveWaitingActionPreview\(action,realAvatarCharacter\)/);
-  assert.match(realActions,/xiaotao_shy\/01\.mp4/);
+  assert.match(realActions,/xiaotao_shy_once_fast\.mp4/);
   assert.match(css,/\.action-test-buttons/);
 });
 
@@ -131,7 +134,7 @@ test("user-facing pages hide provider and rendering implementation names",async(
 
 test("real avatar video covers the complete left panel",async()=>{
   const [html,css,script]=await Promise.all([readPublic("wav2lip-avatar/avatar.html"),readPublic("wav2lip-avatar/avatar.css"),readPublic("wav2lip-avatar/avatar.js")]);
-  assert.match(html,/avatar\.css\?v=20260814-atomic-action-v15/);
+  assert.match(html,/avatar\.css\?v=20260828-shy-overlay-v1/);
   assert.match(css,/\.avatar-layer\{[^}]*width:100%;height:100%;object-fit:cover;object-position:center center/);
   assert.match(script,/lumi:\{idleAsset:"bedroom_idle_test",idleVideo:"01-seamless\.mp4/);
   assert.match(script,/xiaotao:\{idleAsset:"xiaotao_idle",idleVideo:"01\.mp4/);

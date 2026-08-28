@@ -152,6 +152,21 @@ test("keeps an explicit user gesture on the first sentence",()=>{
   assert.equal(opener.action,"shy");assert.equal(opener.deferred,false);
 });
 
+test("recognizes the colloquial clap request with a classifier word",()=>{
+  const scheduler=new ConversationActionScheduler();
+  const plan=scheduler.startTurn({message:"给我鼓个掌",action:"clap"});
+  assert.equal(plan.action,"clap");
+  assert.equal(plan.explicit,true);
+});
+
+test("plays an inferred shy gesture completely even before a short reply",()=>{
+  const scheduler=new ConversationActionScheduler();
+  scheduler.startTurn({message:"你今天真漂亮",action:"shy",emotion:"happy"});
+  const opener=scheduler.planForSentence("谢谢你呀。",0,"shy","happy");
+  assert.equal(opener.action,"shy");
+  assert.equal(opener.deferred,false);
+});
+
 test("preserves every supported explicit gesture against reply-derived candidates",()=>{
   const cases=[
     ["给我鼓鼓掌","clap"],["请欢呼一下","cheer"],["做个惊讶动作","surprise"],["给我鞠个躬","bow"],

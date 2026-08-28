@@ -27,6 +27,7 @@ import { sanitizeClientTiming } from "./src/client-timing.mjs";
 import { summarizeLatencySamples, traceToLatencySample } from "./src/chat-latency-summary.mjs";
 import { LatencySampleStore } from "./src/latency-sample-store.mjs";
 import { readLocalAsrHealth, transcribeLocalAudio } from "./src/local-asr.mjs";
+import { createCodexSessionProxy } from "./src/codex-session-proxy.mjs";
 
 function loadLocalEnv() {
   try {
@@ -82,6 +83,10 @@ const asrProvider=process.env.ASR_PROVIDER||"browser";
 const localAsrBaseUrl=process.env.LOCAL_ASR_BASE_URL||"http://127.0.0.1:8010";
 const localAsrPath=process.env.LOCAL_ASR_PATH||"/api/asr/transcribe";
 const localAsrFallback=process.env.LOCAL_ASR_BROWSER_FALLBACK!=="0";
+const codexSessionProxy=createCodexSessionProxy({
+  baseUrl:process.env.CODEX_DIGITALMAN_BRIDGE_URL,
+  token:process.env.CODEX_DIGITALMAN_BRIDGE_TOKEN
+});
 const voiceCatalog=buildVoiceCatalog({
   provider:apiKey?provider:"demo",
   defaultVoice:provider==="minimax"?miniMaxTtsVoice:ttsVoice,
@@ -810,6 +815,18 @@ export const server = http.createServer(async (req, res) => {
       if (!isLoopbackAddress(req.socket.remoteAddress)) return json(res,403,{error:"聊天记忆清理仅允许本机访问"});
       const data=await body(req);
       return json(res,200,{ok:true,cleared:await memoryStore.clearUser(data.userId)});
+    }
+    if(req.method==="POST"&&pathname==="/api/codex-session/start"){
+      if(!isLoopbackAddress(req.socket.remoteAddress))return json(res,403,{error:"Codex 会话仅允许本机访问"});
+      return json(res,201,await codexSessionProxy.start());
+    }
+    if(req.method==="POST"&&pathname==="/api/codex-session/message"){
+      if(!isLoopbackAddress(req.socket.remoteAddress))return json(res,403,{error:"Codex 会话仅允许本机访问"});
+      return json(res,201,await codexSessionProxy.message(await body(req)));
+    }
+    if(req.method==="POST"&&pathname==="/api/codex-session/end"){
+      if(!isLoopbackAddress(req.socket.remoteAddress))return json(res,403,{error:"Codex 会话仅允许本机访问"});
+      return json(res,200,await codexSessionProxy.end(await body(req)));
     }
     if (req.method === "POST" && pathname === "/api/chat") return await chat(req, res);
     if (req.method === "POST" && pathname === "/api/chat/stream") return await chatStream(req, res);

@@ -1,5 +1,5 @@
 const HIGH_ENERGY_ACTIONS=new Set(["wave_approval","clap","cheer","surprise","bow","shrug","cross","confident_arms_crossed","shy"]);
-const DEFER_ON_SHORT_OPENER=new Set(["caring","thinking","shy","confident_arms_crossed"]);
+const DEFER_ON_SHORT_OPENER=new Set(["caring","thinking","confident_arms_crossed"]);
 const HOLD_ACROSS_SENTENCES=new Set(["happy","caring","thinking"]);
 const PREVIEW_ONLY_REACTIONS=new Set(["surprise"]);
 // Ordinary conversation should not look frozen, but applying a gesture to
@@ -15,7 +15,7 @@ const FALLBACK_ACTIONS={
   wave_approval:"happy",clap:"happy",cheer:"happy",surprise:"idle",bow:"idle",
   shrug:"thinking",cross:"idle",confident_arms_crossed:"idle",shy:"happy"
 };
-const EXPLICIT_ACTION_WORDS=/(?:给我|帮我|请|做|来|摆|表演|可以|能不能|能否|想看你|让我看|向我).{0,8}(?:挥手|招手|点头|竖拇指|大拇指|点赞|赞|鼓掌|拍手|欢呼|庆祝|鞠(?:个)?躬|行礼|耸肩|摊手|交叉|叉手|抱胸|害羞|脸红|捂嘴|惊讶|吃惊|微笑|笑|思考|想想|关心|祈祷|动作|姿势)/;
+const EXPLICIT_ACTION_WORDS=/(?:给我|帮我|请|做|来|摆|表演|可以|能不能|能否|想看你|让我看|向我).{0,8}(?:挥手|招手|点头|竖拇指|大拇指|点赞|赞|鼓(?:个|鼓)?掌|拍手|欢呼|庆祝|鞠(?:个)?躬|行礼|耸肩|摊手|交叉|叉手|抱胸|害羞|脸红|捂嘴|惊讶|吃惊|微笑|笑|思考|想想|关心|祈祷|动作|姿势)/;
 const REAL_SOURCE_FRAMES=222;
 const REAL_SOURCE_FPS=25;
 const REAL_SOURCE_LOOP_MS=REAL_SOURCE_FRAMES/REAL_SOURCE_FPS*1000;

@@ -96,9 +96,18 @@ function clearWaitingPreview({revealIdle=true}={}){
   clearTimeout(waitingPreviewTimer);waitingPreviewTimer=0;
   const video=waitingPreview;waitingPreview=null;
   if(!video)return;
+  const wasSpeechOverlay=video.dataset.overlaySpeech==="true";
   video.classList.remove("active");
   if(activeSegment===video)activeSegment=null;
-  if(revealIdle)keepIdlePlaying();
+  if(wasSpeechOverlay&&activeSegment){
+    if(activeSegment===fragmentedPlayback?.video&&streamAudioContext&&Number.isFinite(fragmentedPlayback.audioOrigin)){
+      const{seekTo}=continuousVideoSync(fragmentedPlayback.audioOrigin,streamAudioContext.currentTime,activeSegment.currentTime,activeSegment.duration);
+      if(seekTo!==null)try{activeSegment.currentTime=seekTo;}catch{}
+    }
+    if(activeSegment.ended){activeSegment.classList.remove("active");activeSegment=null;}
+    else activeSegment.play().catch(()=>{});
+  }
+  if(revealIdle&&(!activeSegment||activeSegment.ended))keepIdlePlaying();
   setTimeout(()=>{video.pause();video.remove();},180);
 }
 
@@ -107,7 +116,7 @@ async function showWaitingPreview(data){
   clearWaitingPreview({revealIdle:false});
   const video=document.createElement("video");
   video.className="avatar-layer speech-segment waiting-preview";video.playsInline=true;video.muted=true;video.loop=data.loop!==false;video.preload="auto";video.src=data.url;
-  video.dataset.action=String(data.action||"");video.dataset.purpose=String(data.purpose||"reply");
+  video.dataset.action=String(data.action||"");video.dataset.purpose=String(data.purpose||"reply");video.dataset.overlaySpeech=String(data.overlaySpeech===true);
   waitingPreview=video;stage.append(video);
   try{
     await video.play();await waitForFirstVideoFrame(video);
@@ -115,6 +124,11 @@ async function showWaitingPreview(data){
     const previous=activeSegment;activeSegment=video;video.classList.add("active");
     if(previous&&previous!==video){previous.classList.remove("active");setTimeout(()=>{previous.pause();previous.remove();},180);}
     notify("wav2lip-preview-started",{action:data.action,currentTime:video.currentTime,purpose:data.purpose||"reply"});
+    video.onended=()=>{
+      if(waitingPreview!==video)return;
+      clearWaitingPreview();
+      notify("wav2lip-preview-ended",{action:data.action,purpose:data.purpose||"reply",durationMs:Math.round(video.duration*1000)||0});
+    };
     const durationMs=Math.max(0,Number(data.durationMs)||0);
     if(durationMs)waitingPreviewTimer=setTimeout(()=>{
       waitingPreviewTimer=0;
@@ -310,9 +324,10 @@ function revealSegment(item,video){
   const previous=activeSegment;activeSegment=video;activeSegmentSequence=sequence;
   video.classList.add("active");
   requestAnimationFrame(()=>{if(previous&&previous!==video){
-    previous.classList.remove("active");
+    const keepSpeechOverlay=previous===waitingPreview&&previous.dataset.overlaySpeech==="true";
+    if(!keepSpeechOverlay)previous.classList.remove("active");
     const keepWaitingPreview=previous===waitingPreview&&canResumeWaitingPreview(previous);
-    if(!keepWaitingPreview){
+    if(!keepWaitingPreview&&!keepSpeechOverlay){
       const delay=previous.classList.contains("waiting-preview")?180:0;
       setTimeout(()=>{previous.pause();previous.remove();},delay);
       if(previous===waitingPreview)waitingPreview=null;

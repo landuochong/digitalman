@@ -47,10 +47,13 @@ test("maps anime action names onto same-character real video assets",()=>{
   assert.equal(resolveRealActionAsset("happy","xiaotao"),"xiaotao_smile");
   assert.equal(resolveRealSpeechActionAsset("happy","xiaotao"),"xiaotao_idle");
   assert.equal(resolveRealSpeechActionAsset("smile","xiaotao"),"xiaotao_idle");
+  assert.equal(resolveRealSpeechActionAsset("nod","xiaotao"),"xiaotao_idle");
+  assert.equal(resolveRealSpeechActionAsset("thinking","xiaotao"),"xiaotao_idle");
   assert.equal(resolveRealSpeechActionAsset("clap","xiaotao"),"xiaotao_clap");
   assert.equal(resolveRealSpeechActionAsset("happy","lumi"),"bedroom_smile_test");
   assert.equal(normalizeRealAvatarCharacter("missing"),"lumi");
-  assert.deepEqual(resolveWaitingActionPreview("shy","xiaotao"),{action:"shy",asset:"xiaotao_idle",url:"/dh-live/actions/xiaotao_shy/01.mp4"});
+  assert.deepEqual(resolveWaitingActionPreview("shy","xiaotao"),{action:"shy",asset:"xiaotao_idle",url:"/real-actions/xiaotao_shy_once_fast.mp4",loop:false,durationMs:3360,overlaySpeech:true});
+  assert.equal(resolveSilentRealAction("shy","xiaotao"),null);
   assert.equal(resolveSilentRealAction("bow","xiaotao"),"/dh-live/actions/xiaotao_bow/01.mp4");
   assert.equal(resolveSilentRealAction("surprise","xiaotao"),"/dh-live/actions/xiaotao_surprise/01.mp4");
   assert.equal(resolveSilentRealAction("clap","xiaotao"),null);
@@ -73,6 +76,12 @@ test("resolves one bounded mouth profile per real character",()=>{
     compositeCenterX:0.5,compositeCenterY:0.39,
     lipColorCenterX:0.512,lipColorCenterY:0.481,lipColorStrength:0.82,
     lipBrightnessOffset:8,teethStrength:0.38
+  });
+  assert.deepEqual(resolveRealMouthProfile("xiaotao"),{
+    mouthMotionScale:0.78,mouthWidthScale:0.91,mouthHeightScale:0.97,
+    compositeCenterX:0.5,compositeCenterY:0.39,
+    lipColorCenterX:0.513,lipColorCenterY:0.457,lipColorStrength:0.92,
+    lipBrightnessOffset:9,teethStrength:0.46
   });
   assert.notEqual(resolveRealMouthProfile("lumi"),resolveRealMouthProfile("xiaotao"));
   assert.ok(Object.isFrozen(resolveRealMouthProfile("lumi")));

@@ -5,6 +5,7 @@ import { RecognitionTurnGate,recognitionResumeDelayMs,recognitionSilenceMs } fro
 import { SpeechEndpointDetector } from "./speech-endpoint-detector.js?v=20260814-noise-endpoint-v1";
 import { BargeInDetector } from "./barge-in-detector.js?v=20260814-complete-reply-v3";
 import { ReplyTranscript } from "./reply-transcript.js?v=20260813-spoken-history-v1";
+import { createCodexSession } from "./codex-session.js?v=20260827-codex-session-v1";
 import { BackchannelGate,BackchannelPlayback,backchannelVisualElapsedMs,remainingAfterSpokenBackchannel } from "./backchannel-gate.js?v=20260814-visible-clock-v36";
 import { BACKCHANNEL_GRACE_MS } from "./backchannel-timing.js?v=20260814-long-wait-v3";
 import { ListeningGestureGate } from "./listening-gesture.js?v=20260814-listening-nod-v1";
@@ -53,7 +54,7 @@ function rawActionTestUrl(action){
 }
 const actionTestLabels={idle:"待机",happy:"微笑",shy:"害羞",wave_approval:"挥手",nod:"点头",thumbs_up:"点赞",clap:"鼓掌",cheer:"欢呼",bow:"鞠躬",caring:"关心",thinking:"思考",surprise:"惊讶",shrug:"耸肩",cross:"拒绝",confident_arms_crossed:"抱臂"};
 const animeLooks={soft:"学院日常",vivid:"暗色潮流",nike1:"Nike-chan v1",nike2:"Nike-chan v2",classic:"简约短发"};
-const animeLookSchema="20260807-unified-look-v2";
+const animeLookSchema="20260828-remove-feiyin-v1";
 let animeLook=localStorage.getItem("lumi-vrm-look")||"nike1";
 if(!animeLooks[animeLook])animeLook="nike1";
 if(localStorage.getItem("lumi-vrm-look-schema")!==animeLookSchema){
@@ -133,6 +134,7 @@ const pendingActions = new Map();
 const pendingWav2LipPlaybacks = new Map();
 const pendingWav2LipStarts = new Map();
 const userId = localStorage.lumiUserId ||= crypto.randomUUID();
+const codexSession=createCodexSession();
 const personaPresets={
   warm:{name:"露米",relationship:"可信赖的朋友",style:"自然、温暖、有边界感",background:"喜欢傍晚的湖边、轻音乐和生活里细小的好消息，擅长安静倾听，也愿意认真陪你一起想办法"},
   lively:{name:"小晴",relationship:"元气聊天伙伴",style:"活泼、简短、有幽默感，但不过度夸张",background:"喜欢明亮的颜色、轻快音乐和新鲜小事，善于为好消息庆祝，也会在你没精神时温柔打气"},
@@ -308,7 +310,7 @@ function settleActiveTranscript(interrupted=false){
   $("#typing")?.remove();
   if(result.text){active.article ||= addMessage("assistant","",false);active.article.querySelector("p").textContent=result.text;if(result.interrupted)active.article.dataset.interrupted="true";}
   else active.article?.remove();
-  if(result.persist)persistAssistantText(result.historyText??result.text);
+  if(result.persist){const persistedText=result.historyText??result.text;persistAssistantText(persistedText);void codexSession.recordAssistant(persistedText);}
   if(activeReplyTranscript===active)activeReplyTranscript=null;
   return result;
 }
@@ -527,7 +529,14 @@ function enqueueSpeech(text, emotion, batch, behavior={action:"idle"},streamTurn
     const scheduled=schedule(async () => {
       if (batch !== speechBatch) return;
       try {
-        if(silentAction){if(streamTurn)await streamTurn.waitForPlayback();options.onStart?.();await playSilentNeuralAction(silentAction,batch);if(batch===speechBatch)options.onComplete?.();}
+        if(silentAction){
+          if(streamTurn)await streamTurn.waitForPlayback();
+          await playSilentNeuralAction(silentAction,batch);
+          if(batch===speechBatch){
+            const completed=await playPreparedNeuralSpeech(await preparation,batch,{onStart:options.onStart,cancellation:options.cancellation});
+            if(completed&&batch===speechBatch)options.onComplete?.();
+          }
+        }
         if(streamingAvatarExperiment&&!silentAction)await enqueueStreamingNeuralSpeech(preparation,batch,preparedBehavior,streamTurn,options.onStart,options.onComplete,options.cancellation);
         else if(!silentAction){const completed=await playPreparedNeuralSpeech(await preparation,batch,{onStart:options.onStart,cancellation:options.cancellation});if(completed&&batch===speechBatch)options.onComplete?.();}
       }
@@ -733,7 +742,7 @@ async function reply(message,{recognitionMetrics=null}={}) {
         if(!reusedBackchannel&&sentenceAction!=="idle"&&!sentencePlan.continuation)setDigitalHumanAction(sentenceAction,{force:true,hold:true,behavior:sentencePlan}).catch(()=>{});
         const ttsConnectionId=sentenceIndex===0?firstTtsConnectionId:"";
         firstTtsConnectionId="";
-        const sentenceHasSpeech=!(neuralAvatarProfile&&sentencePlan.explicit&&silentNeuralAction(sentenceAction));
+        const sentenceHasSpeech=true;
         if(!reusedBackchannel)enqueueSpeech(speechText,currentEmotion,batch,sentencePlan,streamTurn,{ttsConnectionId,onStart:()=>{if(sentenceHasSpeech)reportSpeechStart("formal");revealSentence(transcriptIndex);},onComplete:()=>finishSentence(transcriptIndex)});
         if(continuedBackchannel)portrait.dataset.backchannelContinuation=speechText;
       }
@@ -754,12 +763,12 @@ async function reply(message,{recognitionMetrics=null}={}) {
     if (error.name !== "AbortError") { stopSpeech();addMessage("assistant", `刚才的连接有点不稳定：${error.message}。再试一次好吗？`, false); setEmotion("caring"); speaking(false); setVoiceState("idle","连接不稳定，请点击麦克风重试"); }
   } finally { if(waitingPreview)digitalHumanFrame?.contentWindow?.postMessage({type:"wav2lip-preview-clear"},location.origin);if(activeWaitingPreview===waitingPreview)activeWaitingPreview=null;if(activeReplyController===controller)activeReplyController=null; sendButton.disabled=false; if(!form.hidden)input.focus(); }
 }
-async function submit(text,options={}) { const message = text.trim(); if (!message || sendButton.disabled) return; stopSpeech(); input.value=""; resize(); addMessage("user", message); await reply(message,options); }
+async function submit(text,options={}) { const message = text.trim(); if (!message || sendButton.disabled) return; stopSpeech(); input.value=""; resize(); addMessage("user", message);void codexSession.recordUser(message,options.recognitionMetrics?"speech-final":"typed"); await reply(message,options); }
 form.addEventListener("submit", e => { e.preventDefault(); submit(input.value); });
 input.addEventListener("keydown", e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); form.requestSubmit(); } });
 function resize(){ input.style.height="auto"; input.style.height=`${Math.min(input.scrollHeight,110)}px`; } input.addEventListener("input",resize);
 $("#clearButton").addEventListener("click",async()=>{
-  stopSpeech();history=[];localStorage.removeItem("lumi-history");messages.querySelectorAll(".message").forEach((m,i)=>i&&m.remove());setEmotion("happy");
+  stopSpeech();void codexSession.end();history=[];localStorage.removeItem("lumi-history");messages.querySelectorAll(".message").forEach((m,i)=>i&&m.remove());setEmotion("happy");
   try{
     const response=await fetch("/api/chat/memory/clear",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({userId})});
     if(!response.ok)throw new Error("服务端记忆清理失败");
@@ -830,7 +839,7 @@ if (Recognition) { const recognition = new Recognition(); recognition.lang="zh-C
       }
     }}))portrait.dataset.listeningGesture="scheduled";
   };
-  const endCall=()=>{voiceCallActive=false;answerGeneration++;clearTimeout(restartListeningTimer);clearListeningGesture();turnGate.cancel();if(recognitionRunning)recognition.abort();markRecognitionStopped();releaseVad();stopSpeech();voiceButton.classList.remove("thinking","speaking");updateCallButton();setVoiceState("idle","通话已结束");statusText.textContent="在线 · 随时听你说";};
+  const endCall=()=>{voiceCallActive=false;answerGeneration++;clearTimeout(restartListeningTimer);clearListeningGesture();turnGate.cancel();if(recognitionRunning)recognition.abort();markRecognitionStopped();releaseVad();stopSpeech();void codexSession.end();voiceButton.classList.remove("thinking","speaking");updateCallButton();setVoiceState("idle","通话已结束");statusText.textContent="在线 · 随时听你说";};
   const beginCall=async()=>{if(voiceCallActive)return;voiceCallActive=true;stopSpeech();void unlockAvatarAudio();digitalHumanFrame?.contentWindow?.postMessage({type:"wav2lip-audio-unlock"},location.origin);updateCallButton();setVoiceState("idle","正在准备麦克风…");try{await ensureVad();}catch{}if(voiceCallActive){setVoiceState("idle","通话已开始，请自然说话");scheduleListening(80);}};
   const toggleCall=()=>voiceCallActive?endCall():beginCall();
   recognition.onstart=()=>{recognitionRunning=true;stopBargeInLoop();if(answerPlaybackEndedAt){portrait.dataset.answerEndToListeningMs=String(Math.round(performance.now()-answerPlaybackEndedAt));answerPlaybackEndedAt=0;}recognizedText="";recognitionFailed=false;latestEndpointSilenceMs=0;turnGate.begin();delete portrait.dataset.vadSilenceMs;delete portrait.dataset.vadSilenceTargetMs;delete portrait.dataset.vadNoiseFloor;delete portrait.dataset.vadThreshold;delete portrait.dataset.vadStopToSubmitMs;delete portrait.dataset.recognitionCommitTrigger;clearListeningGesture();listeningGesture.reset();delete portrait.dataset.listeningGesture;conversationActions.finishTurn();digitalHumanFrame?.contentWindow?.postMessage({type:"vrm-finish-gesture"},location.origin);micButton.classList.add("listening");setVoiceState("listening","请自然说话，停顿后我会立即回答");setEmotion("curious");statusText.textContent="我在听…";startVadLoop();};
@@ -870,7 +879,7 @@ async function setupLocalAsr(){
     forceSubmitTimer=setTimeout(forceSubmit,forcedWindowMs);
     const inspect=()=>{if(!voiceCallActive||!listening||!analyser){vadFrame=0;return;}analyser.getFloatTimeDomainData(samples);let energy=0;for(const value of samples)energy+=value*value;const rms=Math.sqrt(energy/samples.length),now=performance.now(),endpoint=detector.sample(rms,now,{hasTranscript:detector.hasSpeech});peakRms=Math.max(peakRms,rms);const activeThreshold=Math.max(.006,Math.min(.026,endpoint.noiseFloor*1.55));if(rms>=activeThreshold){activityStartedAt||=now;lastActiveAt=now;}else if(activityStartedAt&&!speechStartedAt&&now-activityStartedAt>320){activityStartedAt=0;}if((endpoint.hasSpeech||activityStartedAt&&now-activityStartedAt>=160)&&!speechStartedAt){speechStartedAt=activityStartedAt||now;scheduleGesture();portrait.dataset.localAsrSpeechStarted="true";}if(now-lastDiagnosticAt>=250){lastDiagnosticAt=now;portrait.dataset.vadNoiseFloor=endpoint.noiseFloor.toFixed(4);portrait.dataset.vadThreshold=endpoint.threshold.toFixed(4);portrait.dataset.localAsrLevel=rms.toFixed(4);portrait.dataset.localAsrPeak=peakRms.toFixed(4);portrait.dataset.localAsrActiveThreshold=activeThreshold.toFixed(4);portrait.dataset.localAsrListeningMs=String(Math.round(now-listenStartedAt));}const activitySilenceMs=lastActiveAt?now-lastActiveAt:0;if(speechStartedAt&&(endpoint.silenceMs>=silenceTargetMs||activitySilenceMs>=silenceTargetMs||now-speechStartedAt>=18_000)){portrait.dataset.vadSilenceMs=String(Math.round(Math.max(endpoint.silenceMs,activitySilenceMs)));portrait.dataset.vadSilenceTargetMs=String(silenceTargetMs);void transcribe({...endpoint,silenceMs:Math.max(endpoint.silenceMs,activitySilenceMs)});return;}if(!speechStartedAt&&now-lastResetAt>=7000){recorder.cancel();recorder.start();detector.reset(now);activityStartedAt=0;lastActiveAt=0;peakRms=0;lastResetAt=now;portrait.dataset.localAsrResetAt=String(Math.round(now));}vadFrame=requestAnimationFrame(inspect);};vadFrame=requestAnimationFrame(inspect);
   }
-  function endCall(){voiceCallActive=false;answerGeneration++;clearTimeout(restartTimer);clearGesture();recorder?.cancel();stopListening();release();stopSpeech();voiceButton.classList.remove("thinking","speaking");updateButton();setVoiceState("idle","通话已结束");statusText.textContent="在线 · 随时听你说";}
+  function endCall(){voiceCallActive=false;answerGeneration++;clearTimeout(restartTimer);clearGesture();recorder?.cancel();stopListening();release();stopSpeech();void codexSession.end();voiceButton.classList.remove("thinking","speaking");updateButton();setVoiceState("idle","通话已结束");statusText.textContent="在线 · 随时听你说";}
   const beginCall=async()=>{if(voiceCallActive)return;voiceCallActive=true;stopSpeech();void unlockAvatarAudio();digitalHumanFrame?.contentWindow?.postMessage({type:"wav2lip-audio-unlock"},location.origin);updateButton();setVoiceState("idle","正在准备本地语音识别…");try{if(!await ensureCapture())throw new Error("无法访问麦克风");}catch(error){voiceCallActive=false;release();updateButton();setVoiceState("idle","请允许浏览器使用麦克风后重试");return;}if(voiceCallActive){setVoiceState("idle","本地识别已就绪，请自然说话");scheduleListening(80);}};
   const toggle=()=>voiceCallActive?endCall():void beginCall();
   micButton.disabled=false;voiceButton.disabled=false;micButton.onclick=toggle;voiceButton.onclick=toggle;voicePrompt.textContent="本地语音识别已就绪";portrait.dataset.asrProvider="local_sherpa";updateButton();

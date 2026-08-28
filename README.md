@@ -139,6 +139,8 @@ MiniMax 视频生成使用独立的 `MINIMAX_VIDEO_API_KEY`，避免测试视频
 
 页面右上角的清空按钮会调用 `/api/chat/memory/clear`，同时删除当前浏览器聊天历史、该用户的结构化记忆和交流状态。
 
+当由 Codex Digitalman Launcher 启动时，服务会从进程环境接收 Session Bridge 的本机地址和短期令牌。浏览器只通过同源 `/api/codex-session/*` 代理提交最终用户文本和实际播放完成的助手文本；令牌不会发送到页面，音频、视频、语音中间结果和人物记忆也不会进入 Bridge。结束语音通话或清空当前对话会显式结束该临时会话。直接使用 `npm start` 时未配置 Bridge，聊天功能保持原样并自动降级为不记录 Codex 临时会话。
+
 ## 真人口型
 
 当前主路线为 Audio2BlendShape + DINet：
@@ -164,6 +166,8 @@ MiniMax 视频生成使用独立的 `MINIMAX_VIDEO_API_KEY`，避免测试视频
 | `teethStrength` | 小开口时上牙恢复层的混合强度；0 为关闭 | 0–1 |
 
 新增真人角色时，应同时在人物动作目录和该配置文件的 `characters` 中增加同名条目。`defaults` 只用于未知人物的安全回退。
+
+具体调参顺序、当前人物基线、症状对照、缓存规则和验收命令见 [真人口型配置与校准](docs/REAL_AVATAR_MOUTH_CALIBRATION.md)。
 
 已验证的整句渲染 RTF 约为 0.33–0.35，推理快于实时。当前默认链路不再等待完整 TTS：WebSocket TTS 返回 PCM 后，240 ms 首音频窗口立即进入 DINet 并追加到连续 fMP4。已有真实样本表明主要长尾多发生在 M3 正文输出前；之后按匿名自然对话汇总分别判断 M3、TTS、DINet 和浏览器交接，不再凭单次感觉重复调参。详细原理见 [DH_live 原理分析](docs/DH_LIVE_PRINCIPLE_ANALYSIS.md) 和 [当前架构](docs/CURRENT_ARCHITECTURE.md)。
 
@@ -204,6 +208,7 @@ curl http://localhost:3000/api/chat/debug/summary
 - [完整实验日志](docs/EXPERIMENT_LOG.md)
 - [真人洁净口型边界](docs/CLEAN_AVATAR_ARCHITECTURE.md)
 - [DH_live / DINet 原理分析](docs/DH_LIVE_PRINCIPLE_ANALYSIS.md)
+- [真人口型配置与校准](docs/REAL_AVATAR_MOUTH_CALIBRATION.md)
 - [LiveTalking 参考结论](docs/LIVETALKING_REFERENCE.md)
 - [DH_live 动作制作](integrations/dh-live/README.md)
 - [Duix Android 验证](integrations/duix-android/README.md)

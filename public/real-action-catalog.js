@@ -23,7 +23,7 @@ const CHARACTER_ACTION_ASSETS=Object.freeze({
 // poor neutral mouth canvas for DINet. Keep the visible action catalog intact
 // and only substitute the source used while synthesizing speech.
 const CHARACTER_SPEECH_OVERRIDES=Object.freeze({
-  xiaotao:Object.freeze({happy:"xiaotao_idle",smile:"xiaotao_idle"}),
+  xiaotao:Object.freeze({happy:"xiaotao_idle",smile:"xiaotao_idle",nod:"xiaotao_idle",thinking:"xiaotao_idle"}),
 });
 
 export const REAL_AVATAR_CHARACTERS=Object.freeze({
@@ -57,9 +57,11 @@ export function resolveWaitingActionPreview(action,character=DEFAULT_REAL_CHARAC
   if(!WAITING_PREVIEW_ACTIONS.has(normalized))return null;
   const characterId=normalizeRealAvatarCharacter(character),asset=resolveRealActionAsset(normalized,characterId);
   const url=normalized==="shy"
-    ?characterId==="xiaotao"?"/dh-live/actions/xiaotao_shy/01.mp4":"/real-actions/bedroom_surprise_silent.mp4"
+    ?characterId==="xiaotao"?"/real-actions/xiaotao_shy_once_fast.mp4":"/real-actions/bedroom_surprise_silent.mp4"
     :`/dh-live/actions/${asset}/01.mp4`;
-  return{action:normalized,asset,url};
+  return normalized==="shy"&&characterId==="xiaotao"
+    ?{action:normalized,asset,url,loop:false,durationMs:3360,overlaySpeech:true}
+    :{action:normalized,asset,url};
 }
 
 export function resolveSilentRealAction(action,character=DEFAULT_REAL_CHARACTER){
