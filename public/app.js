@@ -54,7 +54,7 @@ function rawActionTestUrl(action){
 }
 const actionTestLabels={idle:"待机",happy:"微笑",shy:"害羞",wave_approval:"挥手",nod:"点头",thumbs_up:"点赞",clap:"鼓掌",cheer:"欢呼",bow:"鞠躬",caring:"关心",thinking:"思考",surprise:"惊讶",shrug:"耸肩",cross:"拒绝",confident_arms_crossed:"抱臂"};
 const animeLooks={soft:"学院日常",vivid:"暗色潮流",nike1:"Nike-chan v1",nike2:"Nike-chan v2",classic:"简约短发"};
-const animeLookSchema="20260828-remove-feiyin-v1";
+const animeLookSchema="20260828-anime-looks-v4";
 let animeLook=localStorage.getItem("lumi-vrm-look")||"nike1";
 if(!animeLooks[animeLook])animeLook="nike1";
 if(localStorage.getItem("lumi-vrm-look-schema")!==animeLookSchema){

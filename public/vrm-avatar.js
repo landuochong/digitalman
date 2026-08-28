@@ -44,7 +44,7 @@ export class VrmCompanion{
       next.scene.visible=false;this.modelPivot.add(next.scene);this.tuneModelMaterials(url,next.scene);this.prepareFallbackPose();this.prepareHands();this.prepareBlush();this.prepareForearmOverlays(url);
       if(next.lookAt)next.lookAt.target=this.lookTarget;
       this.motion.modelProfile=url.includes("avatar-sample-b.vrm")?"default":"mouth";
-      this.motion.clapProfile=url.includes("avatar-sample-a.vrm")?"soft":url.includes("avatar-sample-b.vrm")?"vivid":url.includes("nikechan_v1.vrm")?"nike1":url.includes("nikechan_v2.vrm")||url.includes("feiyin-fast.vrm")||url.includes("feiyin-refined.vrm")||url.includes("feiyin-nikebase-v3.vrm")?"nike2":"classic";
+      this.motion.clapProfile=url.includes("avatar-sample-a.vrm")?"soft":url.includes("avatar-sample-b.vrm")?"vivid":url.includes("nikechan_v1.vrm")?"nike1":url.includes("nikechan_v2.vrm")?"nike2":"classic";
       await this.motion.attach(next);
       if(token!==this.loadingToken)return false;
       this.motion.update(.42);next.update(0);
@@ -55,23 +55,12 @@ export class VrmCompanion{
   }
   switchModel(url){if(url===this.modelUrl&&this.vrm)return Promise.resolve(true);return this.load(url);}
   tuneModelMaterials(url,scene){
-    const isFeiyin=url.includes("look=feiyin");
     scene.traverse(object=>{
       if(!object.isMesh)return;
       for(const material of Array.isArray(object.material)?object.material:[object.material]){
         if(!material)continue;
         if(url.includes("nikechan_v2.vrm")&&(material.name==="NikeChanBody"||material.name==="NikeChanBodyShade")){
           material.color?.set(NIKE2_SKIN_COLOR);material.needsUpdate=true;
-        }
-        if(isFeiyin){
-          const name=material.name||"";
-          if(/Hair|MAEGAMI|USHIROGAMI/i.test(name))material.color?.set(0x17141b);
-          else if(/Eye/i.test(name))material.color?.set(0x76b8e8);
-          else if(/Outer|Tshirt/i.test(name))material.color?.set(0x8b1730);
-          else if(/Zubon/i.test(name))material.color?.set(0x4a0f1d);
-          else if(/Kutu|Shoes/i.test(name))material.color?.set(0x351318);
-          else if(/Kazari/i.test(name))material.color?.set(0xd2a84e);
-          material.needsUpdate=true;
         }
       }
     });
