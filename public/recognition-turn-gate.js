@@ -12,6 +12,17 @@ export function recognitionResumeDelayMs({preciseAudioTail=false,outputLatencyMs
   return Math.min(180,Math.max(80,Math.ceil(Math.max(0,Number(outputLatencyMs)||0)+40)));
 }
 
+// ASR engines commonly hallucinate a bare hesitation from room noise. A lone
+// filler is not enough to start a conversational turn; keep listening instead.
+export function isIncidentalFillerTranscript(text){
+  const raw=String(text||"").trim();
+  if(!raw)return false;
+  const value=raw.replace(/[\s，。！？、,.!?；;：:～~]/g,"");
+  return !value
+    ||/^(?:嗯+|啊+|呃+|额+|唔+|哦+|哼+)$/.test(value)
+    ||/^(?:i|a|the|you|uh|um|hmm)$/i.test(value);
+}
+
 export class RecognitionTurnGate {
   constructor({onCommit=()=>{},finalizeDelayMs=90,now=()=>performance.now(),setTimer=setTimeout,clearTimer=clearTimeout}={}){
     this.onCommit=onCommit;
@@ -58,7 +69,7 @@ export class RecognitionTurnGate {
   cancel(){if(this.timer)this.clearTimer(this.timer);this.timer=0;}
 
   commit(trigger){
-    if(this.failed||this.committed||!this.text)return false;
+    if(this.failed||this.committed||!this.text||isIncidentalFillerTranscript(this.text))return false;
     this.committed=true;
     this.cancel();
     const committedAt=this.now();

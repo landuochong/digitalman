@@ -186,6 +186,8 @@ test("voice button toggles one continuous call instead of each utterance",async(
   assert.match(app,/recognitionResumeDelayMs\(\{preciseAudioTail:neuralAvatarProfile&&avatarPcmReady,outputLatencyMs\}\)/);
   assert.match(app,/recognitionSilenceMs\(\{text:recognizedText\}\)/);
   assert.match(app,/new SpeechEndpointDetector\(\)/);
+  assert.match(app,/enoughInput=Boolean\(speechStartedAt\)/);
+  assert.doesNotMatch(app,/peakRms>=\.0035\|\|speechStartedAt/);
   assert.match(app,/dataset\.vadNoiseFloor/);
   assert.match(app,/dataset\.vadThreshold/);
   assert.match(app,/now-lastDiagnosticAt>=250/);

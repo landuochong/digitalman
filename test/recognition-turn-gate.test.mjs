@@ -1,6 +1,19 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { RecognitionTurnGate,recognitionResumeDelayMs,recognitionSilenceMs } from "../public/recognition-turn-gate.js";
+import { RecognitionTurnGate,isIncidentalFillerTranscript,recognitionResumeDelayMs,recognitionSilenceMs } from "../public/recognition-turn-gate.js";
+
+test("ignores bare ASR hesitation fillers while keeping substantive speech",()=>{
+  for(const text of ["嗯","嗯嗯。","呃","啊！","哦",".","。","！？","I.","a","uh","Um."])assert.equal(isIncidentalFillerTranscript(text),true);
+  for(const text of ["嗯，我知道了","啊这个可以","哦好的","你好"])assert.equal(isIncidentalFillerTranscript(text),false);
+});
+
+test("does not commit a hallucinated filler turn",()=>{
+  const commits=[];
+  const gate=new RecognitionTurnGate({onCommit:(text,metrics)=>commits.push({text,...metrics}),now:()=>100});
+  assert.equal(gate.update("嗯",{final:true}),false);
+  assert.equal(gate.end(),false);
+  assert.deepEqual(commits,[]);
+});
 
 function harness(){
   let now=1_000,nextId=1;

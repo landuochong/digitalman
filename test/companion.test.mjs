@@ -43,6 +43,7 @@ test("builds short contextual backchannels without pretending they are answers",
   assert.equal(excited.action,"happy");assert.match(excited.text,/真的|哇/);
   assert.match(buildResponsiveBackchannel("我不想活了").text,/安全/);
   assert.equal(buildResponsiveBackchannel(""),null);
+  assert.doesNotMatch(buildResponsiveBackchannel("随便聊聊").text,/^嗯+。?$/);
   assert.deepEqual(buildResponsiveBackchannel("今天有点累"),caring);
   for(const message of ["随便聊聊","我刚才出去走了一圈","今天看到一只小猫"]){
     assert.notEqual(buildResponsiveBackchannel(message)?.text,"听着呢。");

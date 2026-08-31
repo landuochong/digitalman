@@ -239,17 +239,42 @@ class PersistentDINetRenderer:
             & (face_lab[:, :, 0] >= 105)
             & (face_lab[:, :, 1] >= 142)
         )
+        upper_strength = profile["upperLipColorStrength"]
+        if upper_strength > 0:
+            source_upper_lips = (
+                source_lips
+                & (yy <= height * profile["lipColorCenterY"])
+            ).astype(np.uint8)
+            upper_support = cv2.dilate(
+                source_upper_lips, np.ones((3, 3), dtype=np.uint8), iterations=1
+            ).astype(bool)
+            upper_generated_lips = (
+                upper_support
+                & (np.abs(face_signed_hue) <= 28)
+                & (face_hsv[:, :, 1] >= 42)
+                & (face_hsv[:, :, 2] <= 238)
+                & (face_lab[:, :, 0] >= 78)
+                & (face_lab[:, :, 1] >= 138)
+            )
+            generated_lips |= upper_generated_lips
+        else:
+            upper_generated_lips = np.zeros_like(generated_lips)
         if not np.any(generated_lips):
             return face
 
+        correction_strength = np.full(face.shape[:2], strength, dtype=np.float32)
+        correction_strength[upper_generated_lips] = np.maximum(
+            correction_strength[upper_generated_lips], upper_strength
+        )
+        pixel_strength = correction_strength[generated_lips]
         corrected_hue = face_signed_hue[generated_lips]
-        corrected_hue += (target_hue - corrected_hue) * strength
+        corrected_hue += (target_hue - corrected_hue) * pixel_strength
         face_hsv[:, :, 0][generated_lips] = np.mod(corrected_hue, 180).astype(np.uint8)
 
         saturation = face_hsv[:, :, 1].astype(np.float32)
         current = saturation[generated_lips]
         # Preserve naturally stronger pixels and only restore saturation lost by DINet.
-        restored = current + np.maximum(target_saturation - current, 0) * strength
+        restored = current + np.maximum(target_saturation - current, 0) * pixel_strength
         face_hsv[:, :, 1][generated_lips] = np.clip(restored, 0, 255).astype(np.uint8)
 
         # DINet also darkens the visible lip surface. Match only the lost lightness;
@@ -259,7 +284,7 @@ class PersistentDINetRenderer:
         generated_value = float(np.median(face_hsv[:, :, 2][generated_lips]))
         value_delta = np.clip(source_value - generated_value, 0.0, 20.0)
         value = face_hsv[:, :, 2].astype(np.float32)
-        value[generated_lips] += value_delta * strength * 0.55
+        value[generated_lips] += value_delta * pixel_strength * 0.55
         value[generated_lips] += profile["lipBrightnessOffset"]
         face_hsv[:, :, 2] = np.clip(value, 0, 255).astype(np.uint8)
         return cv2.cvtColor(face_hsv, cv2.COLOR_HSV2RGB)
@@ -378,6 +403,7 @@ class PersistentDINetRenderer:
             "lipColorCenterX": float(np.clip(values.get("lipColorCenterX", 0.50), 0.42, 0.58)),
             "lipColorCenterY": float(np.clip(values.get("lipColorCenterY", 0.49), 0.40, 0.58)),
             "lipColorStrength": float(np.clip(values.get("lipColorStrength", self.lip_color_strength), 0.0, 1.0)),
+            "upperLipColorStrength": float(np.clip(values.get("upperLipColorStrength", 0.0), 0.0, 1.0)),
             "lipBrightnessOffset": float(np.clip(values.get("lipBrightnessOffset", 0.0), -12.0, 20.0)),
             "teethStrength": float(np.clip(values.get("teethStrength", 0.0), 0.0, 1.0)),
         }

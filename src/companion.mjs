@@ -263,10 +263,10 @@ export function inferCompanionState(message, reply = "", companionState=null) {
 const backchannelChoices={
   caring:["我在。"],
   thinking:["我想想。"],
-  happy:["嗯。","好呀。"],
+  happy:["好呀。"],
   excited:["真的呀？","哇。"],
   greeting:["嗨。","我在。"],
-  neutral:["嗯。","嗯嗯。"]
+  neutral:["我在听。"]
 };
 
 function stableChoice(values,text){
