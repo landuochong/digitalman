@@ -12,6 +12,20 @@ export function recognitionResumeDelayMs({preciseAudioTail=false,outputLatencyMs
   return Math.min(180,Math.max(80,Math.ceil(Math.max(0,Number(outputLatencyMs)||0)+40)));
 }
 
+export function normalizeLocalAsrTranscript(text){
+  const raw=String(text||"").trim();
+  const han=raw.match(/[\u3400-\u9fff]/gu)||[],latin=raw.match(/[a-z]+/gi)||[];
+  // A clipped Chinese syllable can make the multilingual recognizer append a
+  // confident-looking English word (for example “爱mail”). On a very short
+  // Chinese utterance this changes the whole intent, so retain the Chinese
+  // portion. Longer mixed-language requests remain untouched.
+  if(han.length>0&&han.length<=2&&latin.some(word=>word.length>=3)){
+    const chinese=raw.replace(/[a-z]+/gi,"").replace(/\s+/g," ").replace(/\s+([，。！？、,.!?；;：:])/g,"$1").trim();
+    if(chinese)return chinese;
+  }
+  return raw;
+}
+
 // ASR engines commonly hallucinate a bare hesitation from room noise. A lone
 // filler is not enough to start a conversational turn; keep listening instead.
 export function isIncidentalFillerTranscript(text){

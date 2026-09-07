@@ -393,6 +393,11 @@ test("extracts MiniMax chat content and strips thinking before parsing", () => {
   const text=extractMiniMaxChatText({choices:[{message:{content:'<think>分析</think>{"reply":"你好","emotion":"happy"}'}}]});
   assert.deepEqual(parseCompanionReply(text),{reply:"你好",emotion:"happy",action:"idle"});
 });
+
+test("strips orphan MiniMax thinking tags from streamed reply text",()=>{
+  assert.equal(sanitizeReplyText("</mm:think>嗯，一直都在。"),"嗯，一直都在。");
+  assert.equal(sanitizeReplyText("<mm:think>分析</mm:think>你好。"),"你好。");
+});
 test("builds and decodes MiniMax DH_live-compatible WAV payload", () => {
   const request=buildMiniMaxSpeechPayload({model:"speech-test",voice:"voice-test",text:"好消息",emotion:"excited"});
   assert.equal(request.voice_setting.emotion,"happy"); assert.deepEqual(request.audio_setting,{sample_rate:16000,format:"wav",channel:1});

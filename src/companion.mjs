@@ -49,8 +49,9 @@ const stateWords = "neutral|happy|caring|curious|excited|calm|idle|thinking|surp
 
 export function sanitizeReplyText(value) {
   return String(value ?? "")
-    .replace(/<think>[\s\S]*?<\/think>/gi, "")
-    .replace(/<think>[\s\S]*$/gi, "")
+    .replace(/<(?:mm:)?think\b[^>]*>[\s\S]*?<\/(?:mm:)?think\s*>/gi, "")
+    .replace(/<(?:mm:)?think\b[^>]*>[\s\S]*$/gi, "")
+    .replace(/<\/(?:mm:)?think\s*>/gi, "")
     .replace(/^```(?:json)?\s*|\s*```$/gi, "")
     .replace(new RegExp(`(?:\\s*[（(]\\s*(?:${stateWords})\\s*[）)])+$`, "i"), "")
     .replace(new RegExp(`(?:^|\\n)\\s*(?:emotion|action)\\s*[:：]\\s*(?:${stateWords})\\s*(?=\\n|$)`, "gi"), "\n")

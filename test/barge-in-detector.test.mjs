@@ -7,19 +7,19 @@ test("default interruption waits for sustained near-field speech after speaker w
   for(let at=0;at<=1200;at+=40)assert.equal(detector.sample(.014,at),false);
   for(let at=1240;at<=1480;at+=40)assert.equal(detector.sample(.09,at),false);
   assert.equal(detector.sample(.01,1520),false,"a sub-420 ms transient must reset");
-  for(let at=1560;at<2000;at+=40)assert.equal(detector.sample(.09,at),false);
-  assert.equal(detector.sample(.09,2000),true);
-  assert.equal(detector.triggerMs,420);
+  for(let at=1560;at<1880;at+=40)assert.equal(detector.sample(.09,at),false);
+  assert.equal(detector.sample(.09,1880),true);
+  assert.equal(detector.triggerMs,320);
   assert.equal(detector.warmupMs,1200);
-  assert.equal(detector.absoluteThreshold,.055);
-  assert.equal(detector.relativeThreshold,4);
+  assert.equal(detector.absoluteThreshold,.05);
+  assert.equal(detector.relativeThreshold,3.5);
 });
 
 test("a clear near-field voice can interrupt during speaker calibration",()=>{
   const detector=new BargeInDetector();detector.reset(0);
   for(let at=0;at<=120;at+=40)assert.equal(detector.sample(.014,at),false);
-  for(let at=160;at<360;at+=40)assert.equal(detector.sample(.095,at),false);
-  assert.equal(detector.sample(.095,360),true);
+  for(let at=160;at<400;at+=40)assert.equal(detector.sample(.08,at),false);
+  assert.equal(detector.sample(.08,400),true);
 });
 
 test("a short loud sound during calibration does not interrupt",()=>{

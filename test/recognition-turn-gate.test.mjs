@@ -1,10 +1,16 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { RecognitionTurnGate,isIncidentalFillerTranscript,recognitionResumeDelayMs,recognitionSilenceMs } from "../public/recognition-turn-gate.js";
+import { RecognitionTurnGate,isIncidentalFillerTranscript,normalizeLocalAsrTranscript,recognitionResumeDelayMs,recognitionSilenceMs } from "../public/recognition-turn-gate.js";
 
 test("ignores bare ASR hesitation fillers while keeping substantive speech",()=>{
   for(const text of ["嗯","嗯嗯。","呃","啊！","哦",".","。","！？","I.","a","uh","Um.","Hello.","Rent.","제.","I시.","привет"])assert.equal(isIncidentalFillerTranscript(text),true);
   for(const text of ["嗯，我知道了","啊这个可以","哦好的","你好","打开 GitHub","ESP32 怎么用"])assert.equal(isIncidentalFillerTranscript(text),false);
+});
+
+test("removes a hallucinated English word from a clipped short Chinese utterance",()=>{
+  assert.equal(normalizeLocalAsrTranscript("爱mail."),"爱.");
+  assert.equal(normalizeLocalAsrTranscript("AI数字人怎么做"),"AI数字人怎么做");
+  assert.equal(normalizeLocalAsrTranscript("打开 iPhone 设置"),"打开 iPhone 设置");
 });
 
 test("does not commit a hallucinated filler turn",()=>{
