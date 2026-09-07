@@ -15,6 +15,22 @@ test("default interruption waits for sustained near-field speech after speaker w
   assert.equal(detector.relativeThreshold,4);
 });
 
+test("a clear near-field voice can interrupt during speaker calibration",()=>{
+  const detector=new BargeInDetector();detector.reset(0);
+  for(let at=0;at<=120;at+=40)assert.equal(detector.sample(.014,at),false);
+  for(let at=160;at<360;at+=40)assert.equal(detector.sample(.095,at),false);
+  assert.equal(detector.sample(.095,360),true);
+});
+
+test("a short loud sound during calibration does not interrupt",()=>{
+  const detector=new BargeInDetector();detector.reset(0);
+  for(let at=0;at<=120;at+=40)detector.sample(.014,at);
+  assert.equal(detector.sample(.1,160),false);
+  assert.equal(detector.sample(.1,280),false);
+  assert.equal(detector.sample(.014,320),false);
+  for(let at=360;at<=900;at+=40)assert.equal(detector.sample(.04,at),false);
+});
+
 test("does not cancel a reply for louder speaker leakage after warmup",()=>{
   const detector=new BargeInDetector();detector.reset(0);
   for(let at=0;at<=1200;at+=40)detector.sample(.014,at);
