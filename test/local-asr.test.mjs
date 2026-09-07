@@ -38,6 +38,7 @@ test("the page prefers local ASR but retains browser fallback",async()=>{
   assert.match(source,/new LocalAsrRecorder/);
   assert.match(source,/fetch\("\/api\/asr\/transcribe"/);
   assert.match(source,/restoreBrowserFallback/);
+  assert.match(source,/if\(speechStartedAt\)\{detector\.hasSpeech=true;detector\.startedAt=Math\.min\(detector\.startedAt,speechStartedAt\)/);
 });
 
 test("the ASR status keeps the configured provider distinct from its upstream",async()=>{
