@@ -23,15 +23,28 @@ export function resampleMono(chunks,inputRate,outputRate=16_000){
 }
 
 export class LocalAsrRecorder{
-  constructor(context,stream){
-    this.context=context;this.stream=stream;this.chunks=[];this.recording=false;
+  constructor(context,stream,{preRollMs=1000}={}){
+    this.context=context;this.stream=stream;this.chunks=[];this.preRoll=[];this.preRollSamples=0;this.recording=false;
+    this.maxPreRollSamples=Math.max(0,Math.round(context.sampleRate*Math.max(0,Number(preRollMs)||0)/1000));
     this.source=context.createMediaStreamSource(stream);
     this.processor=context.createScriptProcessor(2048,1,1);
     this.sink=context.createGain();this.sink.gain.value=0;
-    this.processor.onaudioprocess=event=>{if(this.recording)this.chunks.push(new Float32Array(event.inputBuffer.getChannelData(0)));};
+    this.processor.onaudioprocess=event=>{
+      const chunk=new Float32Array(event.inputBuffer.getChannelData(0));
+      if(this.recording)this.chunks.push(chunk);
+      else if(this.maxPreRollSamples){
+        this.preRoll.push(chunk);this.preRollSamples+=chunk.length;
+        while(this.preRoll.length&&this.preRollSamples-this.preRoll[0].length>=this.maxPreRollSamples)this.preRollSamples-=this.preRoll.shift().length;
+      }
+    };
     this.source.connect(this.processor);this.processor.connect(this.sink);this.sink.connect(context.destination);
   }
-  start(){this.chunks=[];this.recording=true;this.startedAt=performance.now();}
+  start({preRollMs=0}={}){
+    const requestedSamples=Math.max(0,Math.round(this.context.sampleRate*Math.max(0,Number(preRollMs)||0)/1000));
+    let retained=[],samples=0;
+    for(let index=this.preRoll.length-1;index>=0&&samples<requestedSamples;index--){retained.unshift(this.preRoll[index]);samples+=this.preRoll[index].length;}
+    this.chunks=retained;this.preRoll=[];this.preRollSamples=0;this.recording=true;this.startedAt=performance.now()-samples*1000/this.context.sampleRate;
+  }
   stop(){
     this.recording=false;
     const samples=resampleMono(this.chunks,this.context.sampleRate,16_000);this.chunks=[];

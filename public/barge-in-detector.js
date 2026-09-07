@@ -17,6 +17,7 @@ export class BargeInDetector {
     this.baseline=.008;
     this.aboveSince=0;
     this.fastAboveSince=0;
+    this.triggerLeadMs=0;
     this.triggered=false;
   }
 
@@ -31,7 +32,7 @@ export class BargeInDetector {
       const fastThreshold=Math.max(this.fastAbsoluteThreshold,this.baseline*this.fastRelativeThreshold);
       if(at-this.startedAt>=this.fastStartMs&&level>=fastThreshold){
         this.fastAboveSince ||= at;
-        if(at-this.fastAboveSince>=this.fastTriggerMs){this.triggered=true;return true;}
+        if(at-this.fastAboveSince>=this.fastTriggerMs){this.triggered=true;this.triggerLeadMs=at-this.fastAboveSince;return true;}
         return false;
       }
       this.fastAboveSince=0;
@@ -45,7 +46,7 @@ export class BargeInDetector {
     const threshold=Math.max(this.absoluteThreshold,this.baseline*this.relativeThreshold);
     if(level>=threshold){
       this.aboveSince ||= at;
-      if(at-this.aboveSince>=this.triggerMs){this.triggered=true;return true;}
+      if(at-this.aboveSince>=this.triggerMs){this.triggered=true;this.triggerLeadMs=at-this.aboveSince;return true;}
       return false;
     }
     this.aboveSince=0;
