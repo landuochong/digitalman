@@ -1,5 +1,5 @@
 export class BargeInDetector {
-  constructor({warmupMs=1200,triggerMs=320,absoluteThreshold=.05,relativeThreshold=3.5,fastStartMs=140,fastTriggerMs=220,fastAbsoluteThreshold=.07,fastRelativeThreshold=4.5,now=()=>performance.now()}={}){
+  constructor({warmupMs=700,triggerMs=260,absoluteThreshold=.0065,relativeThreshold=2.2,fastStartMs=120,fastTriggerMs=180,fastAbsoluteThreshold=.009,fastRelativeThreshold=2.8,now=()=>performance.now()}={}){
     this.warmupMs=warmupMs;
     this.triggerMs=triggerMs;
     this.absoluteThreshold=absoluteThreshold;
@@ -14,7 +14,7 @@ export class BargeInDetector {
 
   reset(startedAt=this.now()){
     this.startedAt=startedAt;
-    this.baseline=.008;
+    this.baseline=.002;
     this.aboveSince=0;
     this.fastAboveSince=0;
     this.triggerLeadMs=0;
