@@ -22,6 +22,14 @@ export function resampleMono(chunks,inputRate,outputRate=16_000){
   return output;
 }
 
+export function padMono(samples,{sampleRate=16_000,leadingMs=0,trailingMs=0}={}){
+  const source=samples instanceof Float32Array?samples:Float32Array.from(samples||[]);
+  const leading=Math.max(0,Math.round(sampleRate*Math.max(0,Number(leadingMs)||0)/1000));
+  const trailing=Math.max(0,Math.round(sampleRate*Math.max(0,Number(trailingMs)||0)/1000));
+  if(!leading&&!trailing)return source;
+  const padded=new Float32Array(leading+source.length+trailing);padded.set(source,leading);return padded;
+}
+
 export class LocalAsrRecorder{
   constructor(context,stream,{preRollMs=1000}={}){
     this.context=context;this.stream=stream;this.chunks=[];this.preRoll=[];this.preRollSamples=0;this.recording=false;
@@ -45,10 +53,11 @@ export class LocalAsrRecorder{
     for(let index=this.preRoll.length-1;index>=0&&samples<requestedSamples;index--){retained.unshift(this.preRoll[index]);samples+=this.preRoll[index].length;}
     this.chunks=retained;this.preRoll=[];this.preRollSamples=0;this.recording=true;this.startedAt=performance.now()-samples*1000/this.context.sampleRate;
   }
-  stop(){
+  stop({leadingPaddingMs=0,trailingPaddingMs=0}={}){
     this.recording=false;
     const samples=resampleMono(this.chunks,this.context.sampleRate,16_000);this.chunks=[];
-    return{blob:encodePcm16Wav(samples,16_000),durationMs:Math.round(samples.length/16)};
+    const padded=padMono(samples,{leadingMs:leadingPaddingMs,trailingMs:trailingPaddingMs});
+    return{blob:encodePcm16Wav(padded,16_000),durationMs:Math.round(samples.length/16),paddedDurationMs:Math.round(padded.length/16)};
   }
   cancel(){this.recording=false;this.chunks=[];}
   close(){this.cancel();this.processor.disconnect();this.source.disconnect();this.sink.disconnect();}

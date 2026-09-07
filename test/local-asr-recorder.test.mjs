@@ -30,3 +30,10 @@ test("ordinary recording does not inherit idle pre-roll",()=>{
   feed(context.processor,3200,.1);recorder.start();feed(context.processor,1600,.2);
   assert.equal(recorder.stop().durationMs,100);
 });
+
+test("ASR boundary padding preserves captured duration and pads the WAV",async()=>{
+  const context=fakeContext(),recorder=new LocalAsrRecorder(context,{});recorder.start();feed(context.processor,1600,.2);
+  const result=recorder.stop({leadingPaddingMs:120,trailingPaddingMs:180});
+  assert.equal(result.durationMs,100);assert.equal(result.paddedDurationMs,400);
+  assert.equal((await result.blob.arrayBuffer()).byteLength,44+6400*2);
+});
