@@ -16,7 +16,7 @@ test("main voice page offers real and anime modes in one conversation",async()=>
   assert.match(html,/id="personaVoice"/);
   assert.match(html,/人物设置/);
   assert.match(app,/lumi-avatar-mode/);
-  assert.match(html,/app\.js\?v=20260828-anime-looks-v4/);
+  assert.match(html,/app\.js\?v=20260907-barge-preroll-v5/);
   assert.doesNotMatch(html,/绯音手工重建版/);
   assert.match(html,/aria-label="开始通话" aria-pressed="false"/);
   assert.match(app,/avatarRuntimeVersion="20260815-real-character-v46"/);
