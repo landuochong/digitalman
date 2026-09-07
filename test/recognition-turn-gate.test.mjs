@@ -3,8 +3,8 @@ import assert from "node:assert/strict";
 import { RecognitionTurnGate,isIncidentalFillerTranscript,recognitionResumeDelayMs,recognitionSilenceMs } from "../public/recognition-turn-gate.js";
 
 test("ignores bare ASR hesitation fillers while keeping substantive speech",()=>{
-  for(const text of ["嗯","嗯嗯。","呃","啊！","哦",".","。","！？","I.","a","uh","Um."])assert.equal(isIncidentalFillerTranscript(text),true);
-  for(const text of ["嗯，我知道了","啊这个可以","哦好的","你好"])assert.equal(isIncidentalFillerTranscript(text),false);
+  for(const text of ["嗯","嗯嗯。","呃","啊！","哦",".","。","！？","I.","a","uh","Um.","Hello.","Rent.","제.","I시.","привет"])assert.equal(isIncidentalFillerTranscript(text),true);
+  for(const text of ["嗯，我知道了","啊这个可以","哦好的","你好","打开 GitHub","ESP32 怎么用"])assert.equal(isIncidentalFillerTranscript(text),false);
 });
 
 test("does not commit a hallucinated filler turn",()=>{

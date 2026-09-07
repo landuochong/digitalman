@@ -20,7 +20,13 @@ export function isIncidentalFillerTranscript(text){
   const value=raw.replace(/[\s，。！？、,.!?；;：:～~]/g,"");
   return !value
     ||/^(?:嗯+|啊+|呃+|额+|唔+|哦+|哼+)$/.test(value)
-    ||/^(?:i|a|the|you|uh|um|hmm)$/i.test(value);
+    ||/^(?:i|a|the|you|uh|um|hmm)$/i.test(value)
+    // The local multilingual recognizer occasionally switches language on
+    // room noise or a clipped Chinese syllable. This zh-CN conversation may
+    // contain English inside a Chinese sentence, but a standalone foreign
+    // transcript is not a valid turn.
+    ||/[\u3040-\u30ff\uac00-\ud7af\u0400-\u04ff\u0600-\u06ff]/u.test(value)
+    ||(!/[\u3400-\u9fff]/u.test(value)&&/^[a-z'’-]+$/i.test(value));
 }
 
 export class RecognitionTurnGate {

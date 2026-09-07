@@ -265,8 +265,7 @@ const backchannelChoices={
   thinking:["我想想。"],
   happy:["好呀。"],
   excited:["真的呀？","哇。"],
-  greeting:["嗨。","我在。"],
-  neutral:["我在听。"]
+  greeting:["嗨。","我在。"]
 };
 
 function stableChoice(values,text){
@@ -332,7 +331,7 @@ export function buildResponsiveBackchannel(message,state=inferCompanionState(mes
   if(["clap","cheer","surprise"].includes(state.action))return {text:stableChoice(backchannelChoices.excited,input),emotion:"excited",action:"happy"};
   if(!/[？?]|为什么|怎么|如何|怎么办|帮我|建议|推荐|分析/.test(input)&&isPositiveLifeShare(input))return{text:"真好。",emotion:"happy",action:"nod"};
   if(["happy","shy","nod","thumbs_up","wave_approval"].includes(state.action))return {text:stableChoice(backchannelChoices.happy,input),emotion:"happy",action:"nod"};
-  return {text:stableChoice(backchannelChoices.neutral,input),emotion:state.emotion||"calm",action:"nod"};
+  return null;
 }
 
 // This is deliberately narrower than the first acknowledgement. Repeating a

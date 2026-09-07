@@ -22,6 +22,7 @@ from scipy.signal import resample
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DH_LIVE_ROOT = PROJECT_ROOT / "experiments" / "dh-live"
+MOUTH_MASK_FILENAME = "mouth_masks-v1.npz"
 sys.path.insert(0, str(DH_LIVE_ROOT))
 
 from mini_live.render import create_render_model  # noqa: E402
@@ -159,7 +160,11 @@ class PersistentDINetRenderer:
         resolved = asset.resolve()
         signature = tuple(
             (item.stat().st_size, item.stat().st_mtime_ns)
-            for item in (resolved / "01.mp4", resolved / "combined_data.json.gz")
+            for item in (
+                resolved / "01.mp4",
+                resolved / "combined_data.json.gz",
+                resolved / MOUTH_MASK_FILENAME,
+            )
         )
         if resolved == self.asset and signature == self.asset_signature:
             return False
@@ -181,6 +186,10 @@ class PersistentDINetRenderer:
         self.standard_size = self.model_size * 2
         self.opengl = create_render_model((self.standard_size, self.standard_size), floor=20)
         self.frames, self.crop_rects, self.standard_images, self.standard_vertices = self._read_video()
+        mask_data = np.load(self.asset / MOUTH_MASK_FILENAME)
+        self.mouth_masks = [mask for mask in mask_data["masks"][: len(self.frames)]]
+        if len(self.mouth_masks) != len(self.frames):
+            raise ValueError(f"逐帧嘴部遮罩数量与素材不一致：{self.asset}")
         self.matrices = [
             np.asarray(item["points"][:16], dtype=np.float32).reshape(4, 4) * 2
             for item in self.json_data
@@ -190,24 +199,22 @@ class PersistentDINetRenderer:
         return True
 
     def _restore_source_lip_color(
-        self, face: np.ndarray, source: np.ndarray, profile: dict
+        self, face: np.ndarray, source: np.ndarray, profile: dict,
+        authored_mask: np.ndarray,
     ) -> np.ndarray:
         """Keep DINet geometry but move lip chroma back toward the source video.
 
         DINet tends to turn warm coral lips grey-purple.  Restrict the correction
-        to red/magenta pixels in a feathered mouth ellipse so teeth, mouth cavity,
-        skin and the rest of the face retain the neural renderer's luminance.
+        to red/magenta pixels inside the authored per-frame lip mask so teeth,
+        mouth cavity, skin and the rest of the face retain renderer luminance.
         """
         strength = profile["lipColorStrength"]
         if strength <= 0:
             return face
 
         height, width = face.shape[:2]
-        yy, xx = np.ogrid[:height, :width]
-        ellipse = (
-            ((xx - width * profile["lipColorCenterX"]) / (width * 0.31)) ** 2
-            + ((yy - height * profile["lipColorCenterY"]) / (height * 0.105)) ** 2
-        ) <= 1.0
+        yy, _ = np.ogrid[:height, :width]
+        lip_support = authored_mask > 18
 
         source_hsv = cv2.cvtColor(source[:, :, :3], cv2.COLOR_RGB2HSV)
         source_lab = cv2.cvtColor(source[:, :, :3], cv2.COLOR_RGB2LAB)
@@ -217,7 +224,7 @@ class PersistentDINetRenderer:
         source_hue = source_hsv[:, :, 0].astype(np.float32)
         source_signed_hue = np.where(source_hue > 90, source_hue - 180, source_hue)
         source_lips = (
-            ellipse
+            lip_support
             & (np.abs(source_signed_hue) <= 18)
             & (source_hsv[:, :, 1] >= 70)
             & (source_hsv[:, :, 2] <= 245)
@@ -232,7 +239,7 @@ class PersistentDINetRenderer:
         face_hue = face_hsv[:, :, 0].astype(np.float32)
         face_signed_hue = np.where(face_hue > 90, face_hue - 180, face_hue)
         generated_lips = (
-            ellipse
+            lip_support
             & (np.abs(face_signed_hue) <= 25)
             & (face_hsv[:, :, 1] >= 50)
             & (face_hsv[:, :, 2] <= 238)
@@ -290,7 +297,8 @@ class PersistentDINetRenderer:
         return cv2.cvtColor(face_hsv, cv2.COLOR_HSV2RGB)
 
     def _composite_narrow_mouth(
-        self, face: np.ndarray, source: np.ndarray, profile: dict
+        self, face: np.ndarray, source: np.ndarray, profile: dict,
+        authored_mask: np.ndarray,
     ) -> np.ndarray:
         """Compress only the synthesized mouth and feather it into the source face."""
         height, width = face.shape[:2]
@@ -310,17 +318,17 @@ class PersistentDINetRenderer:
         compressed = cv2.resize(
             patch, (compressed_width, compressed_height), interpolation=cv2.INTER_LINEAR
         )
+        mask_patch = authored_mask[y0:y1, x0:x1]
+        compressed_mask = cv2.resize(
+            mask_patch, (compressed_width, compressed_height), interpolation=cv2.INTER_LINEAR
+        )
         paste_x0 = int(round(center_x - compressed_width / 2))
         paste_x1 = paste_x0 + compressed_width
         paste_y0 = int(round(center_y - compressed_height / 2))
         paste_y1 = paste_y0 + compressed_height
 
-        local_y, local_x = np.ogrid[:compressed_height, :compressed_width]
-        normalized_x = (local_x - (compressed_width - 1) / 2) / max(compressed_width * 0.5, 1)
-        normalized_y = (local_y - (compressed_height - 1) / 2) / max(compressed_height * 0.5, 1)
-        distance = normalized_x**2 + normalized_y**2
-        alpha = np.clip((1.0 - distance) / 0.34, 0.0, 1.0)
-        alpha = cv2.GaussianBlur(alpha.astype(np.float32), (0, 0), sigmaX=1.4)
+        alpha = compressed_mask.astype(np.float32) / 255.0
+        alpha = cv2.GaussianBlur(alpha, (0, 0), sigmaX=1.0)
         alpha = np.clip(alpha, 0.0, 1.0)[..., None]
 
         output = source[:, :, :3].copy()
@@ -439,6 +447,7 @@ class PersistentDINetRenderer:
             self.standard_images,
             self.standard_vertices,
             self.matrices,
+            self.mouth_masks,
         ):
             values.extend(values[::-1])
 
@@ -574,6 +583,11 @@ class PersistentDINetRenderer:
                     source = cv2.resize(
                         self.standard_images[frame_index], (self.model_size, self.model_size)
                     )
+                    authored_mouth_mask = cv2.resize(
+                        self.mouth_masks[frame_index],
+                        (self.model_size, self.model_size),
+                        interpolation=cv2.INTER_AREA,
+                    )
                     source_tensor = (
                         torch.from_numpy(source / 255.0)
                         .float()
@@ -584,9 +598,13 @@ class PersistentDINetRenderer:
                     result = self.render_model.interface(source_tensor, gl_tensor)
                     face = result.squeeze(0).cpu().permute(1, 2, 0).numpy()
                     face = np.clip(face * 255.0, 0, 255).astype(np.uint8)
-                    face = self._restore_source_lip_color(face, source, profile)
+                    face = self._restore_source_lip_color(
+                        face, source, profile, authored_mouth_mask
+                    )
                     face = self._restore_upper_teeth(face, profile)
-                    face = self._composite_narrow_mouth(face, source, profile)
+                    face = self._composite_narrow_mouth(
+                        face, source, profile, authored_mouth_mask
+                    )
                     x0, y0, x1, y1 = self.crop_rects[frame_index]
                     frame = self.frames[frame_index][:, :, :3].copy()
                     frame[y0:y1, x0:x1] = cv2.resize(face, (x1 - x0, y1 - y0))[:, :, :3]

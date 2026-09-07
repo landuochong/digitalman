@@ -1,5 +1,5 @@
 {
-  "version": 2,
+  "version": 3,
   "defaults": {
     "mouthMotionScale": 0.82,
     "mouthWidthScale": 0.88,
@@ -16,14 +16,14 @@
   "characters": {
     "lumi": {
       "mouthMotionScale": 0.79,
-      "mouthWidthScale": 0.94,
+      "mouthWidthScale": 0.9,
       "mouthHeightScale": 0.97,
       "compositeCenterX": 0.5,
       "compositeCenterY": 0.39,
       "lipColorCenterX": 0.512,
       "lipColorCenterY": 0.481,
-      "lipColorStrength": 0.82,
-      "upperLipColorStrength": 0,
+      "lipColorStrength": 0.88,
+      "upperLipColorStrength": 0.78,
       "lipBrightnessOffset": 8,
       "teethStrength": 0.38
     },

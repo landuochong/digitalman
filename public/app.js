@@ -1,7 +1,7 @@
 import { ConversationActionScheduler, continueActionPlan, preparedPreviewCanStart } from "./conversation-actions.js?v=20260813-restrained-action-v21";
 import { buildWav2LipPlaybackMessage } from "./avatar-protocol.js?v=20260813-video-handoff-v11";
 import { AvatarStreamTurn } from "./avatar-stream-turn.js?v=20260813-video-handoff-v11";
-import { RecognitionTurnGate,isIncidentalFillerTranscript,recognitionResumeDelayMs,recognitionSilenceMs } from "./recognition-turn-gate.js?v=20260831-noise-text-v25";
+import { RecognitionTurnGate,isIncidentalFillerTranscript,recognitionResumeDelayMs,recognitionSilenceMs } from "./recognition-turn-gate.js?v=20260831-zh-language-gate-v26";
 import { SpeechEndpointDetector } from "./speech-endpoint-detector.js?v=20260814-noise-endpoint-v1";
 import { BargeInDetector } from "./barge-in-detector.js?v=20260814-complete-reply-v3";
 import { ReplyTranscript } from "./reply-transcript.js?v=20260813-spoken-history-v1";

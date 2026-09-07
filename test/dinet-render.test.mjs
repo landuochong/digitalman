@@ -70,11 +70,11 @@ test("browser and server re-export the same real action catalog",async()=>{
 });
 
 test("resolves one bounded mouth profile per real character",()=>{
-  assert.equal(REAL_MOUTH_PROFILE_VERSION,2);
+  assert.equal(REAL_MOUTH_PROFILE_VERSION,3);
   assert.deepEqual(resolveRealMouthProfile("lumi"),{
-    mouthMotionScale:0.79,mouthWidthScale:0.94,mouthHeightScale:0.97,
+    mouthMotionScale:0.79,mouthWidthScale:0.9,mouthHeightScale:0.97,
     compositeCenterX:0.5,compositeCenterY:0.39,
-    lipColorCenterX:0.512,lipColorCenterY:0.481,lipColorStrength:0.82,upperLipColorStrength:0,
+    lipColorCenterX:0.512,lipColorCenterY:0.481,lipColorStrength:0.88,upperLipColorStrength:0.78,
     lipBrightnessOffset:8,teethStrength:0.38
   });
   assert.deepEqual(resolveRealMouthProfile("xiaotao"),{
@@ -85,6 +85,18 @@ test("resolves one bounded mouth profile per real character",()=>{
   });
   assert.notEqual(resolveRealMouthProfile("lumi"),resolveRealMouthProfile("xiaotao"));
   assert.ok(Object.isFrozen(resolveRealMouthProfile("lumi")));
+});
+
+test("DINet uses authored per-frame mouth masks for both real characters",async()=>{
+  const worker=await readFile(new URL("../scripts/dinet_worker.py",import.meta.url),"utf8");
+  const builder=await readFile(new URL("../scripts/build_dinet_mouth_masks.py",import.meta.url),"utf8");
+  assert.match(worker,/MOUTH_MASK_FILENAME = "mouth_masks-v1\.npz"/);
+  assert.match(worker,/self\.mouth_masks\[frame_index\]/);
+  assert.match(worker,/authored_mouth_mask = cv2\.resize/);
+  assert.match(worker,/lip_support = authored_mask > 18/);
+  assert.doesNotMatch(worker,/\(\(xx - width \* profile\["lipColorCenterX"\]\)/);
+  assert.match(builder,/CHARACTER_PREFIXES = \("bedroom_", "xiaotao_"\)/);
+  assert.match(builder,/connectedComponentsWithStats/);
 });
 
 test("bedroom wave repair uses only clean low-amplitude hand frames",async()=>{
