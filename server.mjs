@@ -28,6 +28,8 @@ import { summarizeLatencySamples, traceToLatencySample } from "./src/chat-latenc
 import { LatencySampleStore } from "./src/latency-sample-store.mjs";
 import { readLocalAsrHealth, transcribeLocalAudio } from "./src/local-asr.mjs";
 import { createCodexSessionProxy } from "./src/codex-session-proxy.mjs";
+import { ConversationSessionStore, TURN_STATES } from "./src/conversation-session.mjs";
+import { ModelProviderAdapter, ProviderRegistry } from "./src/model-providers.mjs";
 
 function loadLocalEnv() {
   try {
@@ -94,6 +96,7 @@ const voiceCatalog=buildVoiceCatalog({
 });
 const mime = { ".html": "text/html; charset=utf-8", ".css": "text/css; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".json": "application/json; charset=utf-8", ".svg": "image/svg+xml", ".png": "image/png", ".wasm": "application/wasm", ".mp4": "video/mp4", ".vrm": "model/gltf-binary", ".gz": "application/gzip" };
 const recentChatTraces=[];
+const conversationSessions=new ConversationSessionStore({limit:64});
 const miniMaxSpeechCache=new BoundedAsyncCache(64);
 const miniMaxPcmCache=new BoundedAsyncCache(64);
 let chatTraceSequence=0;
@@ -170,12 +173,18 @@ function prewarmMiniMaxPcm({text,voice,emotion,signal}){
 
 function startChatTrace(endpoint,{ message,history,userId,persona,fastSpeech,realAvatarCharacter }){
   const startedMs=performance.now();
+  const id=`chat-${Date.now()}-${++chatTraceSequence}`;
+  const sessionId=String(userId||"anonymous").slice(0,96)||"anonymous";
+  conversationSessions.interruptSession(sessionId,"superseded-by-new-turn");
+  const turn=conversationSessions.start({sessionId,turnId:id});
+  turn.transition(TURN_STATES.THINKING,{endpoint,provider:apiKey?provider:"demo"});
   const trace={
-    id:`chat-${Date.now()}-${++chatTraceSequence}`,
+    id,
     startedAt:new Date().toISOString(),endpoint,provider:apiKey?provider:"demo",
     input:{message,userId:String(userId||"").slice(0,24),history,persona,fastSpeech:Boolean(fastSpeech),realAvatarCharacter:normalizeRealAvatarCharacter(realAvatarCharacter)},
     memories:[],companionState:null,status:"started",timings:{}
   };
+  Object.defineProperty(trace,"_turn",{value:turn});
   Object.defineProperty(trace,"_startedMs",{value:startedMs});
   recentChatTraces.push(trace);
   if(recentChatTraces.length>20)recentChatTraces.splice(0,recentChatTraces.length-20);
@@ -185,6 +194,7 @@ function startChatTrace(endpoint,{ message,history,userId,persona,fastSpeech,rea
 function finishChatTrace(trace,result,source){
   trace.finishedAt=new Date().toISOString();trace.status="done";trace.source=source;trace.final=result;
   trace.timings.totalMs=Math.round(performance.now()-trace._startedMs);
+  if(trace._turn&&!trace._turn.signal.aborted){trace._turn.complete({source});trace.session=trace._turn.snapshot();conversationSessions.finish(trace._turn.turnId);}
 }
 
 function prepareAvatarAction(action,trace,character="lumi"){
@@ -283,6 +293,7 @@ async function miniMaxChatStream(message, history, persona, memories, companionS
     if(backchannelTimer)clearTimeout(backchannelTimer);
     if(longWaitBackchannelTimer)clearTimeout(longWaitBackchannelTimer);
     ttsLease?.cancel();
+    trace._turn?.interrupt("client-disconnected");trace.session=trace._turn?.snapshot();conversationSessions.finish(trace._turn?.turnId);
     trace.status="cancelled";trace.finishedAt=new Date().toISOString();trace.timings.cancelledMs=Math.round(performance.now()-trace._startedMs);
   },{once:true});
   const requestPayload=buildMiniMaxChatPayload({ model:miniMaxTextModel, message, history, stream:true, persona, memories, companionState });
@@ -465,10 +476,7 @@ async function chat(req, res) {
   trace.timings.contextMs=Math.round(performance.now()-trace._startedMs);
   trace.memories=memories;trace.companionState=companionState;
   const groundedResult=companionIdentityReply(message,persona) || companionPresenceReply(message,persona);
-  const result = groundedResult
-    || (provider === "minimax" && apiKey ? await miniMaxChat(message,history,persona,memories,companionState,trace)
-    : provider === "openai" && apiKey ? await openAIChat(message,history,data.userId,persona,memories,companionState)
-    : demoReply(message,persona));
+  const result = groundedResult || await llmProviders.invoke(apiKey?provider:"demo",{message,history,userId:data.userId,persona,memories,companionState,trace});
   finishChatTrace(trace,result,groundedResult?"grounded":apiKey?provider:"demo");
   json(res, 200, { ...result, mode:apiKey ? provider : "demo" });
   void memoryStore.remember(data.userId,message);
@@ -502,10 +510,9 @@ async function chatStream(req, res) {
     void memoryStore.updateCompanionState(data.userId,groundedResult.emotion);
     return;
   }
-  if (provider === "minimax" && apiKey) return miniMaxChatStream(message, history, persona, memories, companionState, data.userId, res, Boolean(data.fastSpeech),Boolean(data.responsiveSpeech),Boolean(data.prewarmPcm),String(data.voice||""),trace,realAvatarCharacter);
-  const result = provider === "openai" && apiKey
-    ? await openAIChat(message, history, data.userId, persona, memories,companionState)
-    : demoReply(message, persona);
+  const activeProvider=apiKey?provider:"demo";
+  if(llmStreamProviders.get(activeProvider)?.supports("streamReply"))return llmStreamProviders.invoke(activeProvider,{message,history,persona,memories,companionState,userId:data.userId,res,fastSpeech:Boolean(data.fastSpeech),responsiveSpeech:Boolean(data.responsiveSpeech),prewarmPcm:Boolean(data.prewarmPcm),voice:String(data.voice||""),trace,realAvatarCharacter});
+  const result = await llmProviders.invoke(activeProvider,{message,history,userId:data.userId,persona,memories,companionState,trace});
   if(shouldPrepareAvatarAction(result.action,{fastSpeech:data.fastSpeech}))prepareAvatarAction(result.action,trace,realAvatarCharacter);
   res.writeHead(200, { "content-type":"text/event-stream; charset=utf-8", "cache-control":"no-cache, no-transform" });
   sendEvent(res, "meta", { emotion:result.emotion, action:result.action, mode:apiKey ? provider : "demo", traceId:trace.id });
@@ -522,33 +529,39 @@ async function speech(req, res) {
   const data = await body(req);
   const input = String(data.text || "").trim().slice(0, 1800);
   if (!input) return json(res, 400, { error: "语音内容不能为空" });
-  if (provider === "minimax") {
-    const selectedVoice=voiceCatalog.resolve(data.voice);
-    const cacheKey=miniMaxSpeechCacheKey({text:input,voice:selectedVoice,emotion:data.emotion});
+  const result=await ttsProviders.invoke(provider,{text:input,voice:data.voice,emotion:data.emotion});
+  res.writeHead(200,{"content-type":result.contentType,"content-length":result.audio.length,"cache-control":"no-store",...(result.cache?{"x-speech-cache":result.cache}:{})});
+  res.end(result.audio);
+}
+
+const asrProviders=new ProviderRegistry("transcribe").register(new ModelProviderAdapter({
+  id:"local_sherpa",capabilities:{transcribe:true},handlers:{transcribe:({audio,language})=>transcribeLocalAudio(audio,{baseUrl:localAsrBaseUrl,path:localAsrPath,language})}
+}));
+
+const llmProviders=new ProviderRegistry("reply")
+  .register(new ModelProviderAdapter({id:"demo",capabilities:{reply:true},handlers:{reply:({message,persona})=>demoReply(message,persona)}}))
+  .register(new ModelProviderAdapter({id:"openai",capabilities:{reply:true},handlers:{reply:input=>openAIChat(input.message,input.history,input.userId,input.persona,input.memories,input.companionState)}}))
+  .register(new ModelProviderAdapter({id:"minimax",capabilities:{reply:true},handlers:{reply:input=>miniMaxChat(input.message,input.history,input.persona,input.memories,input.companionState,input.trace)}}));
+
+const llmStreamProviders=new ProviderRegistry("streamReply")
+  .register(new ModelProviderAdapter({id:"minimax",capabilities:{streamReply:true},handlers:{streamReply:input=>miniMaxChatStream(input.message,input.history,input.persona,input.memories,input.companionState,input.userId,input.res,input.fastSpeech,input.responsiveSpeech,input.prewarmPcm,input.voice,input.trace,input.realAvatarCharacter)}}));
+
+const ttsProviders=new ProviderRegistry("synthesize")
+  .register(new ModelProviderAdapter({id:"minimax",capabilities:{synthesize:true},handlers:{synthesize:async({text,voice,emotion})=>{
+    const selectedVoice=voiceCatalog.resolve(voice),cacheKey=miniMaxSpeechCacheKey({text,voice:selectedVoice,emotion});
     const cached=miniMaxSpeechCache.getOrCreate(cacheKey,async()=>{
-      const response = await fetch(`${miniMaxTtsBaseUrl}/t2a_v2`, {
-        method:"POST",
-        headers:{ authorization:`Bearer ${apiKey}`, "content-type":"application/json" },
-        body:JSON.stringify(buildMiniMaxSpeechPayload({ model:miniMaxTtsModel, voice:selectedVoice, text:input, emotion:data.emotion }))
-      });
-      const payload = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(payload?.base_resp?.status_msg || `MiniMax 语音接口失败 (${response.status})`);
+      const response=await fetch(`${miniMaxTtsBaseUrl}/t2a_v2`,{method:"POST",headers:{authorization:`Bearer ${apiKey}`,"content-type":"application/json"},body:JSON.stringify(buildMiniMaxSpeechPayload({model:miniMaxTtsModel,voice:selectedVoice,text,emotion}))});
+      const payload=await response.json().catch(()=>({}));
+      if(!response.ok)throw new Error(payload?.base_resp?.status_msg||`MiniMax 语音接口失败 (${response.status})`);
       return decodeMiniMaxAudio(payload);
     });
-    const audio = await cached.value;
-    res.writeHead(200, { "content-type":"audio/wav", "content-length":audio.length, "cache-control":"no-store", "x-speech-cache":cached.hit?"hit":"miss" });
-    return res.end(audio);
-  }
-  const selectedVoice=voiceCatalog.resolve(data.voice);
-  const response = await fetch("https://api.openai.com/v1/audio/speech", {
-    method: "POST",
-    headers: { authorization: `Bearer ${apiKey}`, "content-type": "application/json" },
-    body: JSON.stringify(buildSpeechPayload({ model:ttsModel, voice:selectedVoice, text:input }))
-  });
-  if (!response.ok) throw new Error(`OpenAI 语音接口失败 (${response.status})`);
-  res.writeHead(200, { "content-type": "audio/mpeg", "cache-control": "no-store" });
-  res.end(Buffer.from(await response.arrayBuffer()));
-}
+    return{audio:await cached.value,contentType:"audio/wav",cache:cached.hit?"hit":"miss"};
+  }}}))
+  .register(new ModelProviderAdapter({id:"openai",capabilities:{synthesize:true},handlers:{synthesize:async({text,voice})=>{
+    const response=await fetch("https://api.openai.com/v1/audio/speech",{method:"POST",headers:{authorization:`Bearer ${apiKey}`,"content-type":"application/json"},body:JSON.stringify(buildSpeechPayload({model:ttsModel,voice:voiceCatalog.resolve(voice),text}))});
+    if(!response.ok)throw new Error(`OpenAI 语音接口失败 (${response.status})`);
+    return{audio:Buffer.from(await response.arrayBuffer()),contentType:"audio/mpeg"};
+  }}}));
 
 async function staticFile(req, res) {
   const urlPath = decodeURIComponent(new URL(req.url, "http://localhost").pathname);
@@ -632,7 +645,7 @@ export const server = http.createServer(async (req, res) => {
     }
     if(pathname==="/api/asr/transcribe"&&req.method==="POST"){
       if(asrProvider!=="local_sherpa")return json(res,503,{error:"本地语音识别尚未启用"});
-      const audio=await binaryBody(req,8_000_000),result=await transcribeLocalAudio(audio,{baseUrl:localAsrBaseUrl,path:localAsrPath,language:String(req.headers["x-asr-language"]||"zh-CN")});
+      const audio=await binaryBody(req,8_000_000),result=await asrProviders.invoke(asrProvider,{audio,language:String(req.headers["x-asr-language"]||"zh-CN")});
       return json(res,200,result);
     }
     const pcmMatch=pathname.match(/^\/api\/dinet\/pcm\/([a-f0-9]{32})$/);
@@ -782,7 +795,7 @@ export const server = http.createServer(async (req, res) => {
       const speculativeState=speculativeStreams.get(sessionId);if(speculativeState){for(const wake of speculativeState.waiters)wake();speculativeState.waiters.clear();speculativeStreams.delete(sessionId);}
       return json(res, 200, dinetStreams.cancel(sessionId));
     }
-    if (req.method === "GET" && pathname === "/api/health") return json(res, 200, { ok:true, mode:apiKey ? provider : "demo", memory:true, continuity:true, textModel:provider === "minimax" ? miniMaxTextModel : textModel, ttsModel:provider === "minimax" ? miniMaxTtsModel : ttsModel, chatWarmupEnabled:miniMaxChatWarmup,asr:{provider:asrProvider,fallback:localAsrFallback} });
+    if (req.method === "GET" && pathname === "/api/health") return json(res, 200, { ok:true, mode:apiKey ? provider : "demo", memory:true, continuity:true, textModel:provider === "minimax" ? miniMaxTextModel : textModel, ttsModel:provider === "minimax" ? miniMaxTtsModel : ttsModel, chatWarmupEnabled:miniMaxChatWarmup,providers:{asr:asrProviders.describe(),llm:llmProviders.describe(),tts:ttsProviders.describe()},asr:{provider:asrProvider,fallback:localAsrFallback} });
     if (req.method === "GET" && pathname === "/api/voices") return json(res,200,{provider:voiceCatalog.provider,defaultKey:voiceCatalog.defaultKey,voices:voiceCatalog.voices});
     if (req.method === "GET" && pathname === "/api/chat/debug/recent") {
       if (!isLoopbackAddress(req.socket.remoteAddress)) return json(res,403,{error:"聊天诊断记录仅允许本机访问"});

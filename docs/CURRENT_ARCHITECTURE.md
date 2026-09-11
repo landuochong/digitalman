@@ -44,10 +44,16 @@
 | `src/memory.mjs` | 本地结构化记忆、召回、去重、衰减和清理 |
 | `src/voices.mjs` | TTS 音色白名单、默认项和自定义音色配置解析 |
 | `src/local-asr.mjs` | Node 到本地 AgentVoiceGateway 的纯 ASR 代理与健康检查 |
+| `src/conversation-session.mjs` | 供应商无关的会话轮次状态、严格事件序号、统一取消信号和播放提交标记 |
+| `src/model-providers.mjs` | STT、LLM、流式 LLM 和 TTS 的统一能力接口与 Provider Registry |
 | `src/dinet-render.mjs` | DINet worker 生命周期、串行任务、缓存和临时文件 |
 | `scripts/dinet_worker.py` | Audio2BlendShape、OpenGL 提示图、DINet 重绘和封装 |
 
 所有本地模型、动作上传和诊断接口只允许回环地址访问。外部供应商 Key 从 `.env` 读取，不返回浏览器。
+
+服务端不再由 HTTP 路由直接选择各模型实现。ASR、非流式/流式 LLM 和 TTS 都通过能力注册表调用；MiniMax、OpenAI、Sherpa 和 demo 只是当前注册的实现。新增供应商时应实现对应能力，不应继续在路由中增加供应商条件分支。
+
+每个聊天请求建立一个 `ConversationTurn`。当前聊天路由使用 `idle → thinking → completed`，状态模型同时为后续媒体适配预留 `preparing_speech` 和 `speaking`；打断和失败是终态。轮次事件统一携带 `sessionId`、`turnId`、严格递增 `sequence`、状态和相对耗时。新轮次会取消同一匿名用户尚未结束的旧轮次，异步供应商和后续媒体层可共享同一个 `AbortSignal`，避免迟到任务进入新轮次。
 
 ## 4. 聊天请求结构
 
