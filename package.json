@@ -6,6 +6,8 @@
   "scripts": {
     "start": "exec node server.mjs",
     "dev": "exec node --watch-path=server.mjs --watch-path=src server.mjs",
+    "setup:asr": "./scripts/setup_local_asr.sh",
+    "start:asr": "./scripts/start_local_asr.sh",
     "test": "node --test test/*.test.mjs",
     "test:live": "node scripts/live_smoke.mjs",
     "audit:real-actions": "node scripts/audit_real_action_frames.mjs",

@@ -7,7 +7,7 @@
 ## 1. 主链路
 
 ```text
-浏览器 PCM 采集 + 本地 VAD → Sherpa-ONNX/SenseVoice / Web Speech 降级 / 文字输入
+浏览器 PCM 采集 + 本地 VAD → 仓库内独立 Sherpa-ONNX/SenseVoice / Web Speech 降级 / 文字输入
   → POST /api/chat/stream
   → 人物设定标准化
   → 召回相关长期记忆和连续状态
@@ -43,7 +43,7 @@
 | `src/companion.mjs` | 人物提示词、上下文清理、回复正文清理、情绪和动作推断 |
 | `src/memory.mjs` | 本地结构化记忆、召回、去重、衰减和清理 |
 | `src/voices.mjs` | TTS 音色白名单、默认项和自定义音色配置解析 |
-| `src/local-asr.mjs` | Node 到本地 AgentVoiceGateway 的纯 ASR 代理与健康检查 |
+| `src/local-asr.mjs` | Node 到仓库内独立 SenseVoice 服务的纯 ASR 代理与健康检查 |
 | `src/conversation-session.mjs` | 供应商无关的会话轮次状态、严格事件序号、统一取消信号和播放提交标记 |
 | `src/model-providers.mjs` | STT、LLM、流式 LLM 和 TTS 的统一能力接口与 Provider Registry |
 | `src/dinet-render.mjs` | DINet worker 生命周期、串行任务、缓存和临时文件 |
@@ -195,9 +195,9 @@ DINet 动作素材采用“提前切换、单套常驻”，不缓存多套完�
 
 同一轮回答跨句使用相同动作时，worker 使用上一真实分片结束后保存的下一源帧，覆盖浏览器在 TTS 时长未知时给出的文字估算偏移。动作素材不同时不再混合两张完整画面：旧 4 帧渐变会把位置略有差异的黑发、手臂和衣袖同时显示，形成头发虚影和瞬时黑块。播放器会先等待新视频首帧解码完成，再原子切换到新动作；各动作首尾均回到共享自然站姿，因此无需用双轮廓换取连续性。
 
-默认连续通话已经切换到本地 Sherpa-ONNX/SenseVoice。页面复用原有带回声消除、降噪和自动增益的麦克风流，本地 VAD 检测到有效人声后的 560 毫秒静音边界便停止本轮采集；录音在浏览器重采样为 16 kHz 单声道 PCM WAV，通过同源 `/api/asr/transcribe` 上传。Node 再以 multipart 转发到 AgentVoiceGateway 的无副作用 `/api/asr/transcribe`，该接口不会解释控制意图、执行小车命令或转发微信。识别完成后文字进入原有 MiniMax、TTS、DINet 和动作链路，回答播放完继续自动聆听；人物说话期间仍沿用本地能量插话检测。
+默认连续通话使用本仓库独立的 Sherpa-ONNX/SenseVoice 服务。页面复用原有带回声消除、降噪和自动增益的麦克风流，本地 VAD 检测到有效人声后的 560 毫秒静音边界便停止本轮采集；录音在浏览器重采样为 16 kHz 单声道 PCM WAV，通过同源 `/api/asr/transcribe` 上传。Node 再以 multipart 转发到本机 8010 端口的纯 ASR 接口。该服务直接依赖 `sherpa-onnx`，不再导入 WALL-E、AgentVoiceGateway 或 xiaozhi-server。识别完成后文字进入原有 MiniMax、TTS、DINet 和动作链路，回答播放完继续自动聆听；人物说话期间仍沿用本地能量插话检测。
 
-页面启动时先查询 `/api/asr/status`。只有 Gateway 健康检查成功才接管通话按钮；否则保留 Web Speech 降级链。一次本地识别请求失败且 `LOCAL_ASR_BROWSER_FALLBACK=1` 时会释放本地麦克风和 AudioContext，再恢复浏览器识别按钮，避免两个识别器同时占用音频。降级识别仍使用 `continuous=false`：浏览器给出 `isFinal=true` 后立即提交；临时转写由本地 VAD 和最多 90 毫秒的最终修正窗口收尾。
+页面启动时先查询 `/api/asr/status`。只有本地 ASR 健康检查成功才接管通话按钮；否则保留 Web Speech 降级链。一次本地识别请求失败且 `LOCAL_ASR_BROWSER_FALLBACK=1` 时会释放本地麦克风和 AudioContext，再恢复浏览器识别按钮，避免两个识别器同时占用音频。降级识别仍使用 `continuous=false`：浏览器给出 `isFinal=true` 后立即提交；临时转写由本地 VAD 和最多 90 毫秒的最终修正窗口收尾。
 
 流式真人分片采用显式音频能力协商。点击开始通话后，父页面先解锁共享 `AudioContext`，人物 iframe 再回报 `pcm-ready`；只有两项同时成立，`/api/dinet/speech-stream` 才设置 `externalAudio=true`，worker 输出 `-an` 的纯 H.264 MP4，声音由分片对应的 PCM 按 Web Audio 绝对时钟连续播放。不满足协商条件时仍生成带 AAC 的完整 MP4，保证不支持或未解锁 Web Audio 的环境有声音。`videoOnly` 进入渲染缓存键，纯视频与带声回退不会交叉命中。800 毫秒实测首段由 160,286 字节降到 152,046 字节（约 5.1%），`ffprobe` 确认纯视频只有 H.264，回退文件仍有 H.264+AAC；神经推理占主耗时，因此本轮不宣称显著降低渲染时间，收益是去除无用音轨、减少传输并消除双音频轨潜在干扰。
 

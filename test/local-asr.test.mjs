@@ -45,3 +45,12 @@ test("the ASR status keeps the configured provider distinct from its upstream",a
   const source=await readFile(new URL("../server.mjs",import.meta.url),"utf8");
   assert.match(source,/provider:asrProvider,upstreamProvider:health\.provider,ready:health\.ready/);
 });
+
+test("the bundled local ASR does not depend on WALL-E or xiaozhi",async()=>{
+  const source=await readFile(new URL("../tools/local_asr/app.py",import.meta.url),"utf8");
+  assert.match(source,/import sherpa_onnx/);
+  assert.doesNotMatch(source,/sys\.path|core\.providers|agent_voice_gateway/);
+  const startScript=await readFile(new URL("../scripts/start_local_asr.sh",import.meta.url),"utf8");
+  assert.match(startScript,/tools\.local_asr\.app:app/);
+  assert.doesNotMatch(startScript,/WALL-E|xiaozhi/);
+});
