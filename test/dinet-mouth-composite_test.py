@@ -87,6 +87,49 @@ class MouthCoverageTest(unittest.TestCase):
         output_l = cv2.cvtColor(out, cv2.COLOR_RGB2LAB)[:, :, 0].astype(float)
         self.assertLessEqual(np.max(np.abs(original_l - output_l)), 2)
 
+    def test_reference_lips_restore_warmth_without_flattening_shading(self):
+        source = np.full_like(self.source, [190, 165, 150])
+        face = source.copy()
+        mask = np.zeros_like(self.mask)
+        mask[72:106, 55:130] = 255
+        source[76:84, 65:120] = [190, 105, 100]
+        source[94:102, 65:120] = [205, 110, 70]
+        face[76:84, 65:120] = [165, 85, 110]
+        face[94:102, 65:120] = [175, 95, 120]
+        face[97:102, 65:120] += 8  # Existing lip highlight must survive.
+        profile = dict(lipColorStrength=.9, lipIdentityStrength=1,
+                       upperLipColorStrength=0, lipBrightnessOffset=0,
+                       lipColorCenterY=.481)
+        out = restore_color(None, face, source, profile, mask)
+        before = cv2.cvtColor(face, cv2.COLOR_RGB2LAB).astype(float)
+        after = cv2.cvtColor(out, cv2.COLOR_RGB2LAB).astype(float)
+        target = cv2.cvtColor(source, cv2.COLOR_RGB2LAB).astype(float)
+        for y in [80, 95]:
+            self.assertLess(np.linalg.norm(after[y,90,1:]-target[y,90,1:]),
+                            np.linalg.norm(before[y,90,1:]-target[y,90,1:]))
+        self.assertGreater(after[99,90,0], after[95,90,0])
+        # Different original upper/lower colours are still different after correction.
+        self.assertGreater(after[95,90,2], after[80,90,2])
+        np.testing.assert_array_equal(out[:60], face[:60])
+
+    def test_reference_colour_gradient_and_cavity_are_preserved(self):
+        source = np.full_like(self.source, [190, 165, 150])
+        face = source.copy()
+        mask = np.zeros_like(self.mask);mask[72:110, 55:130] = 255
+        source[92:103, 60:125] = [190, 90, 105]
+        source[92:103, 82:103] = [210, 110, 65]  # Warm centre, pinker edges.
+        face[95:107, 60:125] = [170, 85, 110]  # Lip moved down as it opens.
+        face[85:91, 75:110] = [20, 15, 15]
+        face[87:89, 85:100] = [220, 220, 215]
+        profile = dict(lipColorStrength=.9, lipIdentityStrength=1,
+                       upperLipColorStrength=0, lipBrightnessOffset=0,
+                       lipColorCenterY=.481)
+        out = restore_color(None, face, source, profile, mask)
+        lab = cv2.cvtColor(out, cv2.COLOR_RGB2LAB)
+        self.assertGreater(int(lab[99,92,2]), int(lab[99,68,2]) + 3)
+        np.testing.assert_array_equal(out[85:91, 75:110], face[85:91, 75:110])
+        np.testing.assert_array_equal(out[:60], face[:60])
+
 
 class TeethDetailTest(unittest.TestCase):
     def setUp(self):

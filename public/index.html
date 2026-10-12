@@ -10,9 +10,11 @@
   <link rel="stylesheet" href="/voice.css?v=20260813-video-handoff-v11" />
   <link rel="stylesheet" href="/realistic.css" />
   <link rel="stylesheet" href="/mode-switch.css?v=20260814-action-test-v1" />
+  <link rel="stylesheet" href="/view-mode.css?v=20261012-v3" />
 </head>
-<body>
+<body data-view-mode="chat">
   <main class="shell">
+
     <section class="avatar-panel" aria-label="露米">
       <div class="brand"><span class="brand-mark">L</span><span>露米</span></div>
       <div class="status"><i></i><span id="statusText">正在醒来…</span></div>
@@ -83,6 +85,10 @@
 
     <section class="chat-panel voice-panel">
       <header><div><p class="eyebrow">VOICE COMPANION</p><h1>点一下，和我说话</h1></div><div class="header-actions">
+    <nav class="view-mode-switch" aria-label="页面模式">
+      <button type="button" data-view-mode="chat" aria-pressed="true">聊天</button>
+      <button type="button" data-view-mode="frame" aria-pressed="false">相框</button>
+    </nav>
         <details class="action-test-panel" id="actionTestPanel" hidden>
           <summary>动作测试</summary>
           <div class="action-test-buttons" role="group" aria-label="临时动作测试">
@@ -136,6 +142,7 @@
       </form>
     </section>
   </main>
-  <script type="module" src="/app.js?v=20260907-barge-boundary-v8"></script>
+  <script type="module" src="/app.js?v=20261012-album-v3"></script>
+  <script type="module" src="/view-mode.js?v=20261012-v3"></script>
 </body>
 </html>

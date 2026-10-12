@@ -12,6 +12,7 @@ const RULES = Object.freeze({
   lipColorCenterX:[0.42, 0.58],
   lipColorCenterY:[0.40, 0.58],
   lipColorStrength:[0, 1],
+  lipIdentityStrength:[0, 1],
   upperLipColorStrength:[0, 1],
   lipBrightnessOffset:[-12, 20],
   teethStrength:[0, 1],

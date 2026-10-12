@@ -2,6 +2,7 @@ import { continuousVideoOriginAfterGap,continuousVideoSync,scheduledAudioAhead,v
 import { loadPcmBytes } from "../pcm-segment.js?v=20260813-binary-pcm-v1";
 import { bufferedVideoAhead,removableVideoRange,splitFragmentedMp4 } from "../fmp4-segment.js?v=20260813-fmp4-v3";
 import { scheduleAfterMediaReady } from "../media-audio-gate.js?v=20260813-media-audio-gate-v1";
+import { AlbumMotion } from "../album-motion.js?v=20261012-motion-v3";
 
 const idleVideo = document.querySelector("#avatar-idle");
 const speechVideo = document.querySelector("#avatar-speech");
@@ -15,7 +16,7 @@ const requestedCharacter=new URLSearchParams(location.search).get("character");
 const activeCharacter=characterProfiles[requestedCharacter]?requestedCharacter:"lumi";
 const characterProfile=characterProfiles[activeCharacter],characterRoot=`/dh-live/actions/${characterProfile.idleAsset}`;
 idleVideo.poster=`${characterRoot}/thumbnail.jpg`;
-idleVideo.src=`${characterRoot}/${characterProfile.idleVideo}`;
+idleVideo.src=`${characterRoot}/01.mp4`;
 stage.style.backgroundImage=`url("${characterRoot}/thumbnail.jpg")`;
 document.body.dataset.character=activeCharacter;
 let playToken = 0;
@@ -49,7 +50,31 @@ const STREAM_GAP_IDLE_MS=320;
 const RESUMABLE_PREVIEW_ACTIONS=new Set(["thinking","caring","nod","happy","idle"]);
 
 function notify(type, data = {}) { parent.postMessage({ type, ...data }, location.origin); }
-function keepIdlePlaying(){idleVideo.play().catch(()=>{});}
+const motionPlanResponse=await fetch("/album-motion-plan.json?v=20261012-motion-v3");
+if(!motionPlanResponse.ok)throw new Error("动作配置加载失败");
+const motionPlan=await motionPlanResponse.json();
+const albumMotion=new AlbumMotion({
+  sourceFrames:motionPlan.characters[activeCharacter].sourceFrames,
+  seek:async seconds=>{
+    idleVideo.pause();
+    if(idleVideo.readyState<2){
+      await new Promise(resolve=>{
+        let timer;const done=()=>{clearTimeout(timer);idleVideo.removeEventListener('loadeddata',done);idleVideo.removeEventListener('error',done);resolve();};
+        idleVideo.addEventListener('loadeddata',done,{once:true});idleVideo.addEventListener('error',done,{once:true});timer=setTimeout(done,2000);
+      });
+    }
+    if(idleVideo.readyState<2||Math.abs(idleVideo.currentTime-seconds)<.001)return;
+    await new Promise(resolve=>{
+      let timer;const done=()=>{clearTimeout(timer);idleVideo.removeEventListener('seeked',done);resolve();};
+      idleVideo.addEventListener('seeked',done,{once:true});timer=setTimeout(done,200);
+      idleVideo.currentTime=seconds;
+    });
+  },
+  show:()=>{speechVideo.classList.remove('active');for(const video of stage.querySelectorAll('.speech-segment'))video.classList.remove('active');},
+  onState:value=>{document.body.dataset.albumState=value;}
+});
+function keepIdlePlaying(){void albumMotion.freeze();}
+function completeAlbumSegment(item){albumMotion.complete(item.playbackSequence, item.motionEndFrame);}
 function supportsFragmentedVideo(){return typeof MediaSource!=="undefined"&&MediaSource.isTypeSupported?.('video/mp4; codecs="avc1.64001f"')===true;}
 function stopFragmentedPlayback(){
   const playback=fragmentedPlayback;fragmentedPlayback=null;fragmentedPlaybackPromise=null;fragmentedPlaybackGeneration++;fragmentedAppendChain=Promise.resolve();
@@ -112,31 +137,8 @@ function clearWaitingPreview({revealIdle=true}={}){
 }
 
 async function showWaitingPreview(data){
-  if(!data.url||segmentPlaying||externalSegmentsPending||segmentsPreparing)return;
-  clearWaitingPreview({revealIdle:false});
-  const video=document.createElement("video");
-  video.className="avatar-layer speech-segment waiting-preview";video.playsInline=true;video.muted=true;video.loop=data.loop!==false;video.preload="auto";video.src=data.url;
-  video.dataset.action=String(data.action||"");video.dataset.purpose=String(data.purpose||"reply");video.dataset.overlaySpeech=String(data.overlaySpeech===true);
-  waitingPreview=video;stage.append(video);
-  try{
-    await video.play();await waitForFirstVideoFrame(video);
-    if(waitingPreview!==video)return;
-    const previous=activeSegment;activeSegment=video;video.classList.add("active");
-    if(previous&&previous!==video){previous.classList.remove("active");setTimeout(()=>{previous.pause();previous.remove();},180);}
-    notify("wav2lip-preview-started",{action:data.action,currentTime:video.currentTime,purpose:data.purpose||"reply"});
-    video.onended=()=>{
-      if(waitingPreview!==video)return;
-      clearWaitingPreview();
-      notify("wav2lip-preview-ended",{action:data.action,purpose:data.purpose||"reply",durationMs:Math.round(video.duration*1000)||0});
-    };
-    const durationMs=Math.max(0,Number(data.durationMs)||0);
-    if(durationMs)waitingPreviewTimer=setTimeout(()=>{
-      waitingPreviewTimer=0;
-      if(waitingPreview!==video)return;
-      clearWaitingPreview();
-      notify("wav2lip-preview-ended",{action:data.action,purpose:data.purpose||"reply",durationMs});
-    },durationMs);
-  }catch{if(waitingPreview===video)clearWaitingPreview();}
+  // Listening and thinking remain a still image, including unsolicited previews.
+  notify("wav2lip-preview-ended",{action:data.action,purpose:data.purpose||"reply",durationMs:0});
 }
 
 function canResumeWaitingPreview(video){
@@ -299,7 +301,7 @@ async function playFragmentedSegment(item,token){
       notify("wav2lip-started",{requestId:item.requestId,sequence:item.playbackSequence,firstFrameMs:0,handoffLateMs:Math.round(Math.max(0,(streamAudioContext.currentTime-item.audioStart)*1000)),continuousVideo:true,resumedFromGap});
     }
     const remainingMs=Math.max(0,(item.audioEnd-streamAudioContext.currentTime)*1000);if(remainingMs)await new Promise(resolve=>setTimeout(resolve,remainingMs));
-    if(token===playToken&&!item.cancelled)notify("wav2lip-ended",{requestId:item.requestId,streamId:item.segment?.id,sequence:item.segment?.sequence,playbackSequence:item.playbackSequence,continuousVideo:true});
+    if(token===playToken&&!item.cancelled){completeAlbumSegment(item);notify("wav2lip-ended",{requestId:item.requestId,streamId:item.segment?.id,sequence:item.segment?.sequence,playbackSequence:item.playbackSequence,continuousVideo:true});}
   }catch{if(token===playToken)notify("wav2lip-error",{requestId:item.requestId,streamId:item.segment?.id,sequence:item.segment?.sequence,playbackSequence:item.playbackSequence,error:"continuous-media-unavailable"});}
   finally{
     forgetStreamItem(item);externalSegmentsPending=Math.max(0,externalSegmentsPending-1);
@@ -321,6 +323,7 @@ async function waitForFirstVideoFrame(video){
 function revealSegment(item,video){
   const sequence=item.playbackSequence;
   if(sequence<activeSegmentSequence)return false;
+  albumMotion.begin();
   const previous=activeSegment;activeSegment=video;activeSegmentSequence=sequence;
   video.classList.add("active");
   requestAnimationFrame(()=>{if(previous&&previous!==video){
@@ -358,7 +361,7 @@ async function playExternalSegment(item,token){
     if(revealSegment(item,video))notify("wav2lip-started",{requestId:item.requestId,sequence,firstFrameMs,handoffLateMs});
     const remainingMs=Math.max(0,(item.audioEnd-streamAudioContext.currentTime)*1000);
     if(remainingMs)await new Promise(resolve=>setTimeout(resolve,remainingMs));
-    if(token===playToken&&!item.cancelled)notify("wav2lip-ended",{requestId:item.requestId,streamId:item.segment?.id,sequence:item.segment?.sequence,playbackSequence:sequence});
+    if(token===playToken&&!item.cancelled){completeAlbumSegment(item);notify("wav2lip-ended",{requestId:item.requestId,streamId:item.segment?.id,sequence:item.segment?.sequence,playbackSequence:sequence});}
   }catch{if(token===playToken)notify("wav2lip-error",{requestId:item.requestId,streamId:item.segment?.id,sequence:item.segment?.sequence,playbackSequence:sequence});}
   finally{
     forgetStreamItem(item);externalSegmentsPending=Math.max(0,externalSegmentsPending-1);
@@ -401,7 +404,7 @@ async function playQueuedSegment(){
     revealSegment(item,video);
     notify("wav2lip-started",{requestId:item.requestId});
     await new Promise((resolve,reject)=>{video.onended=resolve;video.onerror=reject;});
-    if(!item.cancelled)notify("wav2lip-ended",{requestId:item.requestId});
+    if(!item.cancelled){completeAlbumSegment(item);notify("wav2lip-ended",{requestId:item.requestId});}
   }catch{notify("wav2lip-error",{requestId:item.requestId});}
   finally{
     forgetStreamItem(item);segmentPlaying=false;
@@ -420,8 +423,11 @@ function scheduleIdleReveal(delayMs=120,idleTimeMs=null){
     if(segmentPlaying||externalSegmentsPending||segmentsPreparing||segmentQueue.length||!streamEnded)return;
     const previous=activeSegment,preview=waitingPreview;activeSegment=null;waitingPreview=null;
     clearTimeout(waitingPreviewTimer);waitingPreviewTimer=0;
-    keepIdlePlaying();
+    previous?.pause();
+    const token=playToken;
+    if(!await albumMotion.settle()||token!==playToken)return;
     requestAnimationFrame(()=>{
+      if(token!==playToken||segmentPlaying||externalSegmentsPending||segmentsPreparing||segmentQueue.length||!streamEnded)return;
       previous?.classList.remove("active");previous?.pause();previous?.remove();
       if(preview&&preview!==previous){preview.pause();preview.remove();}
       stopFragmentedPlayback();
@@ -440,7 +446,7 @@ function scheduleStreamGapReveal(delayMs=STREAM_GAP_IDLE_MS){
     if(token!==playToken||streamEnded||segmentPlaying||externalSegmentsPending||segmentsPreparing||segmentQueue.length)return;
     const previous=activeSegment;if(!previous)return;
     const sourceTime=Math.max(0,Number(fragmentedPlayback?.video?.currentTime||previous.currentTime)||0);
-    const preview=canResumeWaitingPreview(waitingPreview)?waitingPreview:null;
+    const preview=null;
     if(preview)await preview.play().catch(()=>{});else keepIdlePlaying();
     if(token!==playToken||streamEnded||segmentPlaying||externalSegmentsPending||segmentsPreparing||segmentQueue.length||activeSegment!==previous)return;
     activeSegment=preview;
@@ -457,8 +463,8 @@ function scheduleStreamGapReveal(delayMs=STREAM_GAP_IDLE_MS){
 
 async function revealAlignedIdle(token) {
   if (token !== playToken) return false;
-  speechVideo.classList.remove("active");
-  keepIdlePlaying();
+  if(!await albumMotion.settle())return false;
+  if (token !== playToken) return false;
   return true;
 }
 
@@ -476,6 +482,7 @@ window.addEventListener("message", async event => {
   if(event.data?.type==="wav2lip-cancel"){cancelStreamRequest(event.data.requestId);return;}
   if (event.data?.type === "wav2lip-clear") { playToken++; document.body.classList.remove("loading"); playIdle(); return; }
   if(event.data?.type==="wav2lip-enqueue"&&event.data.url){
+    albumMotion.cancel();
     clearTimeout(idleRevealTimer);idleRevealTimer=0;clearTimeout(streamGapIdleTimer);streamGapIdleTimer=0;streamEnded=false;
     document.body.classList.add("loading");cancelledRequests.delete(event.data.requestId);const item=preloadSegment({...event.data,playbackSequence:nextPlaybackSequence++,receivedAt:performance.now()});streamItems.set(item.requestId,item);
     const token=playToken,pcmBytesPromise=loadPcmBytes(item.segment?.audio).catch(()=>null);
@@ -500,13 +507,16 @@ window.addEventListener("message", async event => {
     if(!segmentPlaying&&!externalSegmentsPending&&!segmentsPreparing&&!segmentQueue.length)scheduleIdleReveal(pendingIdleLingerMs,pendingIdleTimeMs);return;
   }
   const isSilentAction=event.data?.type==="wav2lip-action";
+  if(isSilentAction){notify("wav2lip-ended",{requestId:event.data.requestId});return;}
   if ((event.data?.type !== "wav2lip-play"&&!isSilentAction) || !event.data.url) return;
   const token = ++playToken;
+  albumMotion.cancel();
   document.body.classList.add("loading"); state.textContent = isSilentAction?"正在回应":"开始播放";
   speechVideo.classList.remove("active");
   speechVideo.pause(); speechVideo.loop = false; speechVideo.muted = isSilentAction; speechVideo.src = event.data.url;
   speechVideo.onended = async () => {
     if (token !== playToken) return;
+    albumMotion.complete(0,event.data.motionEndFrame);
     if (!await revealAlignedIdle(token)) return;
     notify("wav2lip-ended", { requestId:event.data.requestId });
     document.body.classList.remove("loading");
@@ -521,6 +531,7 @@ window.addEventListener("message", async event => {
       await speechVideo.play();
       if (token !== playToken) return;
       speechVideo.classList.add("active");
+      albumMotion.begin();
       document.body.classList.remove("needs-play"); state.onclick = null;
       notify("wav2lip-started", { requestId:event.data.requestId });
     } catch {
@@ -533,6 +544,5 @@ window.addEventListener("message", async event => {
 });
 
 idleVideo.addEventListener("canplay", () => notify("dh-live-ready"), { once:true });
-idleVideo.addEventListener("pause",()=>{if(!document.hidden&&!activeSegment&&streamEnded)queueMicrotask(keepIdlePlaying);});
 document.addEventListener("visibilitychange",()=>{if(!document.hidden&&!activeSegment)keepIdlePlaying();});
 playIdle();

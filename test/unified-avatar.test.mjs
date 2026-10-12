@@ -16,10 +16,10 @@ test("main voice page offers real and anime modes in one conversation",async()=>
   assert.match(html,/id="personaVoice"/);
   assert.match(html,/人物设置/);
   assert.match(app,/lumi-avatar-mode/);
-  assert.match(html,/app\.js\?v=20260907-barge-boundary-v8/);
+  assert.match(html,/app\.js\?v=20261012-album-v3/);
   assert.doesNotMatch(html,/绯音手工重建版/);
   assert.match(html,/aria-label="开始通话" aria-pressed="false"/);
-  assert.match(app,/avatarRuntimeVersion="20260815-real-character-v46"/);
+  assert.match(app,/avatarRuntimeVersion="20261012-album-v3"/);
   assert.match(app,/from "\.\/real-action-catalog\.js\?v=20260815-shared-real-actions-v1"/);
   assert.match(app,/lumi-real-character/);
   assert.match(app,/avatarRuntimeUrl\("\/wav2lip-avatar\/avatar\.html",\{character:realAvatarCharacter\}\)/);
@@ -33,7 +33,7 @@ test("main voice page offers real and anime modes in one conversation",async()=>
   assert.match(app,/action=\$\{encodeURIComponent\(action\)\}&character=\$\{encodeURIComponent\(realAvatarCharacter\)\}/);
   assert.match(app,/conversationActions\.planForSentence\(data\.text,sentenceIndex,data\.action\|\|currentAction,currentEmotion\)/);
   assert.match(app,/const sentenceHasSpeech=true/);
-  assert.match(app,/behavior\?\.explicit===true\?silentNeuralAction\(action\):null/);
+  assert.match(app,/const silentAction=null/);
   assert.match(app,/if\(!reusedBackchannel\)enqueueSpeech\(speechText,currentEmotion,batch,sentencePlan,streamTurn,\{ttsConnectionId,onStart:\(\)=>\{if\(sentenceHasSpeech\)reportSpeechStart\("formal"\);revealSentence\(transcriptIndex\);\}/);
   assert.match(app,/new BackchannelGate\(\{delayMs:BACKCHANNEL_GRACE_MS/);
   assert.match(app,/new BackchannelPlayback\(data\.text\)/);
@@ -133,7 +133,7 @@ test("user-facing pages hide provider and rendering implementation names",async(
 
 test("real avatar video covers the complete left panel",async()=>{
   const [html,css,script]=await Promise.all([readPublic("wav2lip-avatar/avatar.html"),readPublic("wav2lip-avatar/avatar.css"),readPublic("wav2lip-avatar/avatar.js")]);
-  assert.match(html,/avatar\.css\?v=20260828-shy-overlay-v1/);
+  assert.match(html,/avatar\.css\?v=20261012-frame-contain-v1/);
   assert.match(css,/\.avatar-layer\{[^}]*width:100%;height:100%;object-fit:cover;object-position:center center/);
   assert.match(script,/lumi:\{idleAsset:"bedroom_idle_test",idleVideo:"01-seamless\.mp4/);
   assert.match(script,/xiaotao:\{idleAsset:"xiaotao_idle",idleVideo:"01\.mp4/);
@@ -175,7 +175,7 @@ test("praise has a dedicated anime thumbs-up and a restrained listening nod",asy
   assert.match(app,/realAvatarCharacter==="xiaotao"\?"xiaotao_nod":"bedroom_agree_test"/);
   assert.match(app,/type:"wav2lip-preview-clear"/);
   const realAvatar=await readPublic("wav2lip-avatar/avatar.js");
-  assert.match(realAvatar,/video\.loop=data\.loop!==false/);
+  assert.doesNotMatch(realAvatar,/video\.loop=data\.loop!==false/);
   assert.match(realAvatar,/wav2lip-preview-ended/);
 });
 

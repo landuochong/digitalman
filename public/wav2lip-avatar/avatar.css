@@ -8,3 +8,6 @@ body{display:grid;place-items:center;font-family:-apple-system,BlinkMacSystemFon
 .avatar-layer.waiting-preview[data-overlay-speech="true"]{z-index:3}
 #state{position:absolute;z-index:2;left:50%;bottom:16px;translate:-50% 0;padding:7px 12px;border:0;border-radius:999px;background:rgba(30,24,29,.58);color:#fff;font:12px inherit;backdrop-filter:blur(8px);opacity:0;pointer-events:none;transition:opacity .2s}
 body.needs-play #state{opacity:1;pointer-events:auto;cursor:pointer;background:#b95f5d}
+
+html[data-view-mode="frame"] #stage { background:#e8dfd5 !important; }
+html[data-view-mode="frame"] .avatar-layer { object-fit:contain; }

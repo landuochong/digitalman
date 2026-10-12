@@ -4,6 +4,8 @@
 
 当前实现和模块边界见 [当前架构](docs/CURRENT_ARCHITECTURE.md)，完整调研与实验过程见 [实验日志](docs/EXPERIMENT_LOG.md)。
 
+页面模式、微动作和收尾规则见 [AI 相框播放规则](docs/ALBUM_PLAYBACK.md)；嘴唇覆盖、颜色匹配的原因与修复方法见 [真人口型配置与校准](docs/REAL_AVATAR_MOUTH_CALIBRATION.md)。
+
 ## 当前能力
 
 - 语音优先交互，默认使用仓库内独立的 Sherpa-ONNX/SenseVoice 服务；服务不可用时可回退浏览器识别，也保留文字输入。

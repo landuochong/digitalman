@@ -74,13 +74,13 @@ test("resolves one bounded mouth profile per real character",()=>{
   assert.deepEqual(resolveRealMouthProfile("lumi"),{
     mouthMotionScale:0.79,mouthWidthScale:1,mouthHeightScale:1,
     compositeCenterX:0.5,compositeCenterY:0.39,
-    lipColorCenterX:0.512,lipColorCenterY:0.481,lipColorStrength:0.45,upperLipColorStrength:0,
+    lipColorCenterX:0.512,lipColorCenterY:0.481,lipColorStrength:0.9,lipIdentityStrength:1,upperLipColorStrength:0,
     lipBrightnessOffset:0,teethStrength:0,teethDetailStrength:0.65
   });
   assert.deepEqual(resolveRealMouthProfile("xiaotao"),{
     mouthMotionScale:0.78,mouthWidthScale:1,mouthHeightScale:1,
     compositeCenterX:0.5,compositeCenterY:0.39,
-    lipColorCenterX:0.513,lipColorCenterY:0.457,lipColorStrength:0.45,upperLipColorStrength:0,
+    lipColorCenterX:0.513,lipColorCenterY:0.457,lipColorStrength:0.9,lipIdentityStrength:1,upperLipColorStrength:0,
     lipBrightnessOffset:0,teethStrength:0,teethDetailStrength:0
   });
   assert.notEqual(resolveRealMouthProfile("lumi"),resolveRealMouthProfile("xiaotao"));
@@ -179,7 +179,7 @@ test("switches action silhouettes atomically without full-frame ghosting",async(
   assert.match(source,/self\.visual_turn_frames\[visual_turn_id\] = last_output_frame/);
 });
 
-test("neural avatar keeps a persistent idle layer behind speech", async () => {
+test("neural avatar keeps a static idle layer and settles after speech", async () => {
   const [html, script,styles] = await Promise.all([
     readFile(new URL("../public/wav2lip-avatar/avatar.html", import.meta.url), "utf8"),
     readFile(new URL("../public/wav2lip-avatar/avatar.js", import.meta.url), "utf8"),
@@ -188,7 +188,9 @@ test("neural avatar keeps a persistent idle layer behind speech", async () => {
   assert.match(html, /id="avatar-idle"/);
   assert.match(html, /id="avatar-speech"/);
   assert.match(script, /function keepIdlePlaying\(\)/);
-  assert.doesNotMatch(script, /idleVideo\.pause\(\)|idleVideo\.currentTime\s*=/);
+  assert.match(script, /idleVideo\.pause\(\)/);
+  assert.match(script, /albumMotion\.settle\(\)/);
+  assert.doesNotMatch(html, /muted autoplay loop/);
   assert.match(script, /revealAlignedIdle/);
   assert.match(script, /isSilentAction/);
   assert.match(script, /speechVideo\.muted = isSilentAction/);
@@ -206,7 +208,7 @@ test("neural avatar keeps a persistent idle layer behind speech", async () => {
   assert.match(script,/RESUMABLE_PREVIEW_ACTIONS=new Set\(\["thinking","caring","nod","happy","idle"\]\)/);
   assert.match(script,/function canResumeWaitingPreview\(video\)/);
   assert.match(script,/keepWaitingPreview=previous===waitingPreview&&canResumeWaitingPreview\(previous\)/);
-  assert.match(script,/preview=canResumeWaitingPreview\(waitingPreview\)\?waitingPreview:null/);
+  assert.match(script,/const preview=null/);
   assert.match(script,/notify\(preview\?"wav2lip-gap-preview":"wav2lip-gap-idle"/);
   assert.match(script,/if\(preview&&preview!==previous\)\{preview\.pause\(\);preview\.remove\(\);\}/);
   assert.ok(script.indexOf("clearTimeout(streamGapIdleTimer)")<script.indexOf("streamEnded=false"));

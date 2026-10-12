@@ -21,7 +21,7 @@ const voiceButton = $("#voiceButton"), voicePrompt = $("#voicePrompt"), liveTran
 const digitalHumanFrame = $("#digitalHumanFrame");
 const postClientTiming=createClientTimingReporter();
 const AVATAR_FIRST_SEGMENT_LEAD_MS=240;
-const avatarRuntimeVersion="20260815-real-character-v46";
+const avatarRuntimeVersion="20261012-album-v3";
 const avatarRuntimeUrl=(path,parameters={})=>{
   const url=new URL(path,location.origin);url.searchParams.set("v",avatarRuntimeVersion);
   for(const[key,value]of Object.entries(parameters))if(value!==undefined&&value!==null&&value!=="")url.searchParams.set(key,String(value));
@@ -400,6 +400,7 @@ async function playCloudSpeech(text, emotion, onStart, cancellation) {
 }
 
 async function prepareNeuralSpeech(text, emotion, batch, action="idle") {
+  action="idle";
   const response = await fetch("/api/speech", { method:"POST", headers:{"content-type":"application/json"}, body:JSON.stringify({ text, emotion, voice:voiceProfile }) });
   if (!response.ok) throw new Error("语音生成失败");
   const speechBuffer = await response.arrayBuffer();
@@ -419,8 +420,8 @@ async function prepareNeuralSpeech(text, emotion, batch, action="idle") {
 
 function prepareStreamingNeuralSpeech(text,emotion,batch,behavior={action:"idle"},options={}){
   const pipelineStartedAt=performance.now();
-  const action=typeof behavior==="string"?behavior:behavior?.action||"idle";
-  const frameOffset=typeof behavior==="object"?Math.max(0,Number(behavior?.frameOffset)||0):0;
+  const action="idle";
+  const frameOffset=0;
   const externalAudio=avatarPcmReady&&avatarAudioContext?.state==="running";
   const fragmentedVideo=externalAudio&&avatarFragmentedVideoReady&&continuousVideoExperiment;
   const queue=[],waiters=[];let ended=false,failure=null,firstSegmentObserved=false,firstSegmentReadyAt=null,serverStreamId=null,commitRequested=false,receivedAudioMs=0,expectedAudioMs=0;
@@ -508,7 +509,7 @@ async function playSilentNeuralAction(url,batch){
 
 function prepareSpeechWork(text,emotion,batch,behavior,streamTurn,options={}){
   const action=typeof behavior==="string"?behavior:behavior?.action||"idle";
-  const silentAction=typeof behavior==="object"&&behavior?.explicit===true?silentNeuralAction(action):null;
+  const silentAction=null;
   const visualSentence=streamingAvatarExperiment&&!silentAction&&streamTurn?streamTurn.allocateSentence():null;
   const preparedBehavior=visualSentence?{...(typeof behavior==="object"?behavior:{action}),...visualSentence}:behavior;
   const preparation=streamingAvatarExperiment&&!silentAction

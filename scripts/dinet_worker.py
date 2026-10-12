@@ -239,12 +239,65 @@ class PersistentDINetRenderer:
                           & (face_hsv[:, :, 1] > 50) & (face_lab[:, :, 0] > 75))
         if np.count_nonzero(source_lips) < 20 or np.count_nonzero(generated_lips) < 20:
             return face
-        # Add only the median colour difference, keeping pixel-to-pixel detail.
-        # A bound prevents a poorly detected frame from creating a colour flash.
-        delta = np.clip(
+        # Match upper/lower lips independently: the source's pale upper lip
+        # and warm lower lip must not collapse into one grey-pink colour.
+        identity = profile.get("lipIdentityStrength", 0.0)
+        yy = np.arange(face.shape[0])[:, None]
+        split = face.shape[0] * profile["lipColorCenterY"]
+        global_delta = np.clip(
             np.median(source_lab[source_lips, 1:], axis=0)
             - np.median(face_lab[generated_lips, 1:], axis=0), -12, 12,
         )
+        delta = np.broadcast_to(global_delta, (*face.shape[:2], 2)).copy()
+        lightness = np.zeros(face.shape[:2], dtype=np.float32)
+        if identity > 0:
+            regional = []
+            for half in [yy <= split, yy > split]:
+                reference = source_lips & half & (source_lab[:, :, 0] > 80)
+                generated = generated_lips & half
+                if np.count_nonzero(reference) < 8 or np.count_nonzero(generated) < 8:
+                    regional.append((global_delta, 0.0))
+                    continue
+                ref_median = np.median(source_lab[reference], axis=0)
+                gen_median = np.median(face_lab[generated], axis=0)
+                regional.append((np.clip(ref_median[1:] - gen_median[1:], -24, 24),
+                                 float(np.clip(ref_median[0] - gen_median[0], -8, 8))))
+            # Soft spatial transition avoids a line between the two lip colours.
+            lower = np.clip((yy - split + 2) / 4, 0, 1)[..., None]
+            regional_delta = regional[0][0] * (1 - lower) + regional[1][0] * lower
+            delta = delta * (1 - identity) + regional_delta * identity
+            lightness = ((1 - lower[..., 0]) * regional[0][1]
+                         + lower[..., 0] * regional[1][1]) * identity
+        if identity > 0:
+            # A single median misses the orange centre / softer edges of the
+            # reference lips. Transfer only low-frequency colour along each
+            # lip's thickness; retain generated fine shading and the open cavity.
+            source_base = cv2.GaussianBlur(source_lab, (0, 0), 1.0)
+            face_base = cv2.GaussianBlur(face_lab, (0, 0), 1.0)
+            local_delta = delta.copy()
+            local_light = np.broadcast_to(lightness, face.shape[:2]).copy()
+            for half in [yy <= split, yy > split]:
+                ref_region = source_lips & half
+                gen_region = generated_lips & half
+                for x in np.flatnonzero((np.any(ref_region, axis=0) & np.any(gen_region, axis=0))):
+                    ref_rows = np.flatnonzero(ref_region[:, x])
+                    gen_rows = np.flatnonzero(gen_region[:, x])
+                    if len(ref_rows) < 3 or len(gen_rows) < 2:
+                        continue
+                    # Map lip tissue to lip tissue, without copying a closed
+                    # mouth line over generated teeth or stretching source RGB.
+                    sample_y = np.interp(np.linspace(0, 1, len(gen_rows)),
+                                         np.linspace(0, 1, len(ref_rows)), ref_rows)
+                    target = np.stack([np.interp(sample_y, np.arange(face.shape[0]),
+                                                source_base[:, x, channel])
+                                       for channel in range(3)], axis=1)
+                    difference = target - face_base[gen_rows, x]
+                    local_delta[gen_rows, x] = np.clip(difference[:, 1:], -32, 32)
+                    local_light[gen_rows, x] = np.clip(difference[:, 0], -20, 20)
+            local_delta = cv2.GaussianBlur(local_delta, (5, 5), .8)
+            local_light = cv2.GaussianBlur(local_light, (5, 5), .8)
+            delta = delta * (1 - identity) + local_delta * identity
+            lightness = lightness * (1 - identity) + local_light * identity
         confidence = np.clip((face_lab[:, :, 1] - 132) / 16, 0, 1)
         confidence *= np.clip((face_hsv[:, :, 1].astype(np.float32) - 25) / 50, 0, 1)
         confidence *= np.clip((face_lab[:, :, 0] - 60) / 45, 0, 1)
@@ -255,7 +308,7 @@ class PersistentDINetRenderer:
         alpha = (confidence * soft_support * strengths)[..., None]
         corrected = face_lab.copy()
         corrected[:, :, 1:] += delta
-        corrected[:, :, 0] += profile["lipBrightnessOffset"]
+        corrected[:, :, 0] += profile["lipBrightnessOffset"] + lightness
         rgb = cv2.cvtColor(np.clip(corrected, 0, 255).astype(np.uint8), cv2.COLOR_LAB2RGB)
         return np.clip(face_rgb * (1 - alpha) + rgb * alpha, 0, 255).astype(np.uint8)
 
@@ -411,6 +464,7 @@ class PersistentDINetRenderer:
             "lipColorCenterX": float(np.clip(values.get("lipColorCenterX", 0.50), 0.42, 0.58)),
             "lipColorCenterY": float(np.clip(values.get("lipColorCenterY", 0.49), 0.40, 0.58)),
             "lipColorStrength": float(np.clip(values.get("lipColorStrength", self.lip_color_strength), 0.0, 1.0)),
+            "lipIdentityStrength": float(np.clip(values.get("lipIdentityStrength", 0.0), 0.0, 1.0)),
             "upperLipColorStrength": float(np.clip(values.get("upperLipColorStrength", 0.0), 0.0, 1.0)),
             "lipBrightnessOffset": float(np.clip(values.get("lipBrightnessOffset", 0.0), -12.0, 20.0)),
             "teethStrength": float(np.clip(values.get("teethStrength", 0.0), 0.0, 1.0)),
@@ -442,15 +496,17 @@ class PersistentDINetRenderer:
         return frames, crop_rects, standard_images, standard_vertices
 
     def _make_ping_pong_loop(self) -> None:
-        for values in (
-            self.frames,
-            self.crop_rects,
-            self.standard_images,
-            self.standard_vertices,
-            self.matrices,
-            self.mouth_masks,
-        ):
-            values.extend(values[::-1])
+        plan = json.loads((PROJECT_ROOT / "public/album-motion-plan.json").read_text())
+        indices = next((item["sourceFrames"] for item in plan["characters"].values()
+                        if item["asset"] == self.asset.name), None)
+        for values in (self.frames, self.crop_rects, self.standard_images,
+                       self.standard_vertices, self.matrices, self.mouth_masks):
+            if indices is None:
+                values.extend(values[::-1])
+            else:
+                # One shared timeline keeps rendering and browser settlement aligned.
+                original = values[:]
+                values[:] = [original[index] for index in indices]
 
     @staticmethod
     def _parse_face_vertices(lines):

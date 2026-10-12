@@ -12,7 +12,8 @@
     "upperLipColorStrength": 0,
     "lipBrightnessOffset": 0,
     "teethStrength": 0,
-    "teethDetailStrength": 0
+    "teethDetailStrength": 0,
+    "lipIdentityStrength": 0
   },
   "characters": {
     "lumi": {
@@ -23,11 +24,12 @@
       "compositeCenterY": 0.39,
       "lipColorCenterX": 0.512,
       "lipColorCenterY": 0.481,
-      "lipColorStrength": 0.45,
+      "lipColorStrength": 0.9,
       "upperLipColorStrength": 0,
       "lipBrightnessOffset": 0,
       "teethStrength": 0,
-      "teethDetailStrength": 0.65
+      "teethDetailStrength": 0.65,
+      "lipIdentityStrength": 1
     },
     "xiaotao": {
       "mouthMotionScale": 0.78,
@@ -37,11 +39,12 @@
       "compositeCenterY": 0.39,
       "lipColorCenterX": 0.513,
       "lipColorCenterY": 0.457,
-      "lipColorStrength": 0.45,
+      "lipColorStrength": 0.9,
       "upperLipColorStrength": 0,
       "lipBrightnessOffset": 0,
       "teethStrength": 0,
-      "teethDetailStrength": 0
+      "teethDetailStrength": 0,
+      "lipIdentityStrength": 1
     }
   }
 }

@@ -1,0 +1,71 @@
+.shell { position:relative; padding-top:0; }
+.view-mode-switch { position:relative; z-index:40; display:flex; gap:3px; padding:3px; border:1px solid var(--line); border-radius:24px; background:#fff; flex-shrink:0; }
+.view-mode-switch button { min-width:64px; min-height:36px; border:0; border-radius:22px; padding:0 16px; background:transparent; color:#766b74; font:inherit; font-size:13px; cursor:pointer; }
+.view-mode-switch button[aria-pressed="true"] { background:var(--coral); color:white; }
+.view-mode-switch button:focus-visible { outline:2px solid var(--coral-dark); outline-offset:3px; }
+/* Keep controls in a separate right rail, outside the complete portrait. */
+body[data-view-mode="frame"] .shell { width:min(1000px,100%); padding-top:0; grid-template-columns:minmax(0,1fr) 112px; grid-template-rows:1fr; min-height:0; background:#f6f1eb; }
+body[data-view-mode="frame"] .avatar-panel { grid-area:1 / 1; min-width:0; min-height:0; background:#e8dfd5; }
+body[data-view-mode="frame"] .dh-live-frame { background:#e8dfd5; }
+body[data-view-mode="frame"] .view-mode-switch { flex-direction:column; width:100%; }
+body[data-view-mode="frame"] .view-mode-switch button { min-width:0; min-height:42px; padding:0 8px; }
+body[data-view-mode="frame"] .avatar-mode-switch,
+body[data-view-mode="frame"] .real-character-control,
+body[data-view-mode="frame"] .anime-look-control,
+body[data-view-mode="frame"] .anime-view-controls,
+body[data-view-mode="frame"] .emotion-label,
+body[data-view-mode="frame"] .sound-wave,
+body[data-view-mode="frame"] .avatar-panel .brand,
+body[data-view-mode="frame"] .avatar-panel .status { display:none; }
+body[data-view-mode="frame"] .chat-panel { grid-area:1 / 2; position:relative; padding:20px 12px 28px; background:#f6f1eb; border-left:1px solid var(--line); overflow:visible; justify-content:flex-end; }
+body[data-view-mode="frame"] .messages,
+body[data-view-mode="frame"] .composer { display:none !important; }
+body[data-view-mode="frame"] .voice-stage { flex:0 0 auto; flex-direction:column; gap:18px; padding:16px 0 0; justify-content:flex-end; }
+body[data-view-mode="frame"] .voice-button { width:52px; height:52px; flex:0 0 52px; }
+body[data-view-mode="frame"] .voice-mic { transform:scale(.45); }
+body[data-view-mode="frame"] .voice-ring { inset:-5px; }
+body[data-view-mode="frame"] .ring-two { inset:-9px; }
+body[data-view-mode="frame"] .voice-prompt { margin:0; font-size:12px; line-height:1.6; text-align:center; overflow-wrap:anywhere; }
+body[data-view-mode="frame"] .live-transcript { display:none; }
+body[data-view-mode="frame"] .mode-banner { position:static; transform:none; margin:0; padding:5px 0; width:100%; text-align:center; white-space:normal; overflow-wrap:anywhere; background:transparent; }
+@media(max-width:800px){
+  .view-mode-switch button { min-width:58px; min-height:40px; padding:0 12px; }
+  body[data-view-mode="frame"] .shell { height:calc(100svh - 56px); grid-template-columns:minmax(0,1fr) 88px; }
+  body[data-view-mode="frame"] .chat-panel { padding:16px 8px 24px; }
+}
+@media(max-width:620px){
+  body[data-view-mode="frame"] .shell { height:100svh; }
+  body[data-view-mode="frame"] .chat-panel { padding-bottom:max(20px,env(safe-area-inset-bottom)); }
+}
+
+/* One compact control group in chat; the same controls form the frame rail. */
+body[data-view-mode="chat"] .chat-panel header { flex-wrap:wrap; gap:16px; }
+.header-actions { flex-wrap:wrap; gap:8px; }
+.view-mode-switch { order:0; }
+.persona-settings { order:1; z-index:45; }
+.caption-button { order:2; }
+#clearButton { order:3; }
+.action-test-panel { order:4; }
+body[data-view-mode="frame"] .chat-panel header { display:block; margin-bottom:auto; padding:0; border:0; }
+body[data-view-mode="frame"] .chat-panel header>div:first-child { display:none; }
+body[data-view-mode="frame"] .header-actions { flex-direction:column; align-items:stretch; gap:12px; }
+body[data-view-mode="frame"] .caption-button,
+body[data-view-mode="frame"] .action-test-panel { display:none; }
+body[data-view-mode="frame"] #clearButton { align-self:center; }
+body[data-view-mode="frame"] .persona-settings summary { padding:0 4px; min-height:42px; }
+body[data-view-mode="frame"] .persona-settings form { position:absolute; top:0; right:calc(100% + 18px); left:auto; width:min(292px,calc(100vw - 120px)); max-height:calc(100svh - 180px); overflow-y:auto; }
+.persona-settings form { max-height:calc(100svh - 150px); overflow-y:auto; }
+.appearance-settings { display:flex; flex-direction:column; gap:10px; padding-bottom:14px; margin-bottom:14px; border-bottom:1px solid var(--line); }
+.appearance-settings .avatar-mode-switch,
+.appearance-settings .real-character-control,
+.appearance-settings .anime-look-control,
+.appearance-settings .anime-view-controls { position:static; inset:auto; transform:none; display:flex; margin:0; box-shadow:none; flex-wrap:wrap; }
+.appearance-settings [hidden] { display:none !important; }
+.appearance-settings .avatar-mode-switch button { width:auto; margin:0; background:transparent; color:var(--muted); }
+.appearance-settings .avatar-mode-switch button[aria-pressed="true"] { background:var(--coral); color:white; }
+.appearance-settings .anime-view-controls button { width:auto; margin:0; }
+body[data-view-mode="frame"] .appearance-settings .avatar-mode-switch,
+body[data-view-mode="frame"] .appearance-settings .real-character-control,
+body[data-view-mode="frame"] .appearance-settings .anime-look-control,
+body[data-view-mode="frame"] .appearance-settings .anime-view-controls { display:flex; }
+.appearance-settings select { height:36px; padding:0 24px 0 10px; line-height:normal; font-size:12px; }
