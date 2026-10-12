@@ -1,4 +1,5 @@
 import http from "node:http";
+import { synthesizeLocalSpeech } from "./src/local-tts.mjs";
 import { randomUUID } from "node:crypto";
 import { stat } from "node:fs/promises";
 import { createReadStream, readFileSync } from "node:fs";
@@ -69,6 +70,8 @@ const dinetStreams = new DINetStreamSessionStore({
 });
 const port = Number(process.env.PORT || 3000);
 const provider = process.env.AI_PROVIDER || (process.env.OPENAI_API_KEY ? "openai" : process.env.MINIMAX_API_KEY ? "minimax" : "demo");
+const speechProvider = process.env.TTS_PROVIDER || provider;
+const localTtsBaseUrl = process.env.LOCAL_TTS_BASE_URL || "http://127.0.0.1:8020";
 const apiKey = provider === "minimax" ? process.env.MINIMAX_API_KEY : process.env.OPENAI_API_KEY;
 const textModel = process.env.OPENAI_TEXT_MODEL || "gpt-5.6-luna";
 const ttsModel = process.env.OPENAI_TTS_MODEL || "tts-1";
@@ -89,7 +92,7 @@ const codexSessionProxy=createCodexSessionProxy({
   baseUrl:process.env.CODEX_DIGITALMAN_BRIDGE_URL,
   token:process.env.CODEX_DIGITALMAN_BRIDGE_TOKEN
 });
-const voiceCatalog=buildVoiceCatalog({
+const voiceCatalog=speechProvider==="qwen_local"?{provider:"qwen_local",defaultKey:"reference",voices:[{key:"reference",label:"露米克隆音色",description:"本地参考音色"}],resolve:()=>"reference"}:buildVoiceCatalog({
   provider:apiKey?provider:"demo",
   defaultVoice:provider==="minimax"?miniMaxTtsVoice:ttsVoice,
   customJson:provider==="minimax"?process.env.MINIMAX_TTS_VOICES_JSON:""
@@ -306,9 +309,9 @@ async function miniMaxChatStream(message, history, persona, memories, companionS
   });
   res.flushHeaders?.();
   sendEvent(res, "meta", { ...initialState, mode:"minimax", traceId:trace.id, ...(waitingPreview?{waitingPreview}:{}) });
-  let firstSentenceEmitted=false,backchannel=responsiveSpeech?buildResponsiveBackchannel(message,initialState):null,backchannelWarmup=null;
-  const longWaitBackchannel=responsiveSpeech?buildLongWaitBackchannel(message,initialState):null;
-  if(backchannel&&prewarmPcm){
+  let firstSentenceEmitted=false,backchannel=responsiveSpeech&&speechProvider!=="qwen_local"?buildResponsiveBackchannel(message,initialState):null,backchannelWarmup=null;
+  const longWaitBackchannel=responsiveSpeech&&speechProvider!=="qwen_local"?buildLongWaitBackchannel(message,initialState):null;
+  if(backchannel&&prewarmPcm&&speechProvider==="minimax"){
     const pcmWarmup=prewarmMiniMaxPcm({text:backchannel.text,voice,emotion:backchannel.emotion,signal:client.signal});
     trace.backchannelPcm={voice:pcmWarmup.resolvedVoice,cacheHit:pcmWarmup.hit,status:"preparing"};
     backchannelWarmup=pcmWarmup.value.then(result=>{
@@ -334,7 +337,7 @@ async function miniMaxChatStream(message, history, persona, memories, companionS
     trace.longWaitBackchannel=longWaitBackchannel;
     sendEvent(res,"backchannel",longWaitBackchannel);
   },LONG_WAIT_BACKCHANNEL_OFFER_MS):null;
-  if(fastSpeech&&!client.signal.aborted){
+  if(fastSpeech&&speechProvider==="minimax"&&!client.signal.aborted){
     ttsLease=new PreparedTtsLease({
       prepare:()=>prepareTtsConnection({voice,emotion:initialState.emotion}),
       discard:discardTtsConnection,
@@ -525,11 +528,11 @@ async function chatStream(req, res) {
 }
 
 async function speech(req, res) {
-  if (!apiKey) return json(res, 503, { error: "演示模式使用浏览器本地语音", code: "DEMO_MODE" });
+  if (!apiKey && speechProvider!=="qwen_local") return json(res, 503, { error: "演示模式使用浏览器本地语音", code: "DEMO_MODE" });
   const data = await body(req);
   const input = String(data.text || "").trim().slice(0, 1800);
   if (!input) return json(res, 400, { error: "语音内容不能为空" });
-  const result=await ttsProviders.invoke(provider,{text:input,voice:data.voice,emotion:data.emotion});
+  const result=await ttsProviders.invoke(speechProvider,{text:input,voice:data.voice,emotion:data.emotion});
   res.writeHead(200,{"content-type":result.contentType,"content-length":result.audio.length,"cache-control":"no-store",...(result.cache?{"x-speech-cache":result.cache}:{})});
   res.end(result.audio);
 }
@@ -547,6 +550,7 @@ const llmStreamProviders=new ProviderRegistry("streamReply")
   .register(new ModelProviderAdapter({id:"minimax",capabilities:{streamReply:true},handlers:{streamReply:input=>miniMaxChatStream(input.message,input.history,input.persona,input.memories,input.companionState,input.userId,input.res,input.fastSpeech,input.responsiveSpeech,input.prewarmPcm,input.voice,input.trace,input.realAvatarCharacter)}}));
 
 const ttsProviders=new ProviderRegistry("synthesize")
+  .register(new ModelProviderAdapter({id:"qwen_local",capabilities:{synthesize:true},handlers:{synthesize:({text})=>synthesizeLocalSpeech({text,baseUrl:localTtsBaseUrl})}}))
   .register(new ModelProviderAdapter({id:"minimax",capabilities:{synthesize:true},handlers:{synthesize:async({text,voice,emotion})=>{
     const selectedVoice=voiceCatalog.resolve(voice),cacheKey=miniMaxSpeechCacheKey({text,voice:selectedVoice,emotion});
     const cached=miniMaxSpeechCache.getOrCreate(cacheKey,async()=>{
@@ -668,7 +672,7 @@ export const server = http.createServer(async (req, res) => {
     }
     if (pathname === "/api/dinet/speech-stream" && req.method === "POST") {
       if (!isLoopbackAddress(req.socket.remoteAddress)) return json(res, 403, { error:"本地流式人物接口仅允许本机访问" });
-      if(provider!=="minimax"||!apiKey)return json(res,503,{error:"流式人物当前需要 MiniMax 语音服务"});
+      if(speechProvider!=="qwen_local"&&(speechProvider!=="minimax"||!apiKey))return json(res,503,{error:"当前人物语音需要 MiniMax 或本地 Qwen3-TTS"});
       const data=await body(req),text=String(data.text||"").trim().slice(0,1800);
       if(!text)return json(res,400,{error:"语音内容不能为空"});
       const visualTurnId=/^[0-9a-f-]{8,64}$/i.test(String(data.visualTurnId||""))?String(data.visualTurnId):"";
@@ -700,7 +704,7 @@ export const server = http.createServer(async (req, res) => {
       };
       try{
         const resolvedVoice=voiceCatalog.resolve(data.voice),pcmKey=miniMaxPcmCacheKey({text,voice:resolvedVoice,emotion:data.emotion});
-        const prewarmed=data.preferPrewarmed===true?miniMaxPcmCache.get(pcmKey):null;
+        const prewarmed=speechProvider==="minimax"&&data.preferPrewarmed===true?miniMaxPcmCache.get(pcmKey):null;
         let ttsCacheHit=false,ttsMetrics,cachedPcm=null;
         const appendPcm=pcm=>{
             if(firstAudioAt===null){firstAudioAt=performance.now();const firstAudioMs=Math.round(firstAudioAt-pipelineStartedAt),connectionMs=Math.max(0,Number(ttsFirstAudioStages?.connectionMs)||0),taskMs=Math.max(0,Number(ttsFirstAudioStages?.taskMs)||0),synthesisMs=Math.max(0,Number(ttsFirstAudioStages?.synthesisMs)||0);sendEvent(res,"tts-first-audio",{firstAudioMs,requestSetupMs:Math.max(0,firstAudioMs-connectionMs-taskMs-synthesisMs),connectionMs,taskMs,synthesisMs});}
@@ -712,7 +716,16 @@ export const server = http.createServer(async (req, res) => {
             void renderChain.catch(()=>{});
         };
         if(prewarmed)cachedPcm=await prewarmed.catch(()=>null);
-        if(cachedPcm){
+        if(speechProvider==="qwen_local"){
+          const started=performance.now();
+          const local=await synthesizeLocalSpeech({text,format:"pcm",baseUrl:localTtsBaseUrl,signal:controller.signal});
+          if(controller.signal.aborted)throw Object.assign(new Error("cancelled"),{name:"AbortError"});
+          ttsFirstAudioStages={connectionMs:0,taskMs:0,synthesisMs:local.generationMs};
+          const totalMs=Math.round(performance.now()-started);
+          ttsMetrics={provider:"qwen_local",firstAudioMs:totalMs,totalMs,audioMs:Math.round(local.audio.length/32),streaming:false};
+          appendPcm(local.audio);
+          sendEvent(res,"audio-ready",{audioMs:ttsMetrics.audioMs});
+        }else if(cachedPcm){
           const cached=cachedPcm;ttsCacheHit=true;
           if(controller.signal.aborted)throw Object.assign(new Error("cancelled"),{name:"AbortError"});
           sendEvent(res,"audio-ready",{audioMs:cached.metrics.audioMs});
@@ -795,7 +808,7 @@ export const server = http.createServer(async (req, res) => {
       const speculativeState=speculativeStreams.get(sessionId);if(speculativeState){for(const wake of speculativeState.waiters)wake();speculativeState.waiters.clear();speculativeStreams.delete(sessionId);}
       return json(res, 200, dinetStreams.cancel(sessionId));
     }
-    if (req.method === "GET" && pathname === "/api/health") return json(res, 200, { ok:true, mode:apiKey ? provider : "demo", memory:true, continuity:true, textModel:provider === "minimax" ? miniMaxTextModel : textModel, ttsModel:provider === "minimax" ? miniMaxTtsModel : ttsModel, chatWarmupEnabled:miniMaxChatWarmup,providers:{asr:asrProviders.describe(),llm:llmProviders.describe(),tts:ttsProviders.describe()},asr:{provider:asrProvider,fallback:localAsrFallback} });
+    if (req.method === "GET" && pathname === "/api/health") return json(res, 200, { ok:true, mode:apiKey ? provider : "demo", memory:true, continuity:true, textModel:provider === "minimax" ? miniMaxTextModel : textModel, ttsProvider:speechProvider, ttsModel:speechProvider === "qwen_local" ? "Qwen3-TTS-12Hz-1.7B-Base-bf16" : speechProvider === "minimax" ? miniMaxTtsModel : ttsModel, chatWarmupEnabled:miniMaxChatWarmup,providers:{asr:asrProviders.describe(),llm:llmProviders.describe(),tts:ttsProviders.describe()},asr:{provider:asrProvider,fallback:localAsrFallback} });
     if (req.method === "GET" && pathname === "/api/voices") return json(res,200,{provider:voiceCatalog.provider,defaultKey:voiceCatalog.defaultKey,voices:voiceCatalog.voices});
     if (req.method === "GET" && pathname === "/api/chat/debug/recent") {
       if (!isLoopbackAddress(req.socket.remoteAddress)) return json(res,403,{error:"聊天诊断记录仅允许本机访问"});

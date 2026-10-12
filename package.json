@@ -11,7 +11,8 @@
     "test": "node --test test/*.test.mjs",
     "test:live": "node scripts/live_smoke.mjs",
     "audit:real-actions": "node scripts/audit_real_action_frames.mjs",
-    "audit:xiaotao-motion": ".venv-dh-live/bin/python scripts/validate_xiaotao_motion.py --json"
+    "audit:xiaotao-motion": ".venv-dh-live/bin/python scripts/validate_xiaotao_motion.py --json",
+    "start:tts": "./scripts/start_local_tts.sh"
   },
   "engines": {
     "node": ">=18"

@@ -1,0 +1,5 @@
+# Install into VoiceCloneTTS/.venv-mlx, alongside the tested model environment.
+mlx-audio==0.5.8
+mlx==0.32.3
+fastapi==0.115.6
+uvicorn==0.34.0
