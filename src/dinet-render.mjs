@@ -9,7 +9,7 @@ import { listRealActionAssets, normalizeRealAvatarCharacter, resolveRealSpeechAc
 import { REAL_MOUTH_PROFILE_VERSION, resolveRealMouthProfile } from "./real-mouth-profiles.mjs";
 import { GeneratedMediaCache } from "./generated-media-cache.mjs";
 
-const RENDER_PROFILE = "dinet-mini-25fps-bedroom-background-v16-frame-mouth-masks";
+const RENDER_PROFILE = "dinet-mini-25fps-bedroom-background-v19-local-teeth-detail";
 
 export function buildDINetWorkerCommand(projectRoot) {
   return {

@@ -23,9 +23,13 @@ from scipy.signal import resample
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DH_LIVE_ROOT = PROJECT_ROOT / "experiments" / "dh-live"
 MOUTH_MASK_FILENAME = "mouth_masks-v1.npz"
+# Original MediaPipe outer lip indices, mapped to the packed asset vertices.
+OUTER_LIP_MEDIAPIPE = (61, 146, 91, 181, 84, 17, 314, 405, 321, 375,
+                       291, 409, 270, 269, 267, 0, 37, 39, 40, 185)
 sys.path.insert(0, str(DH_LIVE_ROOT))
 
 from mini_live.render import create_render_model  # noqa: E402
+from mini_live.obj.wrap_utils import index_wrap  # noqa: E402
 from talkingface.data.few_shot_dataset import get_image  # noqa: E402
 from talkingface.model_utils import Audio2bs, LoadAudioModel, device  # noqa: E402
 from talkingface.models.DINet_mini import model_size as network_model_size  # noqa: E402
@@ -190,6 +194,13 @@ class PersistentDINetRenderer:
         self.mouth_masks = [mask for mask in mask_data["masks"][: len(self.frames)]]
         if len(self.mouth_masks) != len(self.frames):
             raise ValueError(f"逐帧嘴部遮罩数量与素材不一致：{self.asset}")
+        # Colour masks miss the dark corners and pale upper lip. Use the
+        # asset's tracked outer contour as an independent coverage guarantee.
+        lip_indices = [index_wrap.index(index) for index in OUTER_LIP_MEDIAPIPE]
+        self.mouth_masks = [
+            self._complete_lip_mask(mask, vertices[lip_indices])
+            for mask, vertices in zip(self.mouth_masks, self.standard_vertices)
+        ]
         self.matrices = [
             np.asarray(item["points"][:16], dtype=np.float32).reshape(4, 4) * 2
             for item in self.json_data
@@ -198,144 +209,93 @@ class PersistentDINetRenderer:
         self.opengl.GenVBO(self._parse_face_vertices(combined["face3D_obj"]))
         return True
 
+    @staticmethod
+    def _complete_lip_mask(mask: np.ndarray, outer_lips: np.ndarray) -> np.ndarray:
+        """Cover the tracked lip contour regardless of its colour or shadow."""
+        contour = np.rint(outer_lips).astype(np.int32)
+        geometry = np.zeros_like(mask)
+        cv2.fillConvexPoly(geometry, cv2.convexHull(contour), 255)
+        geometry = cv2.dilate(geometry, np.ones((5, 5), np.uint8))
+        return np.maximum(mask, geometry)
+
     def _restore_source_lip_color(
         self, face: np.ndarray, source: np.ndarray, profile: dict,
         authored_mask: np.ndarray,
     ) -> np.ndarray:
-        """Keep DINet geometry but move lip chroma back toward the source video.
-
-        DINet tends to turn warm coral lips grey-purple.  Restrict the correction
-        to red/magenta pixels inside the authored per-frame lip mask so teeth,
-        mouth cavity, skin and the rest of the face retain renderer luminance.
-        """
+        """Apply a soft, bounded chroma shift without flattening lip shading."""
         strength = profile["lipColorStrength"]
-        if strength <= 0:
-            return face
-
-        height, width = face.shape[:2]
-        yy, _ = np.ogrid[:height, :width]
-        lip_support = authored_mask > 18
-
-        source_hsv = cv2.cvtColor(source[:, :, :3], cv2.COLOR_RGB2HSV)
-        source_lab = cv2.cvtColor(source[:, :, :3], cv2.COLOR_RGB2LAB)
-        face_hsv = cv2.cvtColor(face[:, :, :3], cv2.COLOR_RGB2HSV)
-        face_lab = cv2.cvtColor(face[:, :, :3], cv2.COLOR_RGB2LAB)
-
-        source_hue = source_hsv[:, :, 0].astype(np.float32)
-        source_signed_hue = np.where(source_hue > 90, source_hue - 180, source_hue)
-        source_lips = (
-            lip_support
-            & (np.abs(source_signed_hue) <= 18)
-            & (source_hsv[:, :, 1] >= 70)
-            & (source_hsv[:, :, 2] <= 245)
-            & (source_lab[:, :, 1] >= 140)
-        )
-        if np.count_nonzero(source_lips) < 20:
-            return face
-
-        target_hue = float(np.median(source_signed_hue[source_lips]))
-        target_saturation = float(np.percentile(source_hsv[:, :, 1][source_lips], 65))
-
-        face_hue = face_hsv[:, :, 0].astype(np.float32)
-        face_signed_hue = np.where(face_hue > 90, face_hue - 180, face_hue)
-        generated_lips = (
-            lip_support
-            & (np.abs(face_signed_hue) <= 25)
-            & (face_hsv[:, :, 1] >= 50)
-            & (face_hsv[:, :, 2] <= 238)
-            & (face_lab[:, :, 0] >= 105)
-            & (face_lab[:, :, 1] >= 142)
-        )
         upper_strength = profile["upperLipColorStrength"]
-        if upper_strength > 0:
-            source_upper_lips = (
-                source_lips
-                & (yy <= height * profile["lipColorCenterY"])
-            ).astype(np.uint8)
-            upper_support = cv2.dilate(
-                source_upper_lips, np.ones((3, 3), dtype=np.uint8), iterations=1
-            ).astype(bool)
-            upper_generated_lips = (
-                upper_support
-                & (np.abs(face_signed_hue) <= 28)
-                & (face_hsv[:, :, 1] >= 42)
-                & (face_hsv[:, :, 2] <= 238)
-                & (face_lab[:, :, 0] >= 78)
-                & (face_lab[:, :, 1] >= 138)
-            )
-            generated_lips |= upper_generated_lips
-        else:
-            upper_generated_lips = np.zeros_like(generated_lips)
-        if not np.any(generated_lips):
+        if max(strength, upper_strength) <= 0:
             return face
-
-        correction_strength = np.full(face.shape[:2], strength, dtype=np.float32)
-        correction_strength[upper_generated_lips] = np.maximum(
-            correction_strength[upper_generated_lips], upper_strength
+        lip_support = authored_mask > 18
+        source_rgb = source[:, :, :3]
+        face_rgb = face[:, :, :3]
+        source_lab = cv2.cvtColor(source_rgb, cv2.COLOR_RGB2LAB).astype(np.float32)
+        face_lab = cv2.cvtColor(face_rgb, cv2.COLOR_RGB2LAB).astype(np.float32)
+        source_hsv = cv2.cvtColor(source_rgb, cv2.COLOR_RGB2HSV)
+        face_hsv = cv2.cvtColor(face_rgb, cv2.COLOR_RGB2HSV)
+        source_lips = lip_support & (source_lab[:, :, 1] > 140) & (source_hsv[:, :, 1] > 60)
+        generated_lips = (lip_support & (face_lab[:, :, 1] > 140)
+                          & (face_hsv[:, :, 1] > 50) & (face_lab[:, :, 0] > 75))
+        if np.count_nonzero(source_lips) < 20 or np.count_nonzero(generated_lips) < 20:
+            return face
+        # Add only the median colour difference, keeping pixel-to-pixel detail.
+        # A bound prevents a poorly detected frame from creating a colour flash.
+        delta = np.clip(
+            np.median(source_lab[source_lips, 1:], axis=0)
+            - np.median(face_lab[generated_lips, 1:], axis=0), -12, 12,
         )
-        pixel_strength = correction_strength[generated_lips]
-        corrected_hue = face_signed_hue[generated_lips]
-        corrected_hue += (target_hue - corrected_hue) * pixel_strength
-        face_hsv[:, :, 0][generated_lips] = np.mod(corrected_hue, 180).astype(np.uint8)
-
-        saturation = face_hsv[:, :, 1].astype(np.float32)
-        current = saturation[generated_lips]
-        # Preserve naturally stronger pixels and only restore saturation lost by DINet.
-        restored = current + np.maximum(target_saturation - current, 0) * pixel_strength
-        face_hsv[:, :, 1][generated_lips] = np.clip(restored, 0, 255).astype(np.uint8)
-
-        # DINet also darkens the visible lip surface. Match only the lost lightness;
-        # the lower threshold above keeps the mouth cavity out, while low saturation
-        # keeps teeth out.
-        source_value = float(np.median(source_hsv[:, :, 2][source_lips]))
-        generated_value = float(np.median(face_hsv[:, :, 2][generated_lips]))
-        value_delta = np.clip(source_value - generated_value, 0.0, 20.0)
-        value = face_hsv[:, :, 2].astype(np.float32)
-        value[generated_lips] += value_delta * pixel_strength * 0.55
-        value[generated_lips] += profile["lipBrightnessOffset"]
-        face_hsv[:, :, 2] = np.clip(value, 0, 255).astype(np.uint8)
-        return cv2.cvtColor(face_hsv, cv2.COLOR_HSV2RGB)
+        confidence = np.clip((face_lab[:, :, 1] - 132) / 16, 0, 1)
+        confidence *= np.clip((face_hsv[:, :, 1].astype(np.float32) - 25) / 50, 0, 1)
+        confidence *= np.clip((face_lab[:, :, 0] - 60) / 45, 0, 1)
+        soft_support = cv2.GaussianBlur(lip_support.astype(np.float32), (5, 5), .8)
+        yy = np.arange(face.shape[0])[:, None]
+        strengths = np.where(yy <= face.shape[0] * profile["lipColorCenterY"],
+                             max(strength, upper_strength), strength)
+        alpha = (confidence * soft_support * strengths)[..., None]
+        corrected = face_lab.copy()
+        corrected[:, :, 1:] += delta
+        corrected[:, :, 0] += profile["lipBrightnessOffset"]
+        rgb = cv2.cvtColor(np.clip(corrected, 0, 255).astype(np.uint8), cv2.COLOR_LAB2RGB)
+        return np.clip(face_rgb * (1 - alpha) + rgb * alpha, 0, 255).astype(np.uint8)
 
     def _composite_narrow_mouth(
         self, face: np.ndarray, source: np.ndarray, profile: dict,
         authored_mask: np.ndarray,
     ) -> np.ndarray:
-        """Compress only the synthesized mouth and feather it into the source face."""
+        """Keep original lips fully covered even when the new mouth is narrower."""
         height, width = face.shape[:2]
+        support = (authored_mask > 18).astype(np.uint8)
+        points = cv2.findNonZero(support)
+        if points is None:
+            return source[:, :, :3].copy()
+        # Include the cavity between the lips; a colour-derived lip mask can
+        # otherwise leave the original closed mouth visible through new teeth.
+        core = np.zeros_like(support)
+        cv2.fillConvexPoly(core, cv2.convexHull(points), 1)
+        core = cv2.dilate(core, np.ones((3, 3), np.uint8))
+        scale_x, scale_y = profile["mouthWidthScale"], profile["mouthHeightScale"]
         center_x = width * profile["compositeCenterX"]
         center_y = height * profile["compositeCenterY"]
-        radius_x, radius_y = width * 0.34, height * 0.19
-        x0 = max(0, int(round(center_x - radius_x)))
-        x1 = min(width, int(round(center_x + radius_x)))
-        y0 = max(0, int(round(center_y - radius_y)))
-        y1 = min(height, int(round(center_y + radius_y)))
-        patch = face[y0:y1, x0:x1]
-        if patch.size == 0:
-            return face
-
-        compressed_width = max(2, int(round(patch.shape[1] * profile["mouthWidthScale"])))
-        compressed_height = max(2, int(round(patch.shape[0] * profile["mouthHeightScale"])))
-        compressed = cv2.resize(
-            patch, (compressed_width, compressed_height), interpolation=cv2.INTER_LINEAR
+        transform = np.array([
+            [scale_x, 0, center_x * (1 - scale_x)],
+            [0, scale_y, center_y * (1 - scale_y)],
+        ], dtype=np.float32)
+        # Warp the full generated image so the old lip perimeter is replaced
+        # with generated skin, instead of falling outside a resized patch.
+        warped = cv2.warpAffine(
+            face[:, :, :3], transform, (width, height),
+            flags=cv2.INTER_CUBIC, borderMode=cv2.BORDER_REFLECT_101,
         )
-        mask_patch = authored_mask[y0:y1, x0:x1]
-        compressed_mask = cv2.resize(
-            mask_patch, (compressed_width, compressed_height), interpolation=cv2.INTER_LINEAR
+        moved_core = cv2.warpAffine(
+            core, transform, (width, height), flags=cv2.INTER_NEAREST,
         )
-        paste_x0 = int(round(center_x - compressed_width / 2))
-        paste_x1 = paste_x0 + compressed_width
-        paste_y0 = int(round(center_y - compressed_height / 2))
-        paste_y1 = paste_y0 + compressed_height
-
-        alpha = compressed_mask.astype(np.float32) / 255.0
-        alpha = cv2.GaussianBlur(alpha, (0, 0), sigmaX=1.0)
-        alpha = np.clip(alpha, 0.0, 1.0)[..., None]
-
-        output = source[:, :, :3].copy()
-        target = output[paste_y0:paste_y1, paste_x0:paste_x1].astype(np.float32)
-        blended = compressed.astype(np.float32) * alpha + target * (1.0 - alpha)
-        output[paste_y0:paste_y1, paste_x0:paste_x1] = np.clip(blended, 0, 255).astype(np.uint8)
-        return output
+        core = np.maximum(core, moved_core).astype(np.float32)
+        # Feather outward only: original lips and the cavity stay opaque.
+        outer = cv2.dilate(core, np.ones((3, 3), np.uint8))
+        alpha = np.maximum(core, cv2.GaussianBlur(outer, (7, 7), 1.0))[..., None]
+        blended = warped.astype(np.float32) * alpha + source[:, :, :3] * (1 - alpha)
+        return np.clip(blended, 0, 255).astype(np.uint8)
 
     def _restore_upper_teeth(self, face: np.ndarray, profile: dict) -> np.ndarray:
         """Restore a thin upper-teeth edge inside a generated dark mouth cavity."""
@@ -400,6 +360,46 @@ class PersistentDINetRenderer:
             0, 255,
         ).astype(np.uint8)
 
+    @staticmethod
+    def _resize_face_for_output(
+        face: np.ndarray, size: tuple[int, int], profile: dict, authored_mask: np.ndarray,
+    ) -> np.ndarray:
+        """Preserve existing tooth edges during resizing; never paint teeth."""
+        rgb = face[:, :, :3]
+        baseline = cv2.resize(rgb, size, interpolation=cv2.INTER_LINEAR)
+        strength = profile.get("teethDetailStrength", 0.0)
+        if strength <= 0:
+            return baseline
+        support = (authored_mask > 18).astype(np.uint8)
+        points = cv2.findNonZero(support)
+        if points is None:
+            return baseline
+        x, y, width, height = cv2.boundingRect(points)
+        # The central inner mouth excludes skin and the established lip outline.
+        inner = np.zeros_like(support)
+        cv2.ellipse(inner, (x + width // 2, y + height // 2),
+                    (max(1, int(width * .34)), max(1, int(height * .28))),
+                    0, 0, 360, 1, -1)
+        lab = cv2.cvtColor(rgb, cv2.COLOR_RGB2LAB).astype(np.float32)
+        hsv = cv2.cvtColor(rgb, cv2.COLOR_RGB2HSV).astype(np.float32)
+        confidence = np.clip((150 - lab[:, :, 1]) / 18, 0, 1)
+        confidence *= np.clip((125 - hsv[:, :, 1]) / 65, 0, 1)
+        confidence *= np.clip((lab[:, :, 0] - 65) / 40, 0, 1)
+        confidence *= support * inner
+        # Feather inside the selected pixels, never into lips or the dark cavity.
+        confidence *= cv2.GaussianBlur(confidence, (3, 3), .65)
+        luminance = cv2.cvtColor(rgb, cv2.COLOR_RGB2GRAY).astype(np.float32)
+        detail = luminance - cv2.GaussianBlur(luminance, (0, 0), .65)
+        detail = np.sign(detail) * np.maximum(np.abs(detail) - .75, 0)
+        detail = np.clip(detail * .7, -6, 6)
+        sharp = np.clip(rgb.astype(np.float32) + detail[..., None], 0, 255)
+        high_quality = cv2.resize(sharp, size, interpolation=cv2.INTER_CUBIC)
+        alpha = cv2.resize(confidence, size, interpolation=cv2.INTER_LINEAR)[..., None]
+        # Bound the final change as well as the filter to avoid ringing/white bars.
+        change = np.clip(high_quality - baseline.astype(np.float32), -8, 8)
+        result = baseline.astype(np.float32) + change * alpha * strength
+        return np.clip(np.rint(result), 0, 255).astype(np.uint8)
+
     def _mouth_profile(self, values: dict | None) -> dict:
         values = values or {}
         return {
@@ -414,6 +414,7 @@ class PersistentDINetRenderer:
             "upperLipColorStrength": float(np.clip(values.get("upperLipColorStrength", 0.0), 0.0, 1.0)),
             "lipBrightnessOffset": float(np.clip(values.get("lipBrightnessOffset", 0.0), -12.0, 20.0)),
             "teethStrength": float(np.clip(values.get("teethStrength", 0.0), 0.0, 1.0)),
+            "teethDetailStrength": float(np.clip(values.get("teethDetailStrength", 0.0), 0.0, 1.0)),
         }
 
     def _read_video(self):
@@ -607,7 +608,9 @@ class PersistentDINetRenderer:
                     )
                     x0, y0, x1, y1 = self.crop_rects[frame_index]
                     frame = self.frames[frame_index][:, :, :3].copy()
-                    frame[y0:y1, x0:x1] = cv2.resize(face, (x1 - x0, y1 - y0))[:, :, :3]
+                    frame[y0:y1, x0:x1] = self._resize_face_for_output(
+                        face, (x1 - x0, y1 - y0), profile, authored_mouth_mask
+                    )
                     last_output_frame = frame.copy()
                     encoder.stdin.write(np.ascontiguousarray(frame[:, :, ::-1]).tobytes())
         except Exception:

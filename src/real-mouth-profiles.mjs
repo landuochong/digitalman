@@ -15,6 +15,7 @@ const RULES = Object.freeze({
   upperLipColorStrength:[0, 1],
   lipBrightnessOffset:[-12, 20],
   teethStrength:[0, 1],
+  teethDetailStrength:[0, 1],
 });
 
 function boundedNumber(value, [minimum, maximum], key) {

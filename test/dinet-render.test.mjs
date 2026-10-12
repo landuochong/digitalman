@@ -72,16 +72,16 @@ test("browser and server re-export the same real action catalog",async()=>{
 test("resolves one bounded mouth profile per real character",()=>{
   assert.equal(REAL_MOUTH_PROFILE_VERSION,3);
   assert.deepEqual(resolveRealMouthProfile("lumi"),{
-    mouthMotionScale:0.79,mouthWidthScale:0.9,mouthHeightScale:0.97,
+    mouthMotionScale:0.79,mouthWidthScale:1,mouthHeightScale:1,
     compositeCenterX:0.5,compositeCenterY:0.39,
-    lipColorCenterX:0.512,lipColorCenterY:0.481,lipColorStrength:0.88,upperLipColorStrength:0.78,
-    lipBrightnessOffset:8,teethStrength:0.38
+    lipColorCenterX:0.512,lipColorCenterY:0.481,lipColorStrength:0.45,upperLipColorStrength:0,
+    lipBrightnessOffset:0,teethStrength:0,teethDetailStrength:0.65
   });
   assert.deepEqual(resolveRealMouthProfile("xiaotao"),{
-    mouthMotionScale:0.78,mouthWidthScale:0.91,mouthHeightScale:0.97,
+    mouthMotionScale:0.78,mouthWidthScale:1,mouthHeightScale:1,
     compositeCenterX:0.5,compositeCenterY:0.39,
-    lipColorCenterX:0.513,lipColorCenterY:0.457,lipColorStrength:0.92,upperLipColorStrength:0.98,
-    lipBrightnessOffset:9,teethStrength:0.46
+    lipColorCenterX:0.513,lipColorCenterY:0.457,lipColorStrength:0.45,upperLipColorStrength:0,
+    lipBrightnessOffset:0,teethStrength:0,teethDetailStrength:0
   });
   assert.notEqual(resolveRealMouthProfile("lumi"),resolveRealMouthProfile("xiaotao"));
   assert.ok(Object.isFrozen(resolveRealMouthProfile("lumi")));
@@ -159,8 +159,6 @@ test("DINet streams raw frames into the final H.264 encode",async()=>{
   assert.match(source,/cancel_stream/);
   assert.match(source,/prepare_asset/);
   assert.match(source,/"loadMs"/);
-  assert.match(source,/source_upper_lips/);
-  assert.match(source,/cv2\.dilate\(\s*source_upper_lips, np\.ones\(\(3, 3\)/);
   assert.match(source,/previous_visual_asset = self\.visual_turn_assets\.get/);
   assert.match(source,/transitionFrames/);
   assert.doesNotMatch(source,/cv2\.addWeighted/);
