@@ -222,3 +222,20 @@ curl http://localhost:3000/api/chat/debug/summary
 ## 隐私与发布边界
 
 服务端不落盘保存完整聊天；浏览器仅保留有限历史。本地文件只保存经过过滤的结构化记忆和有界匿名延迟样本；含聊天正文的原始诊断仍是短期内存数据，服务重启即消失。生产部署仍需增加账户隔离、权限认证、内容安全、限流、用户可见的记忆管理和危机干预流程，并重新核对所有人物模型、动作、推理权重和生成素材的许可证。
+
+## 支持项目
+
+如果露米对你有帮助，欢迎给项目点一个 Star，或请作者喝杯咖啡，支持后续开发与体验优化。感谢每一份支持！
+
+<table>
+  <tr>
+    <th align="center">支付宝</th>
+    <th align="center">微信支付</th>
+  </tr>
+  <tr>
+    <td align="center"><a href="docs/assets/donate/alipay.jpeg"><img src="docs/assets/donate/alipay.jpeg" alt="支付宝收款码" width="260" /></a></td>
+    <td align="center"><a href="docs/assets/donate/wechat-pay.jpeg"><img src="docs/assets/donate/wechat-pay.jpeg" alt="微信收款码" width="260" /></a></td>
+  </tr>
+</table>
+
+使用支付宝或微信扫码即可支持，也可以点击图片查看原图。
